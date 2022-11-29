@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>adminapi</AssemblyName>
+    <RootNamespace>Velox.Server</RootNamespace>
+    <OutputPath>$(VlxRootDir)\bin</OutputPath>
+    <Platforms>AnyCPU;x64</Platforms>
+    <UseCommonOutputDirectory>true</UseCommonOutputDirectory>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+ 
+  <ItemGroup>
+    <ProjectReference Include="..\..\Velox\Velox.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,105 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+		   xmlns:mstns="http://www.vlxdb.com/DataModel.xsd" elementFormDefault="qualified">
+	<xs:simpleType name="PropertyType">
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="Byte"/>
+			<xs:enumeration value="Short"/>
+			<xs:enumeration value="Int"/>
+			<xs:enumeration value="Long"/>
+			<xs:enumeration value="Float"/>
+			<xs:enumeration value="Double"/>
+			<xs:enumeration value="Bool"/>
+			<xs:enumeration value="DateTime"/>
+			<xs:enumeration value="String"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="ArrayPropertyType">
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="ByteArray"/>
+			<xs:enumeration value="ShortArray"/>
+			<xs:enumeration value="IntArray"/>
+			<xs:enumeration value="LongArray"/>
+			<xs:enumeration value="FloatArray"/>
+			<xs:enumeration value="DoubleArray"/>
+			<xs:enumeration value="BoolArray"/>
+			<xs:enumeration value="DateTimeArray"/>
+			<xs:enumeration value="StringArray"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="MultiplicityType">
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="0..1"/>
+			<xs:enumeration value="1"/>
+			<xs:enumeration value="*"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="DeleteTargetAction">
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="CascadeDelete" />
+			<xs:enumeration value="SetToNull" />
+			<xs:enumeration value="PreventDelete" />
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:complexType name="HashIndex">
+		<xs:sequence minOccurs="1" maxOccurs="unbounded">
+			<xs:element name="Property">
+				<xs:complexType>
+					<xs:attribute name="Name" type="xs:string" use="required" />
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+		<xs:attribute name="Id" type="xs:short" />
+		<xs:attribute name="Name" type="xs:string" use="required" />
+		<xs:attribute name="IsUnique" type="xs:boolean" use="optional" />
+	</xs:complexType>
+	<xs:complexType name="Class">
+		<xs:sequence>
+			<xs:choice minOccurs="0" maxOccurs="unbounded">
+				<xs:element name="SimpleProperty">
+					<xs:complexType>
+						<xs:attribute name="Id" type="xs:int" use="required" />
+						<xs:attribute name="Name" type="xs:string" use="required" />
+						<xs:attribute name="Type" type="PropertyType" use="required" />
+						<xs:attribute name="DefaultVal" type="xs:string" />
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="ReferenceProperty">
+					<xs:complexType>
+						<xs:attribute name="Id" type="xs:int" use="required" />
+						<xs:attribute name="Name" type="xs:string" use="required" />
+						<xs:attribute name="ReferencedClass" type="xs:string" use="required" />
+						<xs:attribute name="Multiplicity" type="MultiplicityType" use="required" />
+						<xs:attribute name="OnDeleteTarget" type="DeleteTargetAction" />
+						<xs:attribute name="TrackInverseRefs" type="xs:boolean" />
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="ArrayProperty" minOccurs="1" maxOccurs="unbounded">
+					<xs:complexType>
+						<xs:attribute name="Id" type="xs:int" use="required" />
+						<xs:attribute name="Name" type="xs:string" use="required" />
+						<xs:attribute name="Type" type="ArrayPropertyType" use="required" />
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="HashIndex">
+					<xs:complexType>
+						<xs:attribute name="Name" type="xs:string" use="required" />
+					</xs:complexType>
+				</xs:element>
+			</xs:choice>
+		</xs:sequence>
+		<xs:attribute name="Id" type="xs:short" />
+		<xs:attribute name="Name" type="xs:string" use="required" />
+		<xs:attribute name="IsAbstract" type="xs:boolean" />
+		<xs:attribute name="BaseClass" type="xs:string" />
+		<xs:attribute name="Log" type="xs:string" use="optional" />
+	</xs:complexType>
+	<xs:complexType name="Namespace">
+		<xs:choice minOccurs="0" maxOccurs="unbounded">
+			<xs:element name="HashIndex" type="HashIndex" />
+			<xs:element name="Class" type="Class" />
+		</xs:choice>
+		<xs:attribute name="Name" type="xs:string" use="required" />
+	</xs:complexType>
+	<xs:element name="Namespace" type="Namespace" />
+</xs:schema>

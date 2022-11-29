@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
+    <PropertyGroup>
+        <OutputPath>../bin/_site</OutputPath>
+    </PropertyGroup>
+
+		<ItemGroup>
+    	<ProjectReference Include="../Velox/Velox.csproj" />
+			<ProjectReference Include="../VeloxDB/VeloxDB.csproj" />
+			<ProjectReference Include="../Samples/GetStarted/VlxBlog/vlxblog.csproj"/>
+			<ProjectReference Include="../Samples/GetStarted/VlxClient/vlxclient.csproj"/>
+			<ProjectReference Include="../Samples/ModelExamples/models_examples.csproj"/>
+	  </ItemGroup>
+
+		<ItemGroup>
+			<Watch Include="**/*.md" />
+			<Watch Include="articles/**/*.yml" />
+			<Watch Include="filter.yml" />
+			<Watch Include="../bin/vlx.xml" />
+			<Watch Include="../bin/vlxdb.xml" />
+		</ItemGroup>
+
+		<Import Project="$(MSBuildExtensionsPath)\Microsoft.Common.targets"/>
+
+		<Target Name="Build">
+			<MSBuild Projects="@(ProjectReference)" Properties="Configuration=Release"/>
+			<Exec Command="docfx metadata"/>
+			<Exec Command="docfx build"/>
+		</Target>
+
+		<Target Name="Pack" DependsOnTargets="Build">
+			<ZipDirectory SourceDirectory="$(OutputPath)" DestinationFile="$(OutputPath)/../site.zip" Overwrite="true"/>
+		</Target>
+
+		<Target Name="Serve">
+			<Exec Command="docfx --serve"/>
+		</Target>
+</Project>

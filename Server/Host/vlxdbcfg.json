@@ -1,0 +1,37 @@
+// This file contains default VeloxDB configuration. Config file is loaded from following locations:
+//   - Database Installation directory
+//   - %PROGRAMDATA%\vlxdb or /etc/vlxdb
+//   - %APPDATA%\vlxdb or $HOME/.config/vlxdb
+// Files are loaded in listed order, and each succeeding file overrides previously loaded configuration.
+// When defining path data you can use templates in following format ${name}. Following values are available:
+//   - ${ApplicationData} Resolves to %APPDATA% or $HOME/.config
+//   - ${LocalApplicationData} Resolves to %LOCALAPPDATA% or $HOME/.local/share/
+//   - ${UserProfile} Resolves to %USERPROFILE% or $HOME
+//   - ${Base} Resolves to database installation directory
+//   - ${Temp} Current user's temporary folder.
+{
+	"Version": 1,
+	"ExecutionEndpoint": {
+		"BacklogSize": 20,
+		"MaxOpenConnCount": 10,
+		"BufferPoolSize": 131072,
+		"InactivityInterval": 2,
+		"InactivityTimeout": 1,
+		"MaxQueuedChunkCount": 64
+	},
+	"Database": {
+		"SystemDatabasePath": "${LocalApplicationData}/vlxdb/data"
+	},
+	"Logging": {
+		"Path": "${LocalApplicationData}/vlxdb/log",
+		"Level": "Info",
+		"UserLevel": "None"
+	},
+	"Replication": {
+		"ThisNodeName": "Node",
+		"ClusterConfigFile": "${Base}/config.cluster.json",
+		"PrimaryWorkerCount": 4,
+		"StandbyWorkerCount": 0,
+		"UseSeparateConnectionPerWorker": true
+	}
+}

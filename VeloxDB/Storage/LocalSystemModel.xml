@@ -1,0 +1,6 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<Namespace Name="System">
+  <Class Name="MainBackupState" Id="-3" Log="master">
+    <SimpleProperty Name="IsMain" Id="-4" Type="Bool" />
+  </Class>
+</Namespace>

@@ -1,0 +1,65 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.32112.339
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "VeloxDB", "VeloxDB\VeloxDB.csproj", "{43C15C95-88B5-44FD-A7B2-2F71461F8260}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Velox", "Velox\Velox.csproj", "{7DC6312C-7394-4D99-9D36-A45E548DA637}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Server", "Server", "{8D350F85-F0D5-4239-8BC6-D141EF2C36FF}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "AdminAPI", "Server\AdminAPI\AdminAPI.csproj", "{00C31B07-A03F-49A4-B5EA-82A9A7B88B0A}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Host", "Server\Host\Host.csproj", "{B16DFD78-5CE6-48D6-BE05-9DB2D322F533}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{3991082F-4B3D-4827-85E7-52905BC251EA}"
+	ProjectSection(SolutionItems) = preProject
+		.editorconfig = .editorconfig
+	EndProjectSection
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "VeloxSourceGenerator", "VeloxSourceGenerator\VeloxSourceGenerator.csproj", "{AFA18C5B-D3D1-44E2-9B92-1BFABE80C7C3}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ClientApp", "ClientApp\ClientApp.csproj", "{7DC338EB-4E36-4931-88B6-0A93215AF121}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{43C15C95-88B5-44FD-A7B2-2F71461F8260}.Debug|x64.ActiveCfg = Debug|x64
+		{43C15C95-88B5-44FD-A7B2-2F71461F8260}.Debug|x64.Build.0 = Debug|x64
+		{43C15C95-88B5-44FD-A7B2-2F71461F8260}.Release|x64.ActiveCfg = Release|x64
+		{43C15C95-88B5-44FD-A7B2-2F71461F8260}.Release|x64.Build.0 = Release|x64
+		{7DC6312C-7394-4D99-9D36-A45E548DA637}.Debug|x64.ActiveCfg = Debug|x64
+		{7DC6312C-7394-4D99-9D36-A45E548DA637}.Debug|x64.Build.0 = Debug|x64
+		{7DC6312C-7394-4D99-9D36-A45E548DA637}.Release|x64.ActiveCfg = Release|x64
+		{7DC6312C-7394-4D99-9D36-A45E548DA637}.Release|x64.Build.0 = Release|x64
+		{00C31B07-A03F-49A4-B5EA-82A9A7B88B0A}.Debug|x64.ActiveCfg = Debug|x64
+		{00C31B07-A03F-49A4-B5EA-82A9A7B88B0A}.Debug|x64.Build.0 = Debug|x64
+		{00C31B07-A03F-49A4-B5EA-82A9A7B88B0A}.Release|x64.ActiveCfg = Release|x64
+		{00C31B07-A03F-49A4-B5EA-82A9A7B88B0A}.Release|x64.Build.0 = Release|x64
+		{B16DFD78-5CE6-48D6-BE05-9DB2D322F533}.Debug|x64.ActiveCfg = Debug|x64
+		{B16DFD78-5CE6-48D6-BE05-9DB2D322F533}.Debug|x64.Build.0 = Debug|x64
+		{B16DFD78-5CE6-48D6-BE05-9DB2D322F533}.Release|x64.ActiveCfg = Release|x64
+		{B16DFD78-5CE6-48D6-BE05-9DB2D322F533}.Release|x64.Build.0 = Release|x64
+		{AFA18C5B-D3D1-44E2-9B92-1BFABE80C7C3}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{AFA18C5B-D3D1-44E2-9B92-1BFABE80C7C3}.Debug|x64.Build.0 = Debug|Any CPU
+		{AFA18C5B-D3D1-44E2-9B92-1BFABE80C7C3}.Release|x64.ActiveCfg = Release|Any CPU
+		{AFA18C5B-D3D1-44E2-9B92-1BFABE80C7C3}.Release|x64.Build.0 = Release|Any CPU
+		{7DC338EB-4E36-4931-88B6-0A93215AF121}.Debug|x64.ActiveCfg = Debug|x64
+		{7DC338EB-4E36-4931-88B6-0A93215AF121}.Debug|x64.Build.0 = Debug|x64
+		{7DC338EB-4E36-4931-88B6-0A93215AF121}.Release|x64.ActiveCfg = Release|x64
+		{7DC338EB-4E36-4931-88B6-0A93215AF121}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{00C31B07-A03F-49A4-B5EA-82A9A7B88B0A} = {8D350F85-F0D5-4239-8BC6-D141EF2C36FF}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {76665345-16D0-4494-95FA-63AEEC1176D1}
+	EndGlobalSection
+EndGlobal

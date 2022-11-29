@@ -1,0 +1,8 @@
+﻿{
+	"configProperties": {
+		"System.GC.Server": true,
+		"System.GC.Concurrent": false,
+		"System.GC.CpuGroup": true,
+		"System.Threading.ThreadPool.Blocking.ThreadsToAddWithoutDelay_ProcCountFactor": 8
+	}
+}

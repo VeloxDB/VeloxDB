@@ -1,0 +1,9 @@
+.hljs-comment
+{
+	color: green;
+}
+
+h5.exceptions, h5.remarks, h5.seealso
+{
+	font-weight: bold;
+}

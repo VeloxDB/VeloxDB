@@ -1,0 +1,8 @@
+{
+    "msbuild": {
+       "enabled": true,
+       "Configuration": "Debug",
+       "Platform": "x64",
+       "EnablePackageAutoRestore" : false
+    }
+  }

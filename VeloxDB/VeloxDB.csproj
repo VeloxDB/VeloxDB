@@ -1,0 +1,83 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net6.0</TargetFramework>
+		<Platforms>x64</Platforms>
+		<AssemblyName>vlxdb</AssemblyName>
+		<RootNamespace>Velox</RootNamespace>
+		<Authors></Authors>
+		<PackageId>VeloxDB</PackageId>
+		<PackageOutputPath>$(VlxRootDir)\bin\nuget</PackageOutputPath>
+		<Company>Velox</Company>
+		<Product>VeloxDB</Product>
+		<NuspecFile>VeloxDB.nuspec</NuspecFile>
+		<NuspecProperties>version=$(Version);vlxrootdir=$(VlxRootDir)</NuspecProperties>
+		<GenerateDocumentationFile>true</GenerateDocumentationFile>
+		<UseCommonOutputDirectory>true</UseCommonOutputDirectory>
+	</PropertyGroup>
+
+	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+		<GenerateSerializationAssemblies>Off</GenerateSerializationAssemblies>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+		<OutputPath>$(VlxRootDir)\bin</OutputPath>
+		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+		<DefineConstants>TRACE;X86_64;TEST_BUILD;HUNT_CHG_LEAKS; TTTRACE</DefineConstants>
+		<NoWarn>$(NoWarn);1701;1702;CA1063;CA1416</NoWarn>
+	</PropertyGroup>
+
+	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|arm64'">
+		<GenerateSerializationAssemblies>Off</GenerateSerializationAssemblies>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+		<OutputPath>$(VlxRootDir)\bin</OutputPath>
+		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+		<DefineConstants>TRACE;ARM_64;TEST_BUILD;HUNT_CHG_LEAKS;HUNT_CORRUPT</DefineConstants>
+		<NoWarn>$(NoWarn);1701;1702;CA1063;</NoWarn>
+	</PropertyGroup>
+
+	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+		<OutputPath>$(VlxRootDir)\bin</OutputPath>
+		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+		<GenerateSerializationAssemblies>Off</GenerateSerializationAssemblies>
+		<DefineConstants>TRACE;X86_64</DefineConstants>
+		<NoWarn>$(NoWarn);1701;1702;CA1063;CA1416;</NoWarn>
+	</PropertyGroup>
+
+	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|arm64'">
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+		<OutputPath>$(VlxRootDir)\bin</OutputPath>
+		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+		<GenerateSerializationAssemblies>Off</GenerateSerializationAssemblies>
+		<DefineConstants>TRACE;ARM_64</DefineConstants>
+		<NoWarn>$(NoWarn);1701;1702;CA1063;</NoWarn>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<Compile Remove="NewFolder\**" />
+		<EmbeddedResource Remove="NewFolder\**" />
+		<None Remove="NewFolder\**" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<None Remove="Descriptor\DataModelSchema.xsd" />
+		<None Remove="Descriptor\SystemModel.xml" />
+		<None Remove="Storage\GlobalSystemModel.xml" />
+		<None Remove="Storage\LocalSystemModel.xml" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<EmbeddedResource Include="Descriptor\DataModelSchema.xsd" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<EmbeddedResource Include="Descriptor\SystemModel.xml">
+			<CopyToOutputDirectory>Never</CopyToOutputDirectory>
+		</EmbeddedResource>
+		<EmbeddedResource Include="Storage\GlobalSystemModel.xml" />
+		<EmbeddedResource Include="Storage\LocalSystemModel.xml" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\Velox\Velox.csproj" />
+	</ItemGroup>
+</Project>

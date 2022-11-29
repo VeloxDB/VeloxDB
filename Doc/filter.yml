@@ -1,0 +1,17 @@
+apiRules:
+- exclude:
+    uidRegex: .*.value__
+- include:
+    uidRegex: Velox.Protocol.DbAPIObjectGraphSupportType|Velox.Protocol.DbAPIOperationType|Velox.Common.TraceLevel|Velox.DatabaseErrorType|
+              Velox.Descriptor.DeleteTargetAction|Velox.Networking.AbortedPhase|Velox.Protocol.DbAPIDefinitionErrorType
+
+- include:
+    type: Method
+- exclude:
+    type: Field
+- exclude:
+    uidRegex: 'Velox.Common.AutomapperThreadContext'
+    type: Class
+attributeRules:
+- exclude:
+    uid: Velox.Common.ErrorCodeAttribute

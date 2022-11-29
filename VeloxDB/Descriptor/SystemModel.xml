@@ -1,0 +1,26 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<Namespace Name="System">
+	<HashIndex Name="AssemblyNameIndex" Id="-1" IsUnique="true">
+		<Property Name="FileName"/>
+	</HashIndex>
+	<Class Name="DatabaseObject" IsAbstract="true" Id="-1">
+		<SimpleProperty Name="Id" Type="Long" Id="-1" />
+		<SimpleProperty Name="Version" Id="-2" Type="Long" />
+	</Class>
+	<Class Name="IdGenerator" Id="-2" Log="master">
+		<SimpleProperty Name="Value" Id="-3" DefaultVal="1024" Type="Long" />
+	</Class>
+	<Class Name="ConfigArtifactVersion" Id="-4" Log="master">
+		<SimpleProperty Name="GuidV1" Id="-5" Type="Long" />
+		<SimpleProperty Name="GuidV2" Id="-6" Type="Long" />
+	</Class>
+	<Class Name="Assembly" Id="-5" Log="master">
+		<SimpleProperty Name="Name" Id="-7" Type="String" />
+		<SimpleProperty Name="FileName" Id="-8" Type="String" />
+		<ArrayProperty Name="Binary" Id="-9" Type="ByteArray" />
+		<HashIndex Name="AssemblyNameIndex" />
+	</Class>
+	<Class Name="ConfigArtifact" Id="-6" Log="master">
+		<ArrayProperty Name="Binary" Id="-10" Type="ByteArray" />
+	</Class>
+</Namespace>
