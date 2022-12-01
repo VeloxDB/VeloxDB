@@ -8,7 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="veloxdb" Version="0.1.10" />
+    <PackageReference Include="veloxdb" Version="0.1.11" />
   </ItemGroup>
 	<ItemGroup>
 		<Compile Remove="*.old.*" />

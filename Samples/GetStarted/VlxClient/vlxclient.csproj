@@ -8,7 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="velox" Version="0.1.10" />
+    <PackageReference Include="velox" Version="0.1.11" />
   </ItemGroup>
 
   <ItemGroup>

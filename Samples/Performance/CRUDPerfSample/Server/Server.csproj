@@ -12,8 +12,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Velox" Version="0.1.10" />
-    <PackageReference Include="VeloxDB" Version="0.1.10" />
+    <PackageReference Include="Velox" Version="0.1.11" />
+    <PackageReference Include="VeloxDB" Version="0.1.11" />
   </ItemGroup>
 
 
