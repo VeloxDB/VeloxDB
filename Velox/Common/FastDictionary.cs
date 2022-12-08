@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 
@@ -105,68 +105,6 @@ internal sealed class FastDictionary<TKey, TValue>
 
 		value = default(TValue);
 		return false;
-	}
-
-	public bool Remove(TKey key)
-	{
-		int bucket = GetBucket(key);
-		int index = buckets[bucket];
-
-		if (index == 0)
-			return false;
-
-		if (comparer.Equals(entries[index].key, key))
-		{
-			buckets[bucket] = entries[index].next;
-		}
-		else
-		{
-			int prevIndex = index;
-			index = entries[index].next;
-			while (index != 0 && !comparer.Equals(entries[index].key, key))
-			{
-				prevIndex = index;
-				index = entries[index].next;
-			}
-
-			if (index == 0)
-				return false;
-
-			entries[prevIndex].next = entries[index].next;
-		}
-
-		RemoveEntry(index);
-		return true;
-	}
-
-	private void RemoveEntry(int index)
-	{
-		if (index == count)
-		{
-			entries[count].value = default(TValue);
-			count--;
-			return;
-		}
-
-		entries[index] = entries[count];
-		entries[count].key = default(TKey);
-		entries[count].value = default(TValue);
-
-		int bucket = GetBucket(entries[count].key);
-		if (buckets[bucket] == count)
-		{
-			buckets[bucket] = index;
-		}
-		else
-		{
-			int tindex = buckets[bucket];
-			while (entries[tindex].next != count)
-				tindex = entries[tindex].next;
-
-			entries[tindex].next = index;
-		}
-
-		count--;
 	}
 
 	public void Clear()

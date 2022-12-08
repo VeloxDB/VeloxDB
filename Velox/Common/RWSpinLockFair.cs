@@ -1,4 +1,5 @@
-using System;
+﻿using System;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -25,7 +26,7 @@ internal struct RWSpinLockFair
 		int yieldCount = 0;
 		int yieldAfter = yieldAfterInit;
 
-		do
+		while (true)
 		{
 			int s = state;
 			if ((s == 0 || s == writerWaitingBitMask) && Interlocked.CompareExchange(ref state, writerBitMask, s) == s)
@@ -36,7 +37,6 @@ internal struct RWSpinLockFair
 
 			YieldOrSleep(ref yieldAfter, sleepAfterYields, ref count, ref yieldCount);
 		}
-		while (true);
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -46,6 +46,7 @@ internal struct RWSpinLockFair
 		Thread.MemoryBarrier();
 #endif
 
+		Checker.AssertTrue((state & writerBitMask) != 0);
 		state = 0;
 	}
 
@@ -56,7 +57,7 @@ internal struct RWSpinLockFair
 		int yieldCount = 0;
 		int yieldAfter = yieldAfterInit;
 
-		do
+		while (true)
 		{
 			int s = state;
 			if ((s & writerBitsMask) == 0 && Interlocked.CompareExchange(ref state, s + 1, s) == s)
@@ -64,7 +65,29 @@ internal struct RWSpinLockFair
 
 			YieldOrSleep(ref yieldAfter, sleepAfterYields, ref count, ref yieldCount);
 		}
-		while (true);
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public bool TryEnterReadLock(int timeout)
+	{
+		int count = 0;
+		int yieldCount = 0;
+		int yieldAfter = yieldAfterInit;
+
+		long tstart = Stopwatch.GetTimestamp();
+
+		while (true)
+		{
+			int s = state;
+			if ((s & writerBitsMask) == 0 && Interlocked.CompareExchange(ref state, s + 1, s) == s)
+				return true;
+
+			YieldOrSleep(ref yieldAfter, sleepAfterYields, ref count, ref yieldCount);
+
+			long tend = Stopwatch.GetTimestamp();
+			if ((tend - tstart) * 1000 / Stopwatch.Frequency > timeout)
+				return false;
+		}
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]

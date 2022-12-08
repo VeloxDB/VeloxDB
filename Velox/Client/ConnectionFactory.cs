@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -77,13 +77,8 @@ public static class ConnectionFactory
 		return (T)(object)interfaceEntry.GetConnection(connectionString);
 	}
 
-	internal static async ValueTask<OperationData> GetOperationData(ConnectionPool pool, string connectionString,
-		Type interfaceType, int operationId, bool preferNewer)
+	internal static OperationData GetOperationData(ConnectionEntry connectionEntry, string connectionString, Type interfaceType, int operationId)
 	{
-		ConnectionStringParams connParams = pool.ConnParams;
-
-		ConnectionEntry connectionEntry = await pool.GetConnection(preferNewer);
-
 		ServerEntry serverEntry = (ServerEntry)connectionEntry.Connection.Tag;
 		if (serverEntry == null)
 		{
@@ -196,20 +191,13 @@ public static class ConnectionFactory
 		Label tryCatchLabel = il.DefineLabel();
 		il.BeginExceptionBlock();
 
-		Type tcsType = GetMethodTaskCompletionSourceType(methodInfo);
-		LocalBuilder reqVar = il.DeclareLocal(typeof(RequestBase));
-		LocalBuilder tcsVar = il.DeclareLocal(tcsType);
+		Type reqType = GetDatabaseTaskSourceType(methodInfo);
+		LocalBuilder reqVar = il.DeclareLocal(reqType);
 
 		// RequestBase
 		il.Emit(OpCodes.Ldarg, 1);
-		il.Emit(OpCodes.Castclass, typeof(RequestBase));
+		il.Emit(OpCodes.Castclass, reqType);
 		il.Emit(OpCodes.Stloc, reqVar);
-
-		// TaskCompletionSource
-		il.Emit(OpCodes.Ldloc, reqVar);
-		il.Emit(OpCodes.Call, RequestBase.GetTCSMethod);
-		il.Emit(OpCodes.Castclass, tcsType);
-		il.Emit(OpCodes.Stloc, tcsVar);
 
 		// Process exception with retry (if possible)
 		LocalBuilder errVar = il.DeclareLocal(typeof(Exception));
@@ -220,18 +208,18 @@ public static class ConnectionFactory
 		il.Emit(OpCodes.Ldarg, 2);
 		il.Emit(OpCodes.Ldloca, errVar);
 		il.Emit(OpCodes.Ldloca, retryScheduledVar);
-		il.Emit(OpCodes.Call, RequestBase.ProcessResponseErrorMethod);
+		il.Emit(OpCodes.Call, DatabaseTask.ProcessResponseErrorMethod);
 
-		// If we have an error store it in tcs and return
+		// If we have an error store it in the database task and return
 		Label skipErrorLabel = il.DefineLabel();
 		il.Emit(OpCodes.Ldloc, errVar);
 		il.Emit(OpCodes.Ldnull);
 		il.Emit(OpCodes.Cgt_Un);
 		il.Emit(OpCodes.Brfalse, skipErrorLabel);
 
-		il.Emit(OpCodes.Ldloc, tcsVar);
+		il.Emit(OpCodes.Ldloc, reqVar);
 		il.Emit(OpCodes.Ldloc, errVar);
-		il.Emit(OpCodes.Call, tcsType.GetMethod(nameof(TaskCompletionSource<object>.SetException), new Type[] { typeof(Exception) }));
+		il.Emit(OpCodes.Call, DatabaseTask.SetErrorMethod);
 		il.Emit(OpCodes.Leave, tryCatchLabel);
 
 		il.MarkLabel(skipErrorLabel);
@@ -245,38 +233,39 @@ public static class ConnectionFactory
 		il.MarkLabel(skipRetryScheduledLabel);
 
 		// No error, deserialize response (if response type is not void/Task)
-		if (methodInfo.ReturnType != typeof(void) && methodInfo.ReturnType != typeof(Task))
+		if (methodInfo.ReturnType != typeof(void) && methodInfo.ReturnType != typeof(DatabaseTask))
 		{
-			Type resultType = tcsType.GetGenericArguments()[0];
+			Type resultType = reqType.GetGenericArguments()[0];
 			LocalBuilder resVar = il.DeclareLocal(resultType);
 
 			Type deserializerType = typeof(OperationDeserializerDelegate<>).MakeGenericType(resultType);
 
 			// Load deserializer delegate to call
 			il.Emit(OpCodes.Ldloc, reqVar);
-			il.Emit(OpCodes.Call, RequestBase.GetDeserializerMethod);
+			il.Emit(OpCodes.Call, DatabaseTask.GetDeserializerMethod);
 			il.Emit(OpCodes.Castclass, deserializerType);
 
 			// Deserializer expects reader, deserializer table and out parameter where to store result
 			il.Emit(OpCodes.Ldarg_3);
 			il.Emit(OpCodes.Ldloc, reqVar);
-			il.Emit(OpCodes.Call, RequestBase.GetDeserializerTableMethod);
+			il.Emit(OpCodes.Call, DatabaseTask.GetDeserializerTableMethod);
 			il.Emit(OpCodes.Ldloca, resVar);
 
 			MethodInfo invokeMethod = deserializerType.GetMethod("Invoke");
 			il.Emit(OpCodes.Callvirt, invokeMethod);
 
 			// Set tcs result
-			il.Emit(OpCodes.Ldloc, tcsVar);
+			il.Emit(OpCodes.Ldloc, reqVar);
 			il.Emit(OpCodes.Ldloc, resVar);
-			il.Emit(OpCodes.Call, tcsType.GetMethod(nameof(TaskCompletionSource<object>.SetResult)));
+			il.Emit(OpCodes.Call, reqType.GetMethod(nameof(DatabaseTask<object>.SetResult),
+				BindingFlags.NonPublic | BindingFlags.DeclaredOnly | BindingFlags.Instance));
 		}
 		else
 		{
 			// Just signal tcs as completed
-			il.Emit(OpCodes.Ldloc, tcsVar);
-			il.Emit(OpCodes.Ldnull);
-			il.Emit(OpCodes.Call, tcsType.GetMethod(nameof(TaskCompletionSource<object>.SetResult)));
+			il.Emit(OpCodes.Ldloc, reqVar);
+			il.Emit(OpCodes.Call, reqType.GetMethod(nameof(DatabaseTask.SetResult),
+				BindingFlags.NonPublic | BindingFlags.DeclaredOnly | BindingFlags.Instance));
 		}
 
 		il.Emit(OpCodes.Leave, tryCatchLabel);
@@ -288,10 +277,10 @@ public static class ConnectionFactory
 		LocalBuilder excVar = il.DeclareLocal(typeof(Exception));
 		il.Emit(OpCodes.Stloc, excVar);
 
-		// Set tcs exception
-		il.Emit(OpCodes.Ldloc, tcsVar);
+		// Set database task exception
+		il.Emit(OpCodes.Ldloc, reqVar);
 		il.Emit(OpCodes.Ldloc, excVar);
-		il.Emit(OpCodes.Call, tcsType.GetMethod(nameof(TaskCompletionSource<object>.SetException), new Type[] { typeof(Exception) }));
+		il.Emit(OpCodes.Call, DatabaseTask.SetErrorMethod);
 
 		// if exception is not a DbAPIErrorException rethrow it to the lower network level
 		Label skipRethrowLabel = il.DefineLabel();
@@ -321,18 +310,19 @@ public static class ConnectionFactory
 			throw DbAPIDefinitionException.CreateAPIEventDefinition(ProtocolClassDescriptor.GetClassName(type));
 	}
 
-	private static Type GetMethodTaskCompletionSourceType(MethodInfo methodInfo)
+	private static Type GetDatabaseTaskSourceType(MethodInfo methodInfo)
 	{
-		if (methodInfo.ReturnType.IsGenericType && methodInfo.ReturnType.GetGenericTypeDefinition() == typeof(Task<>))
+		if (methodInfo.ReturnType.IsGenericType && methodInfo.ReturnType.GetGenericTypeDefinition() == typeof(DatabaseTask<>) ||
+			methodInfo.ReturnType == typeof(DatabaseTask))
 		{
-			return typeof(TaskCompletionSource<>).MakeGenericType(new Type[] { methodInfo.ReturnType.GetGenericArguments()[0] });
+			return methodInfo.ReturnType;
 		}
 		else
 		{
-			if (methodInfo.ReturnType == typeof(Task) || methodInfo.ReturnType == typeof(void))
-				return typeof(TaskCompletionSource<object>);
+			if (methodInfo.ReturnType == typeof(void))
+				return typeof(DatabaseTask);
 			else
-				return typeof(TaskCompletionSource<>).MakeGenericType(new Type[] { methodInfo.ReturnType });
+				return typeof(DatabaseTask<>).MakeGenericType(new Type[] { methodInfo.ReturnType });
 		}
 	}
 
@@ -353,19 +343,11 @@ public static class ConnectionFactory
 
 		ILGenerator il = method.GetILGenerator();
 
-		// Create task completion source and store it in a variable
-		Type tcsType = GetMethodTaskCompletionSourceType(methodInfo);
-		ConstructorInfo tcsCtor = tcsType.GetConstructor(EmptyArray<Type>.Instance);
-		LocalBuilder tcsVar = il.DeclareLocal(tcsType);
-		il.Emit(OpCodes.Newobj, tcsCtor);
-		il.Emit(OpCodes.Stloc, tcsVar);
-
 		// Create request object
 		LocalBuilder reqVar = il.DeclareLocal(reqType);
 		il.Emit(OpCodes.Ldarg_0);
 		il.Emit(OpCodes.Ldfld, ConnectionBase.ConnStrField);
 		il.Emit(OpCodes.Ldc_I4, operationId);
-		il.Emit(OpCodes.Ldloc, tcsVar);
 		for (int i = 0; i < paramTypes.Length; i++)
 		{
 			il.Emit(OpCodes.Ldarg, i + 1);
@@ -375,43 +357,28 @@ public static class ConnectionFactory
 		il.Emit(OpCodes.Stloc, reqVar);
 
 		// Call request.Execute
-		MethodInfo execMethod = RequestBase.ExecuteMethod.MakeGenericMethod(new Type[] { interfaceType });
+		MethodInfo execMethod = DatabaseTask.ExecuteMethod.MakeGenericMethod(new Type[] { interfaceType });
 		il.Emit(OpCodes.Ldloc, reqVar);
 		il.Emit(OpCodes.Call, execMethod);
 
-		// If result is Task return tcs.Task, else wait on Task result and return result
-		if ((methodInfo.ReturnType.IsGenericType && methodInfo.ReturnType.GetGenericTypeDefinition() == typeof(Task<>)) ||
-			methodInfo.ReturnType == typeof(Task))
+		// If result is DatabaseTask return the request object, else wait for the result and return it
+		if ((methodInfo.ReturnType.IsGenericType && methodInfo.ReturnType.GetGenericTypeDefinition() == typeof(DatabaseTask<>)) ||
+			methodInfo.ReturnType == typeof(DatabaseTask))
 		{
-			il.Emit(OpCodes.Ldloc, tcsVar);
-			il.Emit(OpCodes.Call, tcsType.GetProperty(nameof(TaskCompletionSource<object>.Task)).GetGetMethod());
+			il.Emit(OpCodes.Ldloc, reqVar);
 			il.Emit(OpCodes.Ret);
 		}
 		else
 		{
-			// Load task from tcs and store it in a variable
-			Type taskType = typeof(Task<>).MakeGenericType(new Type[] { tcsType.GetGenericArguments()[0] });
-			LocalBuilder taskVar = il.DeclareLocal(taskType);
-			il.Emit(OpCodes.Ldloc, tcsVar);
-			il.Emit(OpCodes.Call, tcsType.GetProperty(nameof(TaskCompletionSource<object>.Task)).GetGetMethod());
-			il.Emit(OpCodes.Stloc, taskVar);
+			// Wait for the database task to finish
+			il.Emit(OpCodes.Ldloc, reqVar);
+			il.Emit(OpCodes.Call, DatabaseTask.WaitMethod);
 
-			// Wait for task to finish
-			il.Emit(OpCodes.Ldloc, taskVar);
-			if (methodInfo.ReturnType == typeof(void))
-			{
-				il.Emit(OpCodes.Call, RequestBase.WaitTaskMethod.MakeGenericMethod(typeof(object)));
-			}
-			else
-			{
-				il.Emit(OpCodes.Call, RequestBase.WaitTaskMethod.MakeGenericMethod(methodInfo.ReturnType));
-			}
-
-			// Read task result (if any) and return it
+			// Read result (if any) and return it
 			if (methodInfo.ReturnType != typeof(void))
 			{
-				il.Emit(OpCodes.Ldloc, taskVar);
-				il.Emit(OpCodes.Call, taskType.GetProperty(nameof(Task<object>.Result)).GetGetMethod());
+				il.Emit(OpCodes.Ldloc, reqVar);
+				il.Emit(OpCodes.Call, reqType.BaseType.GetMethod(nameof(DatabaseTask<int>.GetResult)));
 			}
 
 			il.Emit(OpCodes.Ret);
@@ -421,19 +388,20 @@ public static class ConnectionFactory
 	private static Type CreateRequestType(MethodInfo methodInfo, FieldInfo deserializerField,
 		ParameterInfo[] parameters, Type[] paramTypes, out ConstructorInfo ctor)
 	{
-		TypeBuilder reqTypeBuilder = moduleBuilder.DefineType("__" + Guid.NewGuid().ToString("N"),
-			TypeAttributes.Class | TypeAttributes.Public, typeof(RequestBase));
+		Type baseReqType = GetDatabaseTaskSourceType(methodInfo);
 
-		Type[] ctorParams = new Type[3 + parameters.Length];
+		TypeBuilder reqTypeBuilder = moduleBuilder.DefineType("__" + Guid.NewGuid().ToString("N"),
+			TypeAttributes.Class | TypeAttributes.Public, baseReqType);
+
+		Type[] ctorParams = new Type[2 + parameters.Length];
 		ctorParams[0] = typeof(string);
 		ctorParams[1] = typeof(int);
-		ctorParams[2] = typeof(object);
 
 		FieldInfo[] paramFields = new FieldInfo[paramTypes.Length];
 		for (int i = 0; i < paramTypes.Length; i++)
 		{
 			paramFields[i] = reqTypeBuilder.DefineField(parameters[i].Name, parameters[i].ParameterType, FieldAttributes.Private);
-			ctorParams[i + 3] = parameters[i].ParameterType;
+			ctorParams[i + 2] = parameters[i].ParameterType;
 		}
 
 		ConstructorBuilder ctorBuilder = reqTypeBuilder.DefineConstructor(MethodAttributes.Public, CallingConventions.Standard, ctorParams);
@@ -442,20 +410,30 @@ public static class ConnectionFactory
 		il.Emit(OpCodes.Ldarg_0);
 		il.Emit(OpCodes.Ldarg_1);
 		il.Emit(OpCodes.Ldarg_2);
-		il.Emit(OpCodes.Ldarg_3);
-		il.Emit(OpCodes.Call, RequestBase.ConstructorMethod);
+
+		ConstructorInfo ctorInfo;
+		if (baseReqType == typeof(DatabaseTask))
+		{
+			ctorInfo = DatabaseTask.ConstructorMethod;
+		}
+		else
+		{
+			ctorInfo = baseReqType.GetConstructor(BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+				new Type[] { typeof(string), typeof(int) });
+		}
+
+		il.Emit(OpCodes.Call, ctorInfo);
 
 		for (int i = 0; i < paramTypes.Length; i++)
 		{
 			il.Emit(OpCodes.Ldarg_0);
-			il.Emit(OpCodes.Ldarg, i + 4);
+			il.Emit(OpCodes.Ldarg, i + 3);
 			il.Emit(OpCodes.Stfld, paramFields[i]);
 		}
 
 		il.Emit(OpCodes.Ret);
 
 		CreateRequestExecuteMethod(reqTypeBuilder, methodInfo, paramTypes, paramFields, deserializerField);
-		CreateRequestSetErrorMethod(reqTypeBuilder, methodInfo);
 		CreateRequestOperationTypeMethod(reqTypeBuilder, methodInfo);
 
 		Type reqType = reqTypeBuilder.CreateType();
@@ -466,7 +444,7 @@ public static class ConnectionFactory
 	private static void CreateRequestExecuteMethod(TypeBuilder typeBuilder, MethodInfo methodInfo, Type[] paramTypes,
 		FieldInfo[] paramFields, FieldInfo deserializerField)
 	{
-		MethodBuilder method = typeBuilder.DefineMethod(nameof(RequestBase.TryExecute),
+		MethodBuilder method = typeBuilder.DefineMethod(nameof(DatabaseTask.TryExecute),
 			MethodAttributes.Public | MethodAttributes.Virtual | MethodAttributes.HideBySig, typeof(bool), EmptyArray<Type>.Instance);
 
 		ILGenerator il = method.GetILGenerator();
@@ -474,31 +452,24 @@ public static class ConnectionFactory
 		DbAPIOperationAttribute dboa = methodInfo.GetCustomAttribute<DbAPIOperationAttribute>();
 		DbAPIObjectGraphSupportType objectGraphSupport = dboa == null ? DbAPIObjectGraphSupportType.Both : dboa.ObjectGraphSupport;
 
-		// Get task completion source and store it in a variable
-		Type tcsType = GetMethodTaskCompletionSourceType(methodInfo);
-		LocalBuilder tcsVar = il.DeclareLocal(tcsType);
-		il.Emit(OpCodes.Ldarg_0);
-		il.Emit(OpCodes.Call, RequestBase.GetTCSMethod);
-		il.Emit(OpCodes.Stloc, tcsVar);
-
 		// Get connection and store it in a variable
 		LocalBuilder connVar = il.DeclareLocal(typeof(PooledConnection));
 		il.Emit(OpCodes.Ldarg_0);
-		il.Emit(OpCodes.Call, RequestBase.GetConnectionMethod);
+		il.Emit(OpCodes.Call, DatabaseTask.GetConnectionMethod);
 		il.Emit(OpCodes.Stloc, connVar);
 
 		// Get serializer manager and store it in a variable
 		LocalBuilder serMgrVar = il.DeclareLocal(typeof(SerializerManager));
 		il.Emit(OpCodes.Ldarg_0);
-		il.Emit(OpCodes.Call, RequestBase.GetSerializerManagerMethod);
+		il.Emit(OpCodes.Call, DatabaseTask.GetSerializerManagerMethod);
 		il.Emit(OpCodes.Stloc, serMgrVar);
 
 		// Get serializer and store it in a variable (if there are input parameters in the method)
 		Type serializerType = paramTypes.Length == 0 ? typeof(SerializerDelegate) :
-			RequestBase.SerializerDelegateGenericTypes[paramTypes.Length].MakeGenericType(paramTypes);
+			DatabaseTask.SerializerDelegateGenericTypes[paramTypes.Length].MakeGenericType(paramTypes);
 		LocalBuilder serVar = il.DeclareLocal(serializerType);
 		il.Emit(OpCodes.Ldarg_0);
-		il.Emit(OpCodes.Call, RequestBase.GetSerializerMethod);
+		il.Emit(OpCodes.Call, DatabaseTask.GetSerializerMethod);
 		il.Emit(OpCodes.Castclass, serializerType);
 		il.Emit(OpCodes.Stloc, serVar);
 
@@ -506,7 +477,7 @@ public static class ConnectionFactory
 		Label skipNoSerializerLabel = il.DefineLabel();
 		il.Emit(OpCodes.Ldloc, serVar);
 		il.Emit(OpCodes.Brtrue, skipNoSerializerLabel);
-		il.Emit(OpCodes.Call, RequestBase.ThrowMismatchMethod);
+		il.Emit(OpCodes.Call, DatabaseTask.ThrowMismatchMethod);
 		il.MarkLabel(skipNoSerializerLabel);
 
 		// Call SerializerContext.Init
@@ -534,8 +505,8 @@ public static class ConnectionFactory
 
 		il.Emit(OpCodes.Ldarg_0);   // this pointer is the request object
 
-		MethodInfo sendMethod = paramFields.Length == 0 ? RequestBase.SendRequestMethods[0] :
-			RequestBase.SendRequestMethods[paramFields.Length].MakeGenericMethod(paramTypes);
+		MethodInfo sendMethod = paramFields.Length == 0 ? DatabaseTask.SendRequestMethods[0] :
+			DatabaseTask.SendRequestMethods[paramFields.Length].MakeGenericMethod(paramTypes);
 		il.Emit(OpCodes.Call, sendMethod);
 
 		LocalBuilder resVar = il.DeclareLocal(typeof(bool));
@@ -545,32 +516,9 @@ public static class ConnectionFactory
 		il.Emit(OpCodes.Ret);
 	}
 
-	private static void CreateRequestSetErrorMethod(TypeBuilder typeBuilder, MethodInfo methodInfo)
-	{
-		MethodBuilder method = typeBuilder.DefineMethod(nameof(RequestBase.SetErrorResult),
-			MethodAttributes.Public | MethodAttributes.Virtual | MethodAttributes.HideBySig,
-			null, new Type[] { typeof(Exception) });
-
-		ILGenerator il = method.GetILGenerator();
-
-		// Get task completion source and store it in a variable
-		Type tcsType = GetMethodTaskCompletionSourceType(methodInfo);
-		LocalBuilder tcsVar = il.DeclareLocal(tcsType);
-		il.Emit(OpCodes.Ldarg_0);
-		il.Emit(OpCodes.Call, RequestBase.GetTCSMethod);
-		il.Emit(OpCodes.Stloc, tcsVar);
-
-		// Set exception to task completion source
-		il.Emit(OpCodes.Ldloc, tcsVar);
-		il.Emit(OpCodes.Ldarg_1);
-		il.Emit(OpCodes.Call, tcsType.GetMethod(nameof(TaskCompletionSource<object>.SetException), new Type[] { typeof(Exception) }));
-
-		il.Emit(OpCodes.Ret);
-	}
-
 	private static void CreateRequestOperationTypeMethod(TypeBuilder typeBuilder, MethodInfo methodInfo)
 	{
-		MethodBuilder method = typeBuilder.DefineMethod(nameof(RequestBase.GetOperationType),
+		MethodBuilder method = typeBuilder.DefineMethod(nameof(DatabaseTask.GetOperationType),
 			MethodAttributes.Public | MethodAttributes.Virtual | MethodAttributes.HideBySig,
 			typeof(DbAPIOperationType), EmptyArray<Type>.Instance);
 

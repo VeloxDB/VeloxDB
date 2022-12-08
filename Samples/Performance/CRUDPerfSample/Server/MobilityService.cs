@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Diagnostics;
 using API;
+using Velox.Client;
 using Velox.ObjectInterface;
 using Velox.Protocol;
 
@@ -28,7 +29,7 @@ public sealed class MobilityService
 	{
 		for (int i = 0; i < vehicleIds.Length; i++)
 		{
-			Vehicle v = om.GetObject<Vehicle>(vehicleIds[i]);
+			Vehicle v = om.GetObject<Vehicle>(vehicleIds[i])!;
 			v.PositionX = positionX;
 			v.PositionY = positionY;
 		}
@@ -39,8 +40,8 @@ public sealed class MobilityService
 	{
 		for (int i = 0; i < srcVehicleIds.Length; i++)
 		{
-			Vehicle src = om.GetObject<Vehicle>(srcVehicleIds[i]);
-			Vehicle dst = om.GetObject<Vehicle>(dstVehicleIds[i]);
+			Vehicle src = om.GetObject<Vehicle>(srcVehicleIds[i])!;
+			Vehicle dst = om.GetObject<Vehicle>(dstVehicleIds[i])!;
 			dst.PositionX = src.PositionX;
 			dst.PositionY = src.PositionY;
 		}
@@ -51,7 +52,7 @@ public sealed class MobilityService
 	{
 		for (int i = 0; i < vehicleIds.Length; i++)
 		{
-			om.GetObject<Vehicle>(vehicleIds[i]).Delete();
+			om.GetObject<Vehicle>(vehicleIds[i])!.Delete();
 		}
 	}
 
@@ -74,7 +75,7 @@ public sealed class MobilityService
 	{
 		for (int i = 0; i < rideDTOs.Length; i++)
 		{
-			Ride r = om.GetObject<Ride>(rideDTOs[i].Id);
+			Ride r = om.GetObject<Ride>(rideDTOs[i].Id)!;
 			r.FromDTO(om, rideDTOs[i]);
 		}
 	}
@@ -84,7 +85,7 @@ public sealed class MobilityService
 	{
 		for (int i = 0; i < rideIds.Length; i++)
 		{
-			om.GetObject<Ride>(rideIds[i]).Delete();
+			om.GetObject<Ride>(rideIds[i])!.Delete();
 		}
 	}
 
@@ -94,10 +95,16 @@ public sealed class MobilityService
 		VehicleDTO[] vehiclesDTOs = new VehicleDTO[vehicleIds.Length];
 		for (int i = 0; i < vehicleIds.Length; i++)
 		{
-			vehiclesDTOs[i] = om.GetObject<Vehicle>(vehicleIds[i]).ToDTO();
+			vehiclesDTOs[i] = om.GetObject<Vehicle>(vehicleIds[i])!.ToDTO();
 		}
 
 		return vehiclesDTOs;
+	}
+
+	[DbAPIOperation(ObjectGraphSupport = DbAPIObjectGraphSupportType.None, OperationType = DbAPIOperationType.Read)]
+	public int GetVehicleYear(ObjectModel om, long id)
+	{
+		return om.GetObject<Vehicle>(id)!.Year;
 	}
 
 	[DbAPIOperation(ObjectGraphSupport = DbAPIObjectGraphSupportType.None, OperationType = DbAPIOperationType.Read)]
@@ -106,7 +113,7 @@ public sealed class MobilityService
 		VehicleDTO[] vehiclesDTOs = new VehicleDTO[rideIds.Length];
 		for (int i = 0; i < rideIds.Length; i++)
 		{
-			Ride ride = om.GetObject<Ride>(rideIds[i]);
+			Ride ride = om.GetObject<Ride>(rideIds[i])!;
 			vehiclesDTOs[i] = ride.Vehicle.ToDTO();
 		}
 
@@ -119,7 +126,7 @@ public sealed class MobilityService
 		RideDTO[][] rideDTOs = new RideDTO[vehicleIds.Length][];
 		for (int i = 0; i < vehicleIds.Length; i++)
 		{
-			Vehicle vehicle = om.GetObject<Vehicle>(vehicleIds[i]);
+			Vehicle vehicle = om.GetObject<Vehicle>(vehicleIds[i])!;
 			rideDTOs[i] = vehicle.Rides.Select(x => x.ToDTO()).ToArray();
 		}
 

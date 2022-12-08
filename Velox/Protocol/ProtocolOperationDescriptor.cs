@@ -1,8 +1,9 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
+using Velox.Client;
 using Velox.Common;
 using Velox.Networking;
 
@@ -71,9 +72,9 @@ internal sealed class ProtocolOperationDescriptor
 		}
 
 		Type retType = method.ReturnType;
-		if (retType == typeof(Task))
+		if (retType == typeof(DatabaseTask))
 			retType = typeof(void);
-		else if (retType.IsGenericType && retType.GetGenericTypeDefinition() == typeof(Task<>))
+		else if (retType.IsGenericType && retType.GetGenericTypeDefinition() == typeof(DatabaseTask<>))
 			retType = retType.GetGenericArguments()[0];
 
 		DbAPIOperationErrorAttribute[] excAttrs = method.GetCustomAttributes<DbAPIOperationErrorAttribute>(false).ToArray();

@@ -50,7 +50,7 @@ internal unsafe class ChangesetWriterPool
 {
 	const int poolSize = 32;
 
-	MultiSpinLock sync = new MultiSpinLock(true);
+	MultiSpinLock sync = new MultiSpinLock();
 
 	MemoryManager memoryManager;
 
@@ -66,7 +66,7 @@ internal unsafe class ChangesetWriterPool
 		for (int i = 0; i < pools.Length; i++)
 		{
 			pools[i] = new ChangesetWriter[poolSize + AlignedAllocator.CacheLineSize];  // Enforce that no two pools share cache lines
-			int* pc = (int*)(poolCounts + (i << AlignedAllocator.CacheLineSizeLog));
+			int* pc = (int*)CacheLineMemoryManager.GetBuffer(poolCounts, i);
 			*pc = poolSize;
 			for (int j = 0; j < poolSize; j++)
 			{
@@ -82,7 +82,7 @@ internal unsafe class ChangesetWriterPool
 		int lockHandle = sync.Enter();
 		ChangesetWriter writer = null;
 
-		int* pc = (int*)(poolCounts + (lockHandle << AlignedAllocator.CacheLineSizeLog));
+		int* pc = (int*)CacheLineMemoryManager.GetBuffer(poolCounts, lockHandle);
 		if (*pc > 0)
 			writer = pools[lockHandle][--(*pc)];
 
@@ -101,7 +101,7 @@ internal unsafe class ChangesetWriterPool
 		int lockHandle = writer.ProcNum;
 		sync.Enter(lockHandle);
 
-		int* pc = (int*)(poolCounts + (lockHandle << AlignedAllocator.CacheLineSizeLog));
+		int* pc = (int*)CacheLineMemoryManager.GetBuffer(poolCounts, lockHandle);
 		if (*pc < poolSize)
 			pools[lockHandle][(*pc)++] = writer;
 
@@ -970,7 +970,7 @@ internal unsafe sealed class LogChangesetWriter
 	private void DefineMissingProperties()
 	{
 		userPropertyCount = propertyCount;
-		if (propertyCount == classDesc.Properties.Length - 1 || operationType != OperationType.Insert)	// Version is never defined in changeset
+		if (propertyCount == classDesc.Properties.Length - 1 || operationType != OperationType.Insert)  // Version is never defined in changeset
 			return;
 
 		for (int i = 2; i < classDesc.Properties.Length; i++)
@@ -1288,7 +1288,7 @@ internal unsafe sealed class LogChangesetWriter
 		if (operationType != OperationType.Delete)
 			throw new InvalidOperationException("Active block is not a delete block.");
 
-		WriteLong(0);		// Place holder for previous version
+		WriteLong(0);       // Place holder for previous version
 		WriteLong(id);
 		CheckIfOperationComplete();
 	}

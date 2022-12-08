@@ -1,4 +1,5 @@
 ﻿using System;
+using Velox.Common;
 using Velox.Descriptor;
 
 namespace Velox.Storage.Replication;
@@ -29,12 +30,14 @@ internal sealed class UnreplicatedReplicator : IReplicator
 		return true;
 	}
 
-	public void PostTransactionCommit(Transaction tran, bool isCommited)
+	public void PostTransactionCommit(Transaction tran, bool isCommited, int handle)
 	{
+		Checker.AssertTrue(handle == -1);
 	}
 
-	public void PreTransactionCommit(Transaction tran)
+	public void PreTransactionCommit(Transaction tran, out int handle)
 	{
+		handle = -1;
 	}
 
 	public void Start()
@@ -45,7 +48,7 @@ internal sealed class UnreplicatedReplicator : IReplicator
 	{
 	}
 
-#if TEST_BUILD	
+#if TEST_BUILD
 	public IReplica FindReplica(string replicaName)
 	{
 		return null;

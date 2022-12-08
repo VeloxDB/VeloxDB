@@ -7,28 +7,28 @@ internal sealed class ServerConnection : Connection
 {
 	Host host;
 
-	public ServerConnection(Host host, Socket socket, int bufferPoolSize, TimeSpan inactivityInterval,
+	public ServerConnection(Host host, Socket socket, MessageChunkPool chunkPool, TimeSpan inactivityInterval,
 		TimeSpan inactivityTimeout, int maxQueuedChunkCount, bool groupSmallMessages, HandleMessageDelegate messageHandler) :
-		base(socket, bufferPoolSize, inactivityInterval, inactivityTimeout, maxQueuedChunkCount, groupSmallMessages, messageHandler)
+		base(socket, chunkPool, inactivityInterval, inactivityTimeout, maxQueuedChunkCount, groupSmallMessages, messageHandler)
 	{
 		this.host = host;
 
 		if (inactivityTimeout != TimeSpan.MaxValue)
 			NativeSocket.TurnOnKeepAlive(socket.Handle, inactivityInterval, inactivityTimeout);
 
-		socket.NoDelay = true;
-		socket.ReceiveBufferSize = MessageChunk.LargeBufferSize * 2;
-		socket.SendBufferSize = MessageChunk.LargeBufferSize * 2;
+		socket.NoDelay = false;
+		socket.ReceiveBufferSize = tcpBufferSize;
+		socket.SendBufferSize = tcpBufferSize;
 
 		// Start receiving immediately since we are connected
-		StartReceivingAsync();
+		StartReceiving();
 	}
 
-	protected override long BaseMsgId => long.MinValue;
+	public override ulong MessageIdBit => 0x8000000000000000;
 
-	protected override bool IsResponseMessage(long msgId)
+	protected override bool IsResponseMessage(ulong msgId)
 	{
-		return msgId < 0;
+		return (msgId & 0x8000000000000000) == 0x8000000000000000;
 	}
 
 	protected override void OnDisconnected()

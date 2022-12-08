@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
@@ -13,27 +12,42 @@ namespace Velox.Client;
 
 internal class ConnectionPool
 {
-	RWSpinLockFair fastSync;
+	MultiSpinRWLock fastSync;
 	TaskCompletionSource connAvailableEvent;
 
 	string connectionString;
 	ConnectionStringParams connParams;
 
+	object currIndexesHandle;
+	IntPtr currIndexes;
+
 	int pendingOpenCount;
-	int currIndex;
 	int connectionCount;
 	ConnectionEntry[] connections;
 	Stopwatch timer;
 
-	public ConnectionPool(string connectionString)
+	MessageChunkPool chunkPool;
+
+	public unsafe ConnectionPool(MessageChunkPool chunkPool, string connectionString)
 	{
+		this.chunkPool = chunkPool;
+
+		fastSync = new MultiSpinRWLock();
+
 		connAvailableEvent = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
 		this.connectionString = connectionString;
 
 		connParams = new ConnectionStringParams(connectionString);
+		currIndexes = (IntPtr)CacheLineMemoryManager.Allocate(sizeof(long), out currIndexesHandle);
 		connections = new ConnectionEntry[connParams.PoolSize];
 		timer = Stopwatch.StartNew();
+	}
+
+	~ConnectionPool()
+	{
+		CacheLineMemoryManager.Free(currIndexesHandle);
+		fastSync.Dispose();
 	}
 
 	public ConnectionStringParams ConnParams => connParams;
@@ -48,12 +62,12 @@ internal class ConnectionPool
 		}
 	}
 
-	public async ValueTask<ConnectionEntry> GetConnection(bool preferNewer)
+	public void GetConnection(bool preferNewer, Action<ConnectionEntry, Exception, object> continuation, object param)
 	{
 		ConnectionEntry? result = null;
 
 		// The most common case is checked only under read lock
-		fastSync.EnterReadLock();
+		int handle = fastSync.EnterReadLock();
 		try
 		{
 			if (pendingOpenCount == connections.Length - connectionCount && connectionCount > 0)
@@ -63,12 +77,22 @@ internal class ConnectionPool
 		}
 		finally
 		{
-			fastSync.ExitReadLock();
+			fastSync.ExitReadLock(handle);
 		}
 
 		if (result.HasValue)
-			return result.Value;
+		{
+			continuation(result.Value, null, param);
+			return;
+		}
 
+		Task<ConnectionEntry> t = ProvideConnection(preferNewer);
+		t.ContinueWith(x => continuation(x.Result, null, param), TaskContinuationOptions.OnlyOnRanToCompletion);
+		t.ContinueWith(x => continuation(new ConnectionEntry(), x.Exception.InnerException, param), TaskContinuationOptions.OnlyOnFaulted);
+	}
+
+	private async Task<ConnectionEntry> ProvideConnection(bool preferNewer)
+	{
 		while (true)
 		{
 			fastSync.EnterWriteLock();
@@ -104,15 +128,15 @@ internal class ConnectionPool
 
 		try
 		{
-			result = await CreateConnection();
+			ConnectionEntry result = await CreateConnection();
 
 			fastSync.EnterWriteLock();
 			try
 			{
 				Interlocked.Decrement(ref pendingOpenCount);
-				connections[connectionCount++] = result.Value;
+				connections[connectionCount++] = result;
 				connAvailableEvent.TrySetResult();
-				return result.Value;
+				return result;
 			}
 			finally
 			{
@@ -126,7 +150,7 @@ internal class ConnectionPool
 		}
 	}
 
-	private ConnectionEntry GetNextConnection(bool preferNewer)
+	private unsafe ConnectionEntry GetNextConnection(bool preferNewer)
 	{
 		if (preferNewer)
 		{
@@ -140,8 +164,9 @@ internal class ConnectionPool
 			return connections[maxIndex];
 		}
 
-		Interlocked.Increment(ref currIndex);
-		ConnectionEntry res = connections[currIndex % connectionCount];
+		NativeInterlocked64* p = (NativeInterlocked64*)CacheLineMemoryManager.GetBuffer((void*)currIndexes, ProcessorNumber.GetCore());
+		long n = p->Increment();
+		ConnectionEntry res = connections[n % connectionCount];
 		return res;
 	}
 
@@ -191,7 +216,7 @@ internal class ConnectionPool
 		List<Task<ConnectionEntry>> tasks = new List<Task<ConnectionEntry>>(endpoints.Count + 1);
 		for (int i = 0; i < endpoints.Count; i++)
 		{
-			connections.Add(new ClientConnection(endpoints[i], connParams.BufferPoolSize,
+			connections.Add(new ClientConnection(endpoints[i], chunkPool,
 				TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5), int.MaxValue, true, null));
 			tasks.Add(OpenConnection(connections[i]));
 		}
@@ -300,7 +325,7 @@ internal class ConnectionPool
 
 	public void RemoveConnection(PooledConnection connection)
 	{
-		fastSync.ExitWriteLock();
+		fastSync.EnterWriteLock();
 		try
 		{
 			int rem = 0;

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -27,8 +27,8 @@ internal interface IReplicator
 	public ReplicationDescriptor ReplicationDesc { get; }
 	void Start();
 	bool IsTransactionAllowed(long databaseId, TransactionSource source, IReplica sourceReplica, TransactionType type, out DatabaseErrorDetail reason);
-	void PreTransactionCommit(Transaction tran);
-	void PostTransactionCommit(Transaction tran, bool isCommited);
+	void PreTransactionCommit(Transaction tran, out int commitHandle);
+	void PostTransactionCommit(Transaction tran, bool isCommited, int commitHandle);
 	void CommittingTransaction(Transaction tran);
 	void TransactionFailed();
 	IAsyncCleanup Dispose();

@@ -26,30 +26,30 @@ internal sealed class Host
 
 	bool stopped;
 
-	int bufferPoolSize;
+	MessageChunkPool chunkPool;
 	int maxQueuedChunkCount;
 	bool groupSmallMessages;
 
 	int maxOpenConnCount;
 
-	public Host(int backlogSize, int maxOpenConnCount, IPEndPoint endpoint, int bufferPoolSize, TimeSpan inactivityInterval,
+	public Host(int backlogSize, int maxOpenConnCount, IPEndPoint endpoint, MessageChunkPool chunkPool, TimeSpan inactivityInterval,
 		TimeSpan inactivityTimeout, int maxQueuedChunkCount, bool groupSmallMessages, HandleMessageDelegate messageHandler) :
-		this(backlogSize, maxOpenConnCount, new IPEndPoint[] { endpoint }, bufferPoolSize, inactivityInterval, inactivityTimeout,
+		this(backlogSize, maxOpenConnCount, new IPEndPoint[] { endpoint }, chunkPool, inactivityInterval, inactivityTimeout,
 			maxQueuedChunkCount, groupSmallMessages, messageHandler)
 	{
 	}
 
-	public Host(int backlogSize, int maxOpenConnCount, IPEndPoint[] endpoints, int bufferPoolSize, TimeSpan inactivityInterval,
-		TimeSpan inactivityTimeout, int maxQueuedChunkCount,bool groupSmallMessages, HandleMessageDelegate messageHandler)
+	public Host(int backlogSize, int maxOpenConnCount, IPEndPoint[] endpoints, MessageChunkPool chunkPool, TimeSpan inactivityInterval,
+		TimeSpan inactivityTimeout, int maxQueuedChunkCount, bool groupSmallMessages, HandleMessageDelegate messageHandler)
 	{
 		this.endpoints = endpoints;
 		this.inactivityInterval = inactivityInterval;
 		this.inactivityTimeout = inactivityTimeout;
-		this.bufferPoolSize = bufferPoolSize;
 		this.messageHandler = messageHandler;
 		this.maxOpenConnCount = maxOpenConnCount;
 		this.maxQueuedChunkCount = maxQueuedChunkCount;
 		this.groupSmallMessages = groupSmallMessages;
+		this.chunkPool = chunkPool;
 
 		acceptArgs = new SocketAsyncEventArgs[endpoints.Length][];
 		for (int i = 0; i < endpoints.Length; i++)
@@ -142,7 +142,7 @@ internal sealed class Host
 			}
 			else
 			{
-				ServerConnection conn = new ServerConnection(this, socket, bufferPoolSize,
+				ServerConnection conn = new ServerConnection(this, socket, chunkPool,
 					inactivityInterval, inactivityTimeout, maxQueuedChunkCount, groupSmallMessages, messageHandler);
 				connections.Add(conn);
 			}

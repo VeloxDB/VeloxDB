@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Security;
@@ -68,6 +69,29 @@ internal static class NativeAllocator
 		}
 	}
 
+#if HUNT_CORRUPT
+	static HashSet<IntPtr> intPtrs = new HashSet<IntPtr>(1024 * 128);
+
+	public unsafe static void Verify()
+	{
+		lock (intPtrs)
+		{
+			foreach (IntPtr item in intPtrs)
+			{
+				ulong* up = (ulong*)item;
+				if (up[0] != corruptionDetectionValue)
+					throw new CriticalDatabaseException();
+
+				long size = (long)up[1];
+				up = (ulong*)((byte*)item + size - 8);
+
+				if (up[0] != corruptionDetectionValue)
+					throw new CriticalDatabaseException();
+			}
+		}
+	}
+#endif
+
 	public unsafe static IntPtr Allocate(long size, bool zeroedOut = false)
 	{
 #if TEST_BUILD
@@ -98,6 +122,9 @@ internal static class NativeAllocator
 		up[0] = corruptionDetectionValue;
 		up = (ulong*)((byte*)p + size - 8);
 		up[0] = corruptionDetectionValue;
+#if HUNT_CORRUPT
+		intPtrs.Add(p);
+#endif
 		return p + 16;
 #else
 		return p;
@@ -107,6 +134,9 @@ internal static class NativeAllocator
 	public unsafe static void Free(IntPtr p)
 	{
 #if TEST_BUILD
+#if HUNT_CORRUPT
+		intPtrs.Remove(p - 16);
+#endif
 		ulong* up = (ulong*)(p - 16);
 		if (up[0] != corruptionDetectionValue)
 			throw new CriticalDatabaseException();

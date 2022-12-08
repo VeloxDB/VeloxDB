@@ -64,66 +64,6 @@ internal sealed class FastHashSet<TKey>
 		return false;
 	}
 
-	public bool Remove(TKey key)
-	{
-		int bucket = GetBucket(key);
-		int index = buckets[bucket];
-
-		if (index == 0)
-			return false;
-
-		if (comparer.Equals(entries[index].key, key))
-		{
-			buckets[bucket] = entries[index].next;
-		}
-		else
-		{
-			int prevIndex = index;
-			index = entries[index].next;
-			while (index != 0 && !comparer.Equals(entries[index].key, key))
-			{
-				prevIndex = index;
-				index = entries[index].next;
-			}
-
-			if (index == 0)
-				return false;
-
-			entries[prevIndex].next = entries[index].next;
-		}
-
-		RemoveEntry(index);
-		return true;
-	}
-
-	private void RemoveEntry(int index)
-	{
-		if (index == count)
-		{
-			count--;
-			return;
-		}
-
-		entries[index] = entries[count];
-		entries[count].key = default(TKey);
-
-		int bucket = GetBucket(entries[count].key);
-		if (buckets[bucket] == count)
-		{
-			buckets[bucket] = index;
-		}
-		else
-		{
-			int tindex = buckets[bucket];
-			while (entries[tindex].next != count)
-				tindex = entries[tindex].next;
-
-			entries[tindex].next = index;
-		}
-
-		count--;
-	}
-
 	public void Clear()
 	{
 		if (count >= (int)limitCapacity / 32)

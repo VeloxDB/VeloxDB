@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Drawing;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Velox.Common;
@@ -22,10 +23,10 @@ internal unsafe struct ClassIndexMultiSet
 
 	public static ClassIndexMultiSet* Create(int capacity, MemoryManager memoryManager)
 	{
-		ulong handle = memoryManager.Allocate((int)(dataOffset + capacity * sizeof(ushort) * 2));
+		ulong handle = memoryManager.Allocate((int)(dataOffset + capacity * (Bucket.Size * sizeof(ushort))));
 
 		ClassIndexMultiSet* p = (ClassIndexMultiSet*)memoryManager.GetBuffer(handle);
-		Utils.FillMemory((byte*)p + dataOffset, capacity * sizeof(ushort), 0xff);
+		Utils.FillMemory((byte*)p + dataOffset, capacity * Bucket.Size, 0xff);
 
 		p->bufferHandle = handle;
 		p->count = 0;
@@ -36,54 +37,65 @@ internal unsafe struct ClassIndexMultiSet
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public static ushort GetClassIndex(ClassIndexMultiSet* set, int index)
+	public static ushort GetClassIndex(ClassIndexMultiSet* set, int index, out ushort count)
 	{
-		ushort* buckets = (ushort*)((byte*)set + dataOffset);
-		ushort* list = (ushort*)((byte*)set + dataOffset) + set->capacity;
-		return buckets[list[index]];
+		Bucket* buckets = (Bucket*)((byte*)set + dataOffset);
+		ushort* list = (ushort*)(buckets + set->capacity);
+		buckets += list[index];
+		count = buckets->count;
+		return buckets->index;
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static bool Contains(ClassIndexMultiSet* set, ushort classIndex)
 	{
-		ushort* buckets = (ushort*)((byte*)set + dataOffset);
+		Bucket* buckets = (Bucket*)((byte*)set + dataOffset);
 
-		int bucket = CalculateBucket(set, classIndex);
+		int bucketIndex = CalculateBucket(set, classIndex);
 		while (true)
 		{
-			if (buckets[bucket] == classIndex)
+			Bucket* bucket = buckets + bucketIndex;
+			if (bucket->index == classIndex)
 				return true;
 
-			if (buckets[bucket] == ushort.MaxValue)
+			if (bucket->index == ushort.MaxValue)
 				return false;
 
-			bucket = (bucket + 1) & (set->capacity - 1);
+			bucketIndex = (bucketIndex + 1) & (set->capacity - 1);
 		}
 	}
 
-	public static bool TryAdd(MemoryManager memoryManager, ref ClassIndexMultiSet* pset, ushort classIndex, bool addIfExists = false)
+	public static bool TryAdd(MemoryManager memoryManager, ref ClassIndexMultiSet* pset, ushort classIndex, bool addIfExists = false, ushort addCount = 1)
 	{
-		ClassIndexMultiSet* set = pset;	// Avoid double dereferencing (because of ref param)
+		ClassIndexMultiSet* set = pset; // Avoid double dereferencing (because of ref param)
 
-		ushort* buckets = (ushort*)((byte*)set + dataOffset);
+		Bucket* buckets = (Bucket*)((byte*)set + dataOffset);
 
-		var bucket = CalculateBucket(set, classIndex);
+		int bucketIndex = CalculateBucket(set, classIndex);
 
 		while (true)
 		{
-			if (buckets[bucket] == classIndex && !addIfExists)
-				return false;
+			Bucket* bucket = buckets + bucketIndex;
+			if (bucket->index == classIndex)
+			{
+				if (!addIfExists)
+					return false;
 
-			if (buckets[bucket] == ushort.MaxValue)
+				buckets[bucketIndex].count += addCount;
+				return true;
+			}
+
+			if (bucket->index == ushort.MaxValue)
 				break;
 
-			bucket = (bucket + 1) & (set->capacity - 1);
+			bucketIndex = (bucketIndex + 1) & (set->capacity - 1);
 		}
 
-		buckets[bucket] = classIndex;
+		buckets[bucketIndex].index = classIndex;
+		buckets[bucketIndex].count = addCount;
 
-		ushort* list = buckets + set->capacity;
-		list[set->count] = (ushort)bucket;
+		ushort* list = (ushort*)(buckets + set->capacity);
+		list[set->count] = (ushort)bucketIndex;
 		set->count++;
 
 		if (set->count > set->limitCapacity)
@@ -94,19 +106,20 @@ internal unsafe struct ClassIndexMultiSet
 
 	public static void Clear(ClassIndexMultiSet* set)
 	{
-		ushort* buckets = (ushort*)((byte*)set + dataOffset);
+		Bucket* buckets = (Bucket*)((byte*)set + dataOffset);
 
 		if (set->count <= (set->capacity >> 2))
 		{
-			ushort* list = buckets + set->capacity;
+			ushort* list = (ushort*)(buckets + set->capacity);
 			for (int i = 0; i < set->count; i++)
 			{
-				buckets[list[i]] = ushort.MaxValue;
+				Bucket* bucket = buckets + list[i];
+				bucket->index = ushort.MaxValue;
 			}
 		}
 		else
 		{
-			Utils.FillMemory((byte*)buckets, set->capacity * sizeof(ushort), 0xff);
+			Utils.FillMemory((byte*)buckets, set->capacity * Bucket.Size, 0xff);
 		}
 
 		set->count = 0;
@@ -121,7 +134,8 @@ internal unsafe struct ClassIndexMultiSet
 	{
 		for (int i = 0; i < set2->count; i++)
 		{
-			TryAdd(memoryManger, ref set1, GetClassIndex(set2, i), true);
+			ushort index = GetClassIndex(set2, i, out ushort indexCount);
+			TryAdd(memoryManger, ref set1, index, true, indexCount);
 		}
 
 		Clear(set2);
@@ -139,17 +153,26 @@ internal unsafe struct ClassIndexMultiSet
 			return;
 
 		ClassIndexMultiSet* set1 = set;
-		ClassIndexMultiSet* set2 = Create(set1->capacity * 2, memoryManager);
+		ClassIndexMultiSet* set2 = Create(Math.Min(ushort.MaxValue, set1->capacity * 2), memoryManager);
 
 		int count = set1->count;
-		ushort* buckets = (ushort*)((byte*)set1 + dataOffset);
-		ushort* list = buckets + set1->capacity;
+		Bucket* buckets = (Bucket*)((byte*)set1 + dataOffset);
+		ushort* list = (ushort*)(buckets + set1->capacity);
 		for (int i = 0; i < count; i++)
 		{
-			TryAdd(null, ref set2, (ushort)(buckets[list[i]]), true);
+			Bucket* bucket = buckets + list[i];
+			TryAdd(null, ref set2, bucket->index, true, bucket->count);
 		}
 
 		Destroy(memoryManager, set1);
 		set = set2;
+	}
+
+	private struct Bucket
+	{
+		public const int Size = 4;
+
+		public ushort index;
+		public ushort count;
 	}
 }

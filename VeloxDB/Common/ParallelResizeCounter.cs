@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Diagnostics;
+using System.Reflection.Metadata;
 using System.Runtime.CompilerServices;
 using System.Threading;
 
@@ -18,7 +19,7 @@ internal unsafe sealed class ParallelResizeCounter : IDisposable
 	long countLimit;
 
 	bool singleThreaded;
-	
+
 	public ParallelResizeCounter(long countLimit)
 	{
 		this.countLimit = countLimit;
@@ -35,7 +36,7 @@ internal unsafe sealed class ParallelResizeCounter : IDisposable
 			long tc = totalCount;
 			for (int i = 0; i < ProcessorNumber.CoreCount; i++)
 			{
-				long* lp = (long*)((byte*)deltaCounts + (i << AlignedAllocator.CacheLineSizeLog));
+				long* lp = (long*)CacheLineMemoryManager.GetBuffer(deltaCounts, i);
 				tc += *lp;
 			}
 
@@ -47,14 +48,16 @@ internal unsafe sealed class ParallelResizeCounter : IDisposable
 	public int EnterReadLock()
 	{
 		int handle = ProcessorNumber.GetCore();
-		((RWSpinLockFair*)((byte*)syncs + (handle << AlignedAllocator.CacheLineSizeLog)))->EnterReadLock();
+		RWSpinLockFair* rw = (RWSpinLockFair*)CacheLineMemoryManager.GetBuffer(syncs, handle);
+		rw->EnterReadLock();
 		return handle;
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public void ExitReadLock(int handle)
 	{
-		((RWSpinLockFair*)((byte*)syncs + (handle << AlignedAllocator.CacheLineSizeLog)))->ExitReadLock();
+		RWSpinLockFair* rw = (RWSpinLockFair*)CacheLineMemoryManager.GetBuffer(syncs, handle);
+		rw->ExitReadLock();
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -62,7 +65,8 @@ internal unsafe sealed class ParallelResizeCounter : IDisposable
 	{
 		for (int i = 0; i < ProcessorNumber.CoreCount; i++)
 		{
-			((RWSpinLockFair*)((byte*)syncs + (i << AlignedAllocator.CacheLineSizeLog)))->EnterWriteLock();
+			RWSpinLockFair* rw = (RWSpinLockFair*)CacheLineMemoryManager.GetBuffer(syncs, i);
+			rw->EnterWriteLock();
 		}
 	}
 
@@ -71,7 +75,8 @@ internal unsafe sealed class ParallelResizeCounter : IDisposable
 	{
 		for (int i = 0; i < ProcessorNumber.CoreCount; i++)
 		{
-			((RWSpinLockFair*)((byte*)syncs + (i << AlignedAllocator.CacheLineSizeLog)))->ExitWriteLock();
+			RWSpinLockFair* rw = (RWSpinLockFair*)CacheLineMemoryManager.GetBuffer(syncs, i);
+			rw->ExitWriteLock();
 		}
 	}
 
@@ -91,7 +96,7 @@ internal unsafe sealed class ParallelResizeCounter : IDisposable
 		}
 		else
 		{
-			NativeInterlocked64* lp = (NativeInterlocked64*)((byte*)deltaCounts + (handle << AlignedAllocator.CacheLineSizeLog));
+			NativeInterlocked64* lp = (NativeInterlocked64*)CacheLineMemoryManager.GetBuffer(deltaCounts, handle);
 			long c = lp->Increment();
 			if (c <= triggerLimit)
 				return false;
@@ -116,7 +121,7 @@ internal unsafe sealed class ParallelResizeCounter : IDisposable
 		}
 		else
 		{
-			NativeInterlocked64* lp = (NativeInterlocked64*)((byte*)deltaCounts + (handle << AlignedAllocator.CacheLineSizeLog));
+			NativeInterlocked64* lp = (NativeInterlocked64*)CacheLineMemoryManager.GetBuffer(deltaCounts, handle);
 			long c = lp->Add(amount);
 			if (c <= triggerLimit)
 				return false;
@@ -140,7 +145,7 @@ internal unsafe sealed class ParallelResizeCounter : IDisposable
 		}
 		else
 		{
-			NativeInterlocked64* lp = (NativeInterlocked64*)((byte*)deltaCounts + (handle << AlignedAllocator.CacheLineSizeLog));
+			NativeInterlocked64* lp = (NativeInterlocked64*)CacheLineMemoryManager.GetBuffer(deltaCounts, handle);
 			long c = lp->Decrement();
 			if (c <= -triggerLimit)
 				return;
@@ -164,7 +169,7 @@ internal unsafe sealed class ParallelResizeCounter : IDisposable
 		}
 		else
 		{
-			NativeInterlocked64* lp = (NativeInterlocked64*)((byte*)deltaCounts + (handle << AlignedAllocator.CacheLineSizeLog));
+			NativeInterlocked64* lp = (NativeInterlocked64*)CacheLineMemoryManager.GetBuffer(deltaCounts, handle);
 			long c = lp->Add(-amount);
 			if (c <= -triggerLimit)
 				return;
@@ -189,7 +194,7 @@ internal unsafe sealed class ParallelResizeCounter : IDisposable
 
 		for (int i = 0; i < ProcessorNumber.CoreCount; i++)
 		{
-			long* lp = (long*)((byte*)deltaCounts + (i << AlignedAllocator.CacheLineSizeLog));
+			long* lp = (long*)CacheLineMemoryManager.GetBuffer(deltaCounts, i);
 			totalCount += *lp;
 			*lp = 0;
 		}
@@ -202,7 +207,7 @@ internal unsafe sealed class ParallelResizeCounter : IDisposable
 		totalCount = count;
 		for (int i = 0; i < ProcessorNumber.CoreCount; i++)
 		{
-			long* lp = (long*)((byte*)deltaCounts + (i << AlignedAllocator.CacheLineSizeLog));
+			long* lp = (long*)CacheLineMemoryManager.GetBuffer(deltaCounts, i);
 			*lp = 0;
 		}
 	}

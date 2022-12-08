@@ -12,8 +12,12 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Velox" Version="0.1.11" />
-    <PackageReference Include="VeloxDB" Version="0.1.11" />
+    <Reference Include="vlxdb">
+      <HintPath>..\..\..\..\..\bin\vlxdb.dll</HintPath>
+    </Reference>
+    <Reference Include="vlxl">
+      <HintPath>..\..\..\..\..\bin\vlxl.dll</HintPath>
+    </Reference>
   </ItemGroup>
 
 

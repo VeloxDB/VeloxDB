@@ -128,7 +128,7 @@ internal sealed class PrimarySiteCommand : BindableCommand
 		{
 			try
 			{
-				return nodeAdministration.GetState().Result;
+				return nodeAdministration.GetState().GetResult();
 			}
 			catch (AggregateException e)
 			{

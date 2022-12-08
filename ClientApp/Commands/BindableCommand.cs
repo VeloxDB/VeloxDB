@@ -17,7 +17,7 @@ internal abstract class BindableCommand : Command
 	public string[] NodeEndpoints { get; set; }
 
 	[Param("fbind", "Path to a file containing cluster configuration.", ProgramMode = ProgramMode.Direct)]
-	public string BindFile{ get; set; }
+	public string BindFile { get; set; }
 
 	protected override bool OnPreExecute(Program program)
 	{
@@ -85,7 +85,7 @@ internal abstract class BindableCommand : Command
 		{
 			try
 			{
-				fileData = nodeAdministration.GetClusterConfigFile().Result;
+				fileData = nodeAdministration.GetClusterConfigFile().GetResult();
 			}
 			catch (AggregateException e)
 			{

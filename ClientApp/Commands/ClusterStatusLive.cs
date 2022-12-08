@@ -193,7 +193,7 @@ internal sealed class ClusterStatusLive
 								}
 							}
 
-							if (cluster.Parent.Type == ElementType.GlobalWrite && cluster.IsMember)
+							if (cluster.IsMember && cluster.Parent.Type == ElementType.GlobalWrite)
 							{
 								ReplicaState gwState = GetReplicaState(nodeState, ReplicaType.GlobalWrite);
 								GlobalWriteCluster gwCluster = cluster.Parent as GlobalWriteCluster;
@@ -222,7 +222,7 @@ internal sealed class ClusterStatusLive
 			nameItem = new TextItem() { Text = Text.LimitTextSize(cluster.Name, maxNameWidth), Color = Colors.NodeNameColor };
 			connItem = null;
 			bool isGWPrimary = false;
-			if (cluster.Parent.Type == ElementType.GlobalWrite && cluster.IsMember && primaryNode != null)
+			if (cluster.IsMember && cluster.Parent.Type == ElementType.GlobalWrite && primaryNode != null)
 			{
 				nodeStates.TryGetValue(primaryNode.Name, out NodeState nodeState);
 				ReplicaState gwState = GetReplicaState(nodeState, ReplicaType.GlobalWrite);

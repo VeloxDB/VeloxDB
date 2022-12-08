@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -13,16 +13,16 @@ namespace Velox.Server;
 internal delegate void APIRequestCallback(APIRequest request);
 internal delegate void ParametrizedAPIRequestCallback(ParametrizedAPIRequest request);
 
-internal delegate IPendingRequest InvokeOperationDelegate(object implementation, Connection connection, long requestId,
+internal delegate IPendingRequest InvokeOperationDelegate(object implementation, Connection connection, ulong requestId,
 	MessageReader reader, ProtocolDeserializeDelegate[] deserializerTable, SerializerManager serializerManager);
 
 internal delegate IPendingRequest ParametrizedInvokeOperationDelegate(object param, object implementation,
-	Connection connection, long requestId, MessageReader reader, ProtocolDeserializeDelegate[] deserializerTable,
+	Connection connection, ulong requestId, MessageReader reader, ProtocolDeserializeDelegate[] deserializerTable,
 	SerializerManager serializerManager);
 
 internal sealed class DbAPIHost
 {
-	RWSpinLock sync = new RWSpinLock();
+	MultiSpinRWLock sync = new MultiSpinRWLock();
 
 	int backlogSize;
 	int maxOpenConnCount;
@@ -31,6 +31,7 @@ internal sealed class DbAPIHost
 	TimeSpan inactivityTimeout;
 	int maxQueuedChunkCount;
 
+	MessageChunkPool chunkPool;
 	Host host;
 
 	Dictionary<string, HostedService> services;
@@ -58,13 +59,21 @@ internal sealed class DbAPIHost
 		this.inactivityTimeout = inactivityTimeout;
 		this.maxQueuedChunkCount = maxQueuedChunkCount;
 
+		chunkPool = new MessageChunkPool(bufferPoolSize);
+
 		services = new Dictionary<string, HostedService>(2, StringComparer.OrdinalIgnoreCase);
-		host = new Host(backlogSize, maxOpenConnCount, endpoints, bufferPoolSize,
+		host = new Host(backlogSize, maxOpenConnCount, endpoints, chunkPool,
 			inactivityInterval, inactivityTimeout, maxQueuedChunkCount, true, MessageHandler);
+	}
+
+	~DbAPIHost()
+	{
+		sync.Dispose();
 	}
 
 	public void Stop()
 	{
+		chunkPool.Dispose();
 		host.Stop();
 	}
 
@@ -333,7 +342,7 @@ internal sealed class DbAPIHost
 		return ps[0].ParameterType == requiredParamType;
 	}
 
-	private void MessageHandler(Connection connection, long requestId, MessageReader reader)
+	private void MessageHandler(Connection connection, ulong requestId, MessageReader reader)
 	{
 		try
 		{
@@ -376,7 +385,7 @@ internal sealed class DbAPIHost
 		}
 	}
 
-	private void HandleConnectRequest(Connection connection, long requestId, MessageReader reader)
+	private void HandleConnectRequest(Connection connection, ulong requestId, MessageReader reader)
 	{
 		sync.EnterWriteLock();
 		try
@@ -418,9 +427,9 @@ internal sealed class DbAPIHost
 		throw new DbAPIMismatchException();
 	}
 
-	private void HandleOperationRequest(Connection connection, long requestId, MessageReader reader)
+	private void HandleOperationRequest(Connection connection, ulong requestId, MessageReader reader)
 	{
-		sync.EnterReadLock();
+		int handle = sync.EnterReadLock();
 
 		try
 		{
@@ -445,7 +454,7 @@ internal sealed class DbAPIHost
 
 			try
 			{
-				sync.ExitReadLock();
+				sync.ExitReadLock(handle);
 				try
 				{
 					if (interfaceEntry.RequestCallback != null)
@@ -464,7 +473,7 @@ internal sealed class DbAPIHost
 				}
 				finally
 				{
-					sync.EnterReadLock();
+					handle = sync.EnterReadLock();
 				}
 			}
 			catch (Exception e) when (e is not CriticalDatabaseException)
@@ -478,11 +487,11 @@ internal sealed class DbAPIHost
 		}
 		finally
 		{
-			sync.ExitReadLock();
+			sync.ExitReadLock(handle);
 		}
 	}
 
-	internal static void SendErrorResponse(Connection connection, long requestId, Exception e)
+	internal static void SendErrorResponse(Connection connection, ulong requestId, Exception e)
 	{
 		ResponseType? type = (e as DbAPIErrorException)?.ResponseCode;
 
@@ -555,7 +564,7 @@ internal sealed class DbAPIHost
 
 		paramTypes[n + 0] = typeof(object);
 		paramTypes[n + 1] = typeof(Connection);
-		paramTypes[n + 2] = typeof(long);
+		paramTypes[n + 2] = typeof(ulong);
 		paramTypes[n + 3] = typeof(MessageReader);
 		paramTypes[n + 4] = typeof(ProtocolDeserializeDelegate[]);
 		paramTypes[n + 5] = typeof(SerializerManager);
@@ -578,6 +587,11 @@ internal sealed class DbAPIHost
 		}
 
 		il.Emit(OpCodes.Call, methodDeserializer);
+
+		// Release the last reader chunk
+		il.Emit(OpCodes.Ldarg, n + 1);
+		il.Emit(OpCodes.Ldarg, n + 3);
+		il.Emit(OpCodes.Call, Methods.ConnReleaseLastChunkMethod);
 
 		// Call implementation
 		il.Emit(OpCodes.Ldarg, n + 0);
@@ -732,15 +746,15 @@ internal sealed class PendingRequest : IPendingRequest
 {
 	public static readonly ConstructorInfo CtorInfo = typeof(PendingRequest).GetConstructor(
 		BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-		new Type[] { typeof(Connection), typeof(long), typeof(SerializerDelegate), typeof(SerializerManager), typeof(bool) });
+		new Type[] { typeof(Connection), typeof(ulong), typeof(SerializerDelegate), typeof(SerializerManager), typeof(bool) });
 
 	Connection connection;
-	long requestId;
+	ulong requestId;
 	SerializerManager serializerManager;
 	SerializerDelegate serializer;
 	bool supportObjectGraph;
 
-	public PendingRequest(Connection connection, long requestId, SerializerDelegate serializer,
+	public PendingRequest(Connection connection, ulong requestId, SerializerDelegate serializer,
 		SerializerManager serializerManager, bool supportObjectGraph)
 	{
 		this.connection = connection;
@@ -785,13 +799,13 @@ internal sealed class PendingRequest : IPendingRequest
 internal sealed class PendingRequest<T> : IPendingRequest
 {
 	Connection connection;
-	long requestId;
+	ulong requestId;
 	SerializerManager serializerManager;
 	SerializerDelegate<T> serializer;
 	T result;
 	bool supportObjectGraph;
 
-	public PendingRequest(Connection connection, long requestId, T result,
+	public PendingRequest(Connection connection, ulong requestId, T result,
 		SerializerDelegate<T> serializer, SerializerManager serializerManager, bool supportObjectGraph)
 	{
 		this.connection = connection;
@@ -839,7 +853,7 @@ internal struct APIRequest
 {
 	object implementation;
 	Connection connection;
-	long requestId;
+	ulong requestId;
 	MessageReader reader;
 	ProtocolDeserializeDelegate[] deserializerTable;
 	InvokeOperationDelegate operationInvoker;
@@ -847,7 +861,7 @@ internal struct APIRequest
 	DbAPIOperationType operationType;
 
 	internal APIRequest(InvokeOperationDelegate operationInvoker, object implementation, Connection connection,
-		long requestId, MessageReader reader, ProtocolDeserializeDelegate[] deserializerTable, SerializerManager serializerManager,
+		ulong requestId, MessageReader reader, ProtocolDeserializeDelegate[] deserializerTable, SerializerManager serializerManager,
 		DbAPIOperationType operationType)
 	{
 		this.operationInvoker = operationInvoker;
@@ -872,7 +886,7 @@ internal struct ParametrizedAPIRequest
 {
 	object implementation;
 	Connection connection;
-	long requestId;
+	ulong requestId;
 	MessageReader reader;
 	ProtocolDeserializeDelegate[] deserializerTable;
 	ParametrizedInvokeOperationDelegate operationInvoker;
@@ -880,7 +894,7 @@ internal struct ParametrizedAPIRequest
 	DbAPIOperationType operationType;
 
 	internal ParametrizedAPIRequest(ParametrizedInvokeOperationDelegate operationInvoker, object implementation, Connection connection,
-		long requestId, MessageReader reader, ProtocolDeserializeDelegate[] deserializerTable, SerializerManager serializerManager,
+		ulong requestId, MessageReader reader, ProtocolDeserializeDelegate[] deserializerTable, SerializerManager serializerManager,
 		DbAPIOperationType operationType)
 	{
 		this.operationInvoker = operationInvoker;

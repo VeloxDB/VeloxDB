@@ -38,7 +38,7 @@ internal enum WriteTransactionFlags
 
 internal unsafe sealed partial class Transaction : IDisposable
 {
-	public const int MaxConcurrentTrans = 8192; // Must not be greater than 16k
+	public const int MaxConcurrentTrans = 16384; // Must not be greater than 2^14 because first two bits of slot are used in ReaderInfo
 
 	Database database;
 	Thread managedThread;
@@ -48,7 +48,8 @@ internal unsafe sealed partial class Transaction : IDisposable
 	ulong readVersion;
 	ulong commitVersion;
 
-	int activeListIndex;
+	Transaction prevActiveTran;
+	Transaction nextActiveTran;
 	CollectableCollections collectable;
 
 	bool cancelRequested;
@@ -62,7 +63,6 @@ internal unsafe sealed partial class Transaction : IDisposable
 	{
 		this.database = database;
 		this.Type = type;
-		this.activeListIndex = -1;
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -92,7 +92,6 @@ internal unsafe sealed partial class Transaction : IDisposable
 	public ushort Slot => context.Slot;
 	public ulong ReadVersion => readVersion;
 	public TransactionContext Context => context;
-	public int ActiveListIndex { get => activeListIndex; set => this.activeListIndex = value; }
 	public CollectableCollections Collectable => collectable;
 	public byte AffectedLogGroups { get => context.AffectedLogGroups; set => context.AffectedLogGroups = value; }
 	public IReplica OriginReplica => context.OriginReplica;
@@ -159,6 +158,9 @@ internal unsafe sealed partial class Transaction : IDisposable
 
 	public bool HasActiveClassScans => context != null && context.ClassScans != null && context.ClassScans.Count > 0;
 
+	public Transaction PrevActiveTran { get => prevActiveTran; set => prevActiveTran = value; }
+	public Transaction NextActiveTran { get => nextActiveTran; set => nextActiveTran = value; }
+
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public void StartAsyncCommit()
 	{
@@ -207,7 +209,7 @@ internal unsafe sealed partial class Transaction : IDisposable
 	public void SetPreAssignedCommitVersion(uint localTerm, ulong commitVersion, ulong standbyOrderNum = ulong.MaxValue)
 	{
 		Checker.AssertTrue(Type == TransactionType.ReadWrite);
-		Checker.AssertFalse(IsAlignment);	// Alignment must be set after the preassigned commit id
+		Checker.AssertFalse(IsAlignment);   // Alignment must be set after the preassigned commit id
 
 		context.WriteFlags |= WriteTransactionFlags.PreAssignedCommitVersion;
 		this.commitVersion = commitVersion;

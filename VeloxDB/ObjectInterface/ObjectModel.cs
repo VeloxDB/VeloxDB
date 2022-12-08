@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
@@ -128,7 +128,7 @@ public unsafe sealed partial class ObjectModel
 	{
 		T result = GetObject<T>(id);
 
-		if(result == null)
+		if (result == null)
 		{
 			throw new ArgumentException($"Object of type {typeof(T).Name} with id {id} could not be found.");
 		}
@@ -1102,6 +1102,8 @@ public unsafe sealed partial class ObjectModel
 
 		ApplyChanges(true);
 
+		DisposeInternal(false);
+
 		try
 		{
 			engine.CommitTransactionAsync(transaction, callback);
@@ -1111,8 +1113,6 @@ public unsafe sealed partial class ObjectModel
 			TryStoreException(e);
 			throw;
 		}
-
-		DisposeInternal(false);
 	}
 
 	internal void Dispose()

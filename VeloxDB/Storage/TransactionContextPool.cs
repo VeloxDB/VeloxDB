@@ -6,16 +6,7 @@ namespace Velox.Storage;
 
 internal unsafe class TransactionContextPool : IDisposable
 {
-	// This offset is used to guarantee that each per-core pool array does not share cache lines with other pools
-	// which would cause false cache line sharing in the CPU, ruining parallelism.
-	int perCoreOffset = 16;
-
 	StorageEngine engine;
-
-	readonly object sync = new object();
-
-	int sharedCount;
-	TransactionContext[] sharedPool;
 
 	object allocHandle;
 	MultiSpinLock poolLocks;
@@ -24,33 +15,29 @@ internal unsafe class TransactionContextPool : IDisposable
 
 	int poolCapacity;
 
-	int slotCounter;
-
 	public TransactionContextPool(StorageEngine engine)
 	{
 		TTTrace.Write(engine.TraceId);
 
 		this.engine = engine;
 
-		poolCapacity = Math.Min(Transaction.MaxConcurrentTrans / ProcessorNumber.CoreCount, 32);
+		poolCapacity = Math.Max(Transaction.MaxConcurrentTrans / ProcessorNumber.CoreCount, 32);
 
 		poolCounts = (int*)CacheLineMemoryManager.Allocate(sizeof(int), out allocHandle);
 		pools = new TransactionContext[ProcessorNumber.CoreCount][];
+		int slotCounter = 0;
 		for (int i = 0; i < pools.Length; i++)
 		{
-			int* pcount = ((int*)((byte*)poolCounts + (i << AlignedAllocator.CacheLineSizeLog)));
+			int* pcount = (int*)CacheLineMemoryManager.GetBuffer(poolCounts, i);
 			*pcount = poolCapacity;
-			pools[i] = new TransactionContext[poolCapacity + perCoreOffset * 2];
+			pools[i] = new TransactionContext[poolCapacity];
 			for (int j = 0; j < poolCapacity; j++)
 			{
-				pools[i][perCoreOffset + j] = new TransactionContext(engine, i, (ushort)(++slotCounter));
+				pools[i][j] = new TransactionContext(engine, i, (ushort)(++slotCounter));
 			}
 		}
 
-		poolLocks = new MultiSpinLock(true);
-
-		sharedCount = 0;
-		sharedPool = new TransactionContext[128];
+		poolLocks = new MultiSpinLock();
 	}
 
 	public void ResetAlignmentMode()
@@ -60,10 +47,10 @@ internal unsafe class TransactionContextPool : IDisposable
 			poolLocks.Enter(i);
 			try
 			{
-				int* pcount = ((int*)((byte*)poolCounts + (i << AlignedAllocator.CacheLineSizeLog)));
+				int* pcount = (int*)CacheLineMemoryManager.GetBuffer(poolCounts, i);
 				for (int j = 0; j < *pcount; j++)
 				{
-					TransactionContext tc = pools[i][perCoreOffset + j];
+					TransactionContext tc = pools[i][j];
 					tc.ResetAlignmentMode();
 				}
 			}
@@ -72,32 +59,29 @@ internal unsafe class TransactionContextPool : IDisposable
 				poolLocks.Exit(i);
 			}
 		}
-
-		lock (sync)
-		{
-			for (int i = 0; i < sharedCount; i++)
-			{
-				sharedPool[i].ResetAlignmentMode();
-			}
-		}
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public TransactionContext Get()
 	{
+		TransactionContext tc = null;
 		int lockHandle = poolLocks.Enter();
 		try
 		{
-			int* pcount = ((int*)((byte*)poolCounts + (lockHandle << AlignedAllocator.CacheLineSizeLog)));
+			int* pcount = (int*)CacheLineMemoryManager.GetBuffer(poolCounts, lockHandle);
 			if (*pcount > 0)
-				return pools[lockHandle][perCoreOffset + (--(*pcount))];
+				tc = pools[lockHandle][--(*pcount)];
 		}
 		finally
 		{
 			poolLocks.Exit(lockHandle);
 		}
 
-		return GetShared();
+		if (tc == null)
+			tc = Borrow(lockHandle);
+
+		tc.Allocate();
+		return tc;
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -105,17 +89,12 @@ internal unsafe class TransactionContextPool : IDisposable
 	{
 		int lockHandle = tc.PoolIndex;
 
-		if (lockHandle == -1)
-		{
-			PutShared(tc);
-			return;
-		}
-
 		poolLocks.Enter(lockHandle);
 		try
 		{
-			int* pcount = ((int*)((byte*)poolCounts + (lockHandle << AlignedAllocator.CacheLineSizeLog)));
-			pools[lockHandle][perCoreOffset + ((*pcount)++)] = tc;
+			int* pcount = (int*)CacheLineMemoryManager.GetBuffer(poolCounts, lockHandle);
+			Checker.AssertTrue(*pcount < poolCapacity);
+			pools[lockHandle][(*pcount)++] = tc;
 		}
 		finally
 		{
@@ -123,32 +102,32 @@ internal unsafe class TransactionContextPool : IDisposable
 		}
 	}
 
-	private TransactionContext GetShared()
+	[MethodImpl(MethodImplOptions.NoInlining)]
+	private TransactionContext Borrow(int index)
 	{
-		int slot;
-		lock (sync)
+		for (int i = 0; i < pools.Length; i++)
 		{
-			if (slotCounter == Transaction.MaxConcurrentTrans)
-				throw new DatabaseException(DatabaseErrorDetail.Create(DatabaseErrorType.ConcurrentTranLimitExceeded));
+			index++;
+			if (index == pools.Length)
+				index = 0;
 
-			if (sharedCount != 0)
-				return sharedPool[--sharedCount];
-
-			slot = ++slotCounter;
+			int* pcount = (int*)CacheLineMemoryManager.GetBuffer(poolCounts, index);
+			if (*pcount > 0)
+			{
+				poolLocks.Enter(index);
+				try
+				{
+					if (*pcount > 0)
+						return pools[index][--(*pcount)];
+				}
+				finally
+				{
+					poolLocks.Exit(index);
+				}
+			}
 		}
 
-		return new TransactionContext(engine, -1, (ushort)slot);
-	}
-
-	private void PutShared(TransactionContext tc)
-	{
-		lock (sync)
-		{
-			if (sharedCount == sharedPool.Length)
-				Array.Resize(ref sharedPool, sharedPool.Length * 2);
-
-			sharedPool[sharedCount++] = tc;
-		}
+		throw new DatabaseException(DatabaseErrorDetail.Create(DatabaseErrorType.ConcurrentTranLimitExceeded));
 	}
 
 #if TEST_BUILD
@@ -171,19 +150,14 @@ internal unsafe class TransactionContextPool : IDisposable
 
 		for (int i = 0; i < pools.Length; i++)
 		{
-			int* pcount = ((int*)((byte*)poolCounts + (i << AlignedAllocator.CacheLineSizeLog)));
+			int* pcount = (int*)CacheLineMemoryManager.GetBuffer(poolCounts, i);
 			for (int j = 0; j < *pcount; j++)
 			{
-				pools[i][perCoreOffset + j].Dispose();
+				pools[i][j].Dispose();
 			}
 		}
 
 		CacheLineMemoryManager.Free(allocHandle);
 		poolLocks.Dispose();
-
-		for (int i = 0; i < sharedCount; i++)
-		{
-			sharedPool[i].Dispose();
-		}
 	}
 }

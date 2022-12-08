@@ -20,11 +20,13 @@ internal unsafe sealed class WriteThroughLogWriter : IDisposable
 
 	bool isPackedFormat;
 
+	bool secotSizeMismatch;
+
 	public WriteThroughLogWriter(string fileName, long initPosition, uint sectorSize, bool isPackedFormat)
 	{
 		this.sectorSize = GetPhysicalSectorSize(fileName);
 		if (sectorSize != this.sectorSize)
-			throw new CriticalDatabaseException();
+			secotSizeMismatch = true;
 
 		if (!Utils.IsPowerOf2(this.sectorSize))
 			throw new CriticalDatabaseException();
@@ -58,10 +60,9 @@ internal unsafe sealed class WriteThroughLogWriter : IDisposable
 	}
 
 	public uint LastSectorWritten => lastSectorWritten;
-
 	public uint SectorSize => sectorSize;
-
 	public bool IsPackedFormat => isPackedFormat;
+	public bool SecotSizeMismatch => secotSizeMismatch;
 
 	public void Flush()
 	{

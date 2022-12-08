@@ -21,15 +21,15 @@ internal enum TransactionCommitType
 
 internal unsafe sealed class TransactionContext : IDisposable
 {
-	public const int TempInvRefSize = 1024 * 8;					// 64KB
+	public const int TempInvRefSize = 1024 * 8;                 // 64KB
 
 	const int classScanChunkSize = 32;
 
-	const int inverseReferencesOperationCapacity = 1024 * 8;	// 192KB
-	const int deletedObjectsCapacity = 1024 * 8;				// 128KB
+	const int inverseReferencesOperationCapacity = 1024 * 8;    // 192KB
+	const int deletedObjectsCapacity = 1024 * 8;                // 128KB
 
-	const int inverseReferenceReadLockCapacity = 1024 * 24;		// 384KB
-	const int objectReadLockMapCapacity = 512;					// Roughly 18KB
+	const int inverseReferenceReadLockCapacity = 1024 * 24;     // 384KB
+	const int objectReadLockMapCapacity = 512;                  // Roughly 18KB
 
 	const int defLockedClassesCap = 32;
 	const int defWrittenClassesCap = 32;
@@ -114,6 +114,8 @@ internal unsafe sealed class TransactionContext : IDisposable
 
 	bool isAlignmentMode;
 
+	bool isAllocated;
+
 	public TransactionContext(StorageEngine engine, int physCorePool, ushort slot)
 	{
 		if (slot == 0)
@@ -122,6 +124,14 @@ internal unsafe sealed class TransactionContext : IDisposable
 		this.engine = engine;
 		this.poolIndex = physCorePool;
 		this.slot = slot;
+	}
+
+	public void Allocate()
+	{
+		if (isAllocated)
+			return;
+
+		isAllocated = true;
 
 		affectedObjects = new ModifiedList(engine.MemoryManager);
 		affectedInvRefs = new ModifiedList(engine.MemoryManager);
@@ -232,6 +242,7 @@ internal unsafe sealed class TransactionContext : IDisposable
 	public void Init(Database database, ulong tranId)
 	{
 		TTTrace.Write(database.TraceId, tranId);
+		Checker.AssertTrue(isAllocated);
 
 		this.database = database;
 		this.tranId = tranId;
@@ -244,7 +255,7 @@ internal unsafe sealed class TransactionContext : IDisposable
 	public void SetAlignmentMode()
 	{
 		isAlignmentMode = true;
-		inverseRefChanges.Resize(inverseReferencesOperationCapacity * 4);
+		inverseRefChanges.Resize(inverseReferencesOperationCapacity * 32);
 	}
 
 	public void ResetAlignmentMode()
@@ -458,7 +469,7 @@ internal unsafe sealed class TransactionContext : IDisposable
 		}
 
 		return ps;
-	}	
+	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public void AddGroupingInvRefChange(ushort typeIndex, long invRef, long directRef, int propId, bool isTracked, byte opType)
@@ -487,6 +498,9 @@ internal unsafe sealed class TransactionContext : IDisposable
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public void ClearInvRefChanges()
 	{
+		if (!isAllocated)
+			return;
+
 		if (isAlignmentMode)
 		{
 			inverseRefChanges.Reset(inverseRefChanges.Capacity);
@@ -608,6 +622,9 @@ internal unsafe sealed class TransactionContext : IDisposable
 
 	public void Dispose()
 	{
+		if (!isAllocated)
+			return;
+
 		Checker.AssertFalse(affectedObjects.NotEmpty);
 		Checker.AssertFalse(affectedInvRefs.NotEmpty);
 		Checker.AssertFalse(objectReadLocks.NotEmpty);

@@ -3,17 +3,21 @@ using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using Velox.Common;
+using Velox.Networking;
 
 namespace Velox.Client;
 
 internal static class ConnectionPoolCollection
 {
 	const int byRefCapacity = 8;
+	const int initChunkPoolSize = 1024 * 128;
 
 	static readonly object sync = new object();
 
 	static ConnectionPool[] byRefPool = EmptyArray<ConnectionPool>.Instance;
 	static Dictionary<string, ConnectionPool> pools = new Dictionary<string, ConnectionPool>(1);
+
+	static MessageChunkPool messageChunkPool = new MessageChunkPool(initChunkPoolSize);
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static ConnectionPool GetPool(string connectionString)
@@ -39,7 +43,8 @@ internal static class ConnectionPoolCollection
 			if (pools.TryGetValue(connectionString, out pool))
 				return pool;
 
-			pool = new ConnectionPool(connectionString);
+			pool = new ConnectionPool(messageChunkPool, connectionString);
+			messageChunkPool.ResizeIfLarger(pool.ConnParams.BufferPoolSize);
 			Dictionary<string, ConnectionPool> temp = new Dictionary<string, ConnectionPool>(pools);
 			temp.Add(connectionString, pool);
 			Thread.MemoryBarrier();

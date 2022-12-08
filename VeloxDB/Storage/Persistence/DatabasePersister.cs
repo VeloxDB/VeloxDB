@@ -35,6 +35,7 @@ internal unsafe sealed class DatabasePersister : IDisposable
 		orderer = new Orderer<Transaction>(database.TraceId, logSeqNum + 1, x => x.LogSeqNum, x => x == null);
 
 		CreatePersisters(commitVersion, logSeqNum, logStates, snapshotController);
+		HandleSectorSizeMismatches();
 
 		engine.Trace.Debug("DatabasePersister created, commitVersion={0}, logSeqNum={1}.", commitVersion, logSeqNum);
 	}
@@ -120,6 +121,19 @@ internal unsafe sealed class DatabasePersister : IDisposable
 			logPersisters[i] = new LogPersister(i, database, snapshotSemaphore, commitVersion,
 				logSeqNum, ld, logStates[i].ActiveFile, logStates[i].Header, logStates[i].Position);
 		}
+	}
+
+	private void HandleSectorSizeMismatches()
+	{
+		List<int> logIndexes = new List<int>(1);
+		for (int i = 0; i < logPersisters.Length; i++)
+		{
+			if (logPersisters[i].SectorSizeMismatch)
+				logIndexes.Add(i);
+		}
+
+		if (logIndexes.Count > 0)
+			CreateSnapshots(logIndexes);
 	}
 
 	public void UpdateConfiguration(PersistenceUpdate update)

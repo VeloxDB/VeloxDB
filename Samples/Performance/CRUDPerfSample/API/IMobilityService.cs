@@ -1,38 +1,42 @@
 ﻿using System;
+using System.Xml.Linq;
+using Velox.Client;
 using Velox.Protocol;
-
 namespace API;
 
 [DbAPI(Name = "MobilityService")]
 public interface IMobilityService
 {
 	[DbAPIOperation(ObjectGraphSupport = DbAPIObjectGraphSupportType.None)]
-	Task<long[]> InsertVehicles(VehicleDTO[] vehicleDTOs);
+	DatabaseTask<long[]> InsertVehicles(VehicleDTO[] vehicleDTOs);
 
 	[DbAPIOperation(ObjectGraphSupport = DbAPIObjectGraphSupportType.None)]
-	Task UpdateVehiclePositions(long[] vehicleIds, double positionX, double positionY);
+	DatabaseTask UpdateVehiclePositions(long[] vehicleIds, double positionX, double positionY);
 
 	[DbAPIOperation(ObjectGraphSupport = DbAPIObjectGraphSupportType.None)]
-	Task CopyVehiclePositions(long[] srcVehicleIds, long[] dstVehicleIds);
+	DatabaseTask CopyVehiclePositions(long[] srcVehicleIds, long[] dstVehicleIds);
 
 	[DbAPIOperation(ObjectGraphSupport = DbAPIObjectGraphSupportType.None)]
-	Task DeleteVehicles(long[] vehicleIds);
+	DatabaseTask DeleteVehicles(long[] vehicleIds);
 
 	[DbAPIOperation(ObjectGraphSupport = DbAPIObjectGraphSupportType.None)]
-	Task<long[]> InsertRides(RideDTO[] rideDTOs);
+	DatabaseTask<long[]> InsertRides(RideDTO[] rideDTOs);
 
 	[DbAPIOperation(ObjectGraphSupport = DbAPIObjectGraphSupportType.None)]
-	Task UpdateRides(RideDTO[] rideDTOs);
+	DatabaseTask UpdateRides(RideDTO[] rideDTOs);
 
 	[DbAPIOperation(ObjectGraphSupport = DbAPIObjectGraphSupportType.None)]
-	Task DeleteRides(long[] rideIds);
+	DatabaseTask DeleteRides(long[] rideIds);
 
 	[DbAPIOperation(ObjectGraphSupport = DbAPIObjectGraphSupportType.None, OperationType = DbAPIOperationType.Read)]
-	Task<VehicleDTO[]> GetVehicles(long[] vehicleIds);
+	DatabaseTask<VehicleDTO[]> GetVehicles(long[] vehicleIds);
 
 	[DbAPIOperation(ObjectGraphSupport = DbAPIObjectGraphSupportType.None, OperationType = DbAPIOperationType.Read)]
-	Task<VehicleDTO[]> GetRideVehicle(long[] rideIds);
+	DatabaseTask<VehicleDTO[]> GetRideVehicle(long[] rideIds);
 
 	[DbAPIOperation(ObjectGraphSupport = DbAPIObjectGraphSupportType.None, OperationType = DbAPIOperationType.Read)]
-	Task<RideDTO[][]> GetVehicleRides(long[] vehicleIds);
+	DatabaseTask<RideDTO[][]> GetVehicleRides(long[] vehicleIds);
+
+	[DbAPIOperation(ObjectGraphSupport = DbAPIObjectGraphSupportType.None, OperationType = DbAPIOperationType.Read)]
+	DatabaseTask<int> GetVehicleYear(long id);
 }

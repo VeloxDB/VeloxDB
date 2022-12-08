@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using Velox.Client;
 using Velox.ClientApp.Modes;
@@ -10,7 +10,7 @@ using Velox.Server;
 
 namespace Velox.ClientApp.Commands;
 
-[Command("monitor", "Continuously monitors the state of the cluster until ESC is pressed.")]
+[Command("monitor", "Continuously monitors the state of the cluster until Q is pressed.")]
 internal sealed class MonitorClusterStatusCommand : Command
 {
 	[Param("interval", "Refresh interval in milliseconds. Default is 5000.", ShortName = "i")]
@@ -39,85 +39,76 @@ internal sealed class MonitorClusterStatusCommand : Command
 		}
 
 		List<ReplicationNode> nodes = CollectNodes(mode.ClusterConfig);
-		Dictionary<string, NodeState>  nodeStates = new Dictionary<string, NodeState>(nodes.Count);
+		Dictionary<string, NodeState> nodeStates = new Dictionary<string, NodeState>(nodes.Count);
 		Dictionary<string, NodeState> displayedNodeStates = null;
 
 		CancellationTokenSource cts = new CancellationTokenSource();
-		Task[] refreshNodeTasks = new Task[nodes.Count];
-		try
+		for (int i = 0; i < nodes.Count; i++)
 		{
-			for (int i = 0; i < nodes.Count; i++)
-			{
-				refreshNodeTasks[i] = RefreshNodeState(nodes[i], nodeStates, cts.Token);
-			}
+			RefreshNodeState(nodes[i], nodeStates, cts.Token);
+		}
 
-			int top = ReadLine.IsRedirectedOrAlternate ? 0 : Console.CursorTop;
-			ScreenBuffer screenBuffer = new ScreenBuffer();
-			int clearHeight = 0;
+		int top = ReadLine.IsRedirectedOrAlternate ? 0 : Console.CursorTop;
+		ScreenBuffer screenBuffer = new ScreenBuffer();
+		int clearHeight = 0;
 
-			int width = ConsoleHelper.WindowWidth;
-			int height = ConsoleHelper.WindowHeight;
+		int width = ConsoleHelper.WindowWidth;
+		int height = ConsoleHelper.WindowHeight;
 
 #if TEST_BUILD
-			if (WaitAllNodes)
-				SpinWait.SpinUntil(() => { lock (nodeStates) return nodeStates.Count == nodes.Count; });
+		if (WaitAllNodes)
+			SpinWait.SpinUntil(() => { lock (nodeStates) return nodeStates.Count == nodes.Count; });
 #endif
 
-			Stopwatch s = Stopwatch.StartNew();
-			while (true)
-			{
-				Thread.Sleep(100);
-				if (!ReadLine.IsRedirectedOrAlternate && Console.KeyAvailable)
-				{
-					if (Console.ReadKey(true).Key == ConsoleKey.Q)
-						return true;
-				}
-
-				bool b = ConsoleHelper.WindowWidth != width || ConsoleHelper.WindowHeight != height;
-
-				if (s.Elapsed.TotalMilliseconds > Interval || b || displayedNodeStates == null)
-				{
-					s.Restart();
-
-					Dictionary<string, NodeState> tempNodeStates;
-					lock (nodeStates)
-					{
-						tempNodeStates = new Dictionary<string, NodeState>(nodeStates);
-					}
-
-					if (tempNodeStates.Count == nodes.Count)
-					{
-						if (b || displayedNodeStates == null || StatesDiffer(displayedNodeStates, tempNodeStates))
-						{
-							if (b)
-							{
-								Console.Clear();
-								Console.CursorTop = 0;
-								Console.CursorLeft = 0;
-								clearHeight = 0;
-								top = 0;
-							}
-
-							width = ConsoleHelper.WindowWidth;
-							height = ConsoleHelper.WindowHeight;
-							displayedNodeStates = tempNodeStates;
-							ClusterStatusLive clusterStatus = new ClusterStatusLive(mode.ClusterConfig, displayedNodeStates);
-							clusterStatus.Show(screenBuffer, top, ref clearHeight);
-						}
-					}
-				}
-
-				if (ReadLine.IsRedirectedOrAlternate)
-					return true;
-			}
-		}finally
+		Stopwatch s = Stopwatch.StartNew();
+		while (true)
 		{
-			cts.Cancel();
-			foreach(var task in refreshNodeTasks)
+			Thread.Sleep(100);
+			if (Console.KeyAvailable)
 			{
-				task.Wait();
+				if (Console.ReadKey(true).Key == ConsoleKey.Q)
+				{
+					cts.Cancel();
+					return true;
+				}
 			}
-			cts.Dispose();
+
+			bool b = ConsoleHelper.WindowWidth != width || ConsoleHelper.WindowHeight != height;
+
+			if (s.Elapsed.TotalMilliseconds > Interval || b || displayedNodeStates == null)
+			{
+				s.Restart();
+
+				Dictionary<string, NodeState> tempNodeStates;
+				lock (nodeStates)
+				{
+					tempNodeStates = new Dictionary<string, NodeState>(nodeStates);
+				}
+
+				if (tempNodeStates.Count == nodes.Count)
+				{
+					if (b || displayedNodeStates == null || StatesDiffer(displayedNodeStates, tempNodeStates))
+					{
+						if (b)
+						{
+							Console.Clear();
+							Console.CursorTop = 0;
+							Console.CursorLeft = 0;
+							clearHeight = 0;
+							top = 0;
+						}
+
+						width = ConsoleHelper.WindowWidth;
+						height = ConsoleHelper.WindowHeight;
+						displayedNodeStates = tempNodeStates;
+						ClusterStatusLive clusterStatus = new ClusterStatusLive(mode.ClusterConfig, displayedNodeStates);
+						clusterStatus.Show(screenBuffer, top, ref clearHeight);
+					}
+				}
+			}
+
+			if (ReadLine.IsRedirectedOrAlternate)
+				return true;
 		}
 	}
 
@@ -145,7 +136,7 @@ internal sealed class MonitorClusterStatusCommand : Command
 		return nodes;
 	}
 
-	private async Task RefreshNodeState(ReplicationNode node, Dictionary<string, NodeState> nodeStates, CancellationToken cancelToken)
+	private async void RefreshNodeState(ReplicationNode node, Dictionary<string, NodeState> nodeStates, CancellationToken cancelToken)
 	{
 		ConnectionStringParams cp = new ConnectionStringParams();
 		cp.AddAddress(node.AdministrationAdress.ToString());

@@ -7,7 +7,7 @@
     <AssemblyName>adminapi</AssemblyName>
     <RootNamespace>Velox.Server</RootNamespace>
     <OutputPath>$(VlxRootDir)\bin</OutputPath>
-    <Platforms>AnyCPU;x64</Platforms>
+    <Platforms>x64</Platforms>
     <UseCommonOutputDirectory>true</UseCommonOutputDirectory>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <IsPackable>false</IsPackable>

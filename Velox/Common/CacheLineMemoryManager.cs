@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using Velox.Common;
 
 namespace Velox.Common;
@@ -9,6 +10,12 @@ internal unsafe static class CacheLineMemoryManager
 	static readonly object sync = new object();
 
 	static Dictionary<int, SingleLineMemoryManager> perSizeMap = new Dictionary<int, SingleLineMemoryManager>(4);
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static byte* GetBuffer(void* firstBuffer, int index)
+	{
+		return (byte*)firstBuffer + (index << AlignedAllocator.CacheLineSizeLog);
+	}
 
 	public static unsafe byte* Allocate(int size, out object handle)
 	{

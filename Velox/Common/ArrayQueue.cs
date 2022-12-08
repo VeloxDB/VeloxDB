@@ -16,6 +16,9 @@ internal sealed class ArrayQueue<T> : IEnumerable<T>
 
 	public ArrayQueue(int capacity = 128, Action<T, int> resizeCallback = null)
 	{
+		if (!Utils.IsPowerOf2(capacity))
+			capacity = (int)Utils.GetNextPow2((ulong)capacity);
+
 		this.resizeCallback = resizeCallback;
 		capacityMask = capacity - 1;
 		items = new T[capacity];
@@ -118,6 +121,6 @@ internal sealed class ArrayQueue<T> : IEnumerable<T>
 		items = temp;
 		capacityMask = items.Length - 1;
 		first = 0;
-		last = count & capacityMask;
+		last = count;
 	}
 }

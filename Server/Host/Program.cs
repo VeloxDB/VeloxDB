@@ -1,5 +1,5 @@
+﻿using System;
 using System.Diagnostics.CodeAnalysis;
-using System.Reflection.Emit;
 using Velox.Common;
 
 namespace Velox.Server;
@@ -10,24 +10,27 @@ internal sealed class Program
 	{
 		Configuration configuration;
 
+		AppDomain.CurrentDomain.UnhandledException += UnhandledExceptionHandler;
+		TaskScheduler.UnobservedTaskException += UnobservedTaskExceptionHandler;
+
 		Arguments parsed = Parse(args);
 
-		if(parsed.Error)
+		if (parsed.Error)
 		{
 			Console.Error.WriteLine($"vlxdbsrv: {parsed.Message}\n");
 		}
 
-		if(parsed.PrintHelp)
+		if (parsed.PrintHelp)
 		{
 			PrintHelp();
 		}
 
-		if(parsed.PrintHelp || parsed.Error)
+		if (parsed.PrintHelp || parsed.Error)
 			return;
 
 		try
 		{
-			if(parsed.ConfigFile != null)
+			if (parsed.ConfigFile != null)
 			{
 				configuration = Configuration.Load(parsed.ConfigFile);
 			}
@@ -36,7 +39,7 @@ internal sealed class Program
 				configuration = Configuration.Load();
 			}
 		}
-		catch(ConfigurationException e)
+		catch (ConfigurationException e)
 		{
 			Console.Error.WriteLine(e.Message);
 			return;
@@ -46,18 +49,18 @@ internal sealed class Program
 
 		try
 		{
-			if(parsed.PersistanceDir != null)
+			if (parsed.PersistanceDir != null)
 			{
 				InitPersistence(configuration, parsed.PersistanceDir);
 			}
 		}
-		catch(UnauthorizedAccessException e)
+		catch (UnauthorizedAccessException e)
 		{
 			Console.Error.WriteLine(e.Message);
 			return;
 		}
 
-		using Server host = new Server(configuration, updateAssembliesDir:parsed.UpdateAsmDir, persistenceDir: parsed.PersistanceDir);
+		using Server host = new Server(configuration, updateAssembliesDir: parsed.UpdateAsmDir, persistenceDir: parsed.PersistanceDir);
 		host.Run();
 	}
 
@@ -83,7 +86,7 @@ internal sealed class Program
 			"\t--help                          Displays this help.",
 		};
 
-		foreach(string message in messages)
+		foreach (string message in messages)
 			Console.WriteLine(message);
 	}
 
@@ -110,7 +113,7 @@ internal sealed class Program
 
 		bool TryGetArg(int i, [NotNullWhen(true)] out string? res)
 		{
-			if(i >= args.Length)
+			if (i >= args.Length)
 			{
 				RaiseError($"Missing argument at position {i}.");
 				res = null;
@@ -121,9 +124,9 @@ internal sealed class Program
 			return true;
 		}
 
-		while(i < args.Length)
+		while (i < args.Length)
 		{
-			if(!args[i].StartsWith("--"))
+			if (!args[i].StartsWith("--"))
 			{
 				RaiseError("Expected command argument.");
 				break;
@@ -131,29 +134,29 @@ internal sealed class Program
 
 			string arg = args[i].Substring(2);
 
-			if(arg == "config")
+			if (arg == "config")
 			{
-				if(!TryGetArg(i + 1, out configFile))
+				if (!TryGetArg(i + 1, out configFile))
 					break;
 				i++;
 			}
-			else if(arg == "interactive")
+			else if (arg == "interactive")
 			{
 				interactive = true;
 			}
-			else if(arg == "update-assemblies")
+			else if (arg == "update-assemblies")
 			{
-				if(!TryGetArg(i + 1, out updateAsmDir))
+				if (!TryGetArg(i + 1, out updateAsmDir))
 					break;
 				i++;
 			}
-			else if(arg == "init-persistence")
+			else if (arg == "init-persistence")
 			{
-				if(!TryGetArg(i + 1, out persistanceDir))
+				if (!TryGetArg(i + 1, out persistanceDir))
 					break;
 				i++;
 			}
-			else if(arg == "help")
+			else if (arg == "help")
 			{
 				displayHelp = true;
 			}
@@ -187,5 +190,18 @@ internal sealed class Program
 			Tracing.SetTraceLevel((TraceLevel)cfgLevel);
 			APITrace.SetTraceLevel((TraceLevel)userCfgLevel);
 		}
+	}
+
+	private static void UnobservedTaskExceptionHandler(object? sender, UnobservedTaskExceptionEventArgs e)
+	{
+		Tracing.Error(e.Exception);
+	}
+
+	private static void UnhandledExceptionHandler(object sender, UnhandledExceptionEventArgs e)
+	{
+		if (e.ExceptionObject is Exception)
+			Tracing.Error((Exception)e.ExceptionObject);
+
+		System.Diagnostics.Process.GetCurrentProcess().Kill();
 	}
 }

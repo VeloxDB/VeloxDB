@@ -8,7 +8,7 @@ namespace Velox.ObjectInterface;
 
 internal sealed class ObjectModelContext
 {
-	const int objectMapCapacity = 1024 * 64;
+	const int objectMapCapacity = 1024 * 8;
 	const int inverseRefsSize = 1024;
 	const int stringsSize = 1024 * 8;
 	const int invRefChangeCapacity = 1024;

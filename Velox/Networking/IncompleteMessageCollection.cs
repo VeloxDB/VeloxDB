@@ -9,10 +9,9 @@ internal sealed class IncompleteMessageCollection : IDisposable
 {
 	readonly object sync = new object();
 
-	Dictionary<long, ChunkAwaiter> map;
+	Dictionary<ulong, ChunkAwaiter> map;
 	ItemPool<ChunkAwaiter> awaiterPool;
-	ItemPool<MessageChunk> smallChunkPool;
-	ItemPool<MessageChunk> largeChunkPool;
+	MessageChunkPool chunkPool;
 	ManualResetEvent abortWait;
 	Action stopReceiving;
 	Action continueReceiving;
@@ -20,23 +19,23 @@ internal sealed class IncompleteMessageCollection : IDisposable
 	int currChunkCount;
 	bool disposed;
 
-	public IncompleteMessageCollection(ItemPool<MessageChunk> smallChunkPool, ItemPool<MessageChunk> largeChunkPool,
-		int maxQueuedChunkCount, Action stopReceiving, Action continueReceiving)
+	public IncompleteMessageCollection(MessageChunkPool chunkPool, int maxQueuedChunkCount, Action stopReceiving, Action continueReceiving)
 	{
-		this.smallChunkPool = smallChunkPool;
-		this.largeChunkPool = largeChunkPool;
+		this.chunkPool = chunkPool;
 		this.stopReceiving = stopReceiving;
 		this.continueReceiving = continueReceiving;
 		this.maxQueuedChunkCount = maxQueuedChunkCount;
 
 		abortWait = new ManualResetEvent(false);
 
-		map = new Dictionary<long, ChunkAwaiter>(16);
+		map = new Dictionary<ulong, ChunkAwaiter>(16);
 		awaiterPool = new ItemPool<ChunkAwaiter>(Connection.AwaiterPoolCount, new ChunkAwaiterFactory(abortWait));
 	}
 
 	public unsafe ChunkAwaiter ChunkReceived(MessageChunk chunk, out bool chunkConsumed)
 	{
+		Checker.AssertFalse(chunk.MessageId == 0);
+
 		chunkConsumed = false;
 		if (chunk.IsTheOnlyOne)
 			return null;
@@ -60,8 +59,6 @@ internal sealed class IncompleteMessageCollection : IDisposable
 				ChunkAwaiter awaiter = GetLastAwaiter(chunk.MessageId);
 				if (awaiter == null)
 				{
-					// Message timedout or incorrect data received
-					chunk.ReturnToPool(smallChunkPool, largeChunkPool);
 					throw new CorruptMessageException();
 				}
 				else
@@ -82,6 +79,8 @@ internal sealed class IncompleteMessageCollection : IDisposable
 
 	public void WaitNextChunk(MessageChunk prevChunk, out MessageChunk chunk, out ChunkAwaiter nextAwaiter)
 	{
+		Checker.AssertFalse(prevChunk.MessageId == 0);
+
 		try
 		{
 			prevChunk.Awaiter.WaitChunk();
@@ -126,7 +125,7 @@ internal sealed class IncompleteMessageCollection : IDisposable
 		}
 	}
 
-	private unsafe void CancelMessageInternal(long msgId, bool notifyReciver)
+	private unsafe void CancelMessageInternal(ulong msgId, bool notifyReciver)
 	{
 		if (map.TryGetValue(msgId, out ChunkAwaiter curr))
 		{
@@ -134,7 +133,7 @@ internal sealed class IncompleteMessageCollection : IDisposable
 			{
 				if (curr.Chunk != null)
 				{
-					curr.Chunk.ReturnToPool(smallChunkPool, largeChunkPool);
+					chunkPool.Put(curr.Chunk);
 					currChunkCount--;
 					if (currChunkCount == maxQueuedChunkCount - 1 && notifyReciver)
 						continueReceiving();
@@ -149,7 +148,7 @@ internal sealed class IncompleteMessageCollection : IDisposable
 		}
 	}
 
-	private ChunkAwaiter GetLastAwaiter(long msgId)
+	private ChunkAwaiter GetLastAwaiter(ulong msgId)
 	{
 		if (!map.TryGetValue(msgId, out ChunkAwaiter awaiter))
 			return null;
@@ -176,7 +175,7 @@ internal sealed class IncompleteMessageCollection : IDisposable
 
 			disposed = true;
 
-			foreach (long msgId in map.Keys)
+			foreach (ulong msgId in map.Keys)
 			{
 				CancelMessageInternal(msgId, false);
 			}

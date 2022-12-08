@@ -8,7 +8,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="velox" Version="0.1.11" />
+    <Reference Include="vlxl">
+      <HintPath>..\..\..\..\..\bin\vlxl.dll</HintPath>
+    </Reference>
   </ItemGroup>
 
 </Project>

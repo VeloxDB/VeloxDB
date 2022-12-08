@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Reflection.PortableExecutable;
 using API;
 using Velox.Client;
 
@@ -7,29 +8,38 @@ namespace Client;
 public class Program
 {
 	static int vehicleCount = 1024 * 1024 * 8;
-	static int rideCount = 1024 * 1024 * 8;
 	static int workerCount = 1;
 
 	static string[] vehicleNames = new string[0];
 
 	public static void Main(string[] args)
 	{
-		string address = "localhost";
+		string[] addresses = new string[] { "localhost" };
 		if (args.Length > 0)
-			address = args[0];
+			addresses = args[0].Split('|');
 
 		if (args.Length > 1)
-		{
 			vehicleCount *= int.Parse(args[1]);
-			rideCount *= int.Parse(args[1]);
-		}
 
 		if (args.Length > 2)
 			workerCount = int.Parse(args[2]);
 
+		int connCount = 2;
+		if (args.Length > 3)
+			connCount = int.Parse(args[3]);
+
 		ConnectionStringParams csp = new ConnectionStringParams();
-		csp.AddAddress(address + ":7568");
-		csp.OpenTimeout = 1000000;
+		for (int i = 0; i < addresses.Length; i++)
+		{
+			if (!addresses[i].Contains(':'))
+				addresses[i] += ":7568";
+
+			csp.AddAddress(addresses[i]);
+		}
+
+		csp.PoolSize = connCount;
+		csp.BufferPoolSize = 1024 * 1024 * 128;
+		csp.OpenTimeout = 5000;
 
 		IMobilityService service = ConnectionFactory.Get<IMobilityService>(csp.GenerateConnectionString());
 
@@ -60,12 +70,52 @@ public class Program
 				new Statistics("Delete vehicles"),
 			};
 
-			InsertVehicles(service, statistics[objsPerTran][0], objsPerTran, tranPerWorkerCount, objsPerWorker, vehicleIds, finishedEvents);
+			//InsertVehicles(service, statistics[objsPerTran][0], objsPerTran, tranPerWorkerCount, objsPerWorker, vehicleIds, finishedEvents);
+			//using (MemoryStream ms = new MemoryStream())
+			//{
+			//	using (BinaryWriter bw = new BinaryWriter(ms))
+			//	{
+			//		bw.Write(vehicleIds.Length * vehicleIds[0].Length);
+			//		for (int i = 0; i < vehicleIds.Length; i++)
+			//		{
+			//			for (int j = 0; j < vehicleIds[i].Length; j++)
+			//			{
+			//				bw.Write(vehicleIds[i][j]);
+			//			}
+			//		}
+			//	}
+
+			//	File.WriteAllBytes("ids.bin", ms.ToArray());
+			//}
+
+			//return;
+
+			using (MemoryStream ms = new MemoryStream(File.ReadAllBytes("ids.bin")))
+			using (BinaryReader r = new BinaryReader(ms))
+			{
+				int c = r.ReadInt32();
+
+				vehicleIds = new long[workerCount][];
+				int t = c / workerCount;
+				for (int i = 0; i < vehicleIds.Length; i++)
+				{
+					vehicleIds[i] = new long[t];
+					for (int j = 0; j < t; j++)
+					{
+						vehicleIds[i][j] = r.ReadInt64();
+					}
+				}
+			}
+
+			for (int i = 0; i < 1000000; i++)
+			{
+				GetVehicles(service, statistics[objsPerTran][5], objsPerTran, tranPerWorkerCount, vehicleIds, finishedEvents);
+			}
+
 			UpdateVehicles(service, statistics[objsPerTran][1], objsPerTran, tranPerWorkerCount, vehicleIds, finishedEvents);
 			CopyVehiclesPosition(service, statistics[objsPerTran][2], objsPerTran, tranPerWorkerCount, vehicleIds, finishedEvents);
 			InsertRides(service, statistics[objsPerTran][3], objsPerTran, tranPerWorkerCount, objsPerWorker, vehicleIds, rideIds, finishedEvents);
 			UpdateRides(service, statistics[objsPerTran][4], objsPerTran, tranPerWorkerCount, vehicleIds, rideIds, finishedEvents);
-			GetVehicles(service, statistics[objsPerTran][5], objsPerTran, tranPerWorkerCount, vehicleIds, finishedEvents);
 			GetRideVehicles(service, statistics[objsPerTran][6], objsPerTran, tranPerWorkerCount, rideIds, finishedEvents);
 			GetVehicleRides(service, statistics[objsPerTran][7], objsPerTran, tranPerWorkerCount, vehicleIds, finishedEvents);
 			DeleteRides(service, statistics[objsPerTran][8], objsPerTran, tranPerWorkerCount, rideIds, finishedEvents);
@@ -362,7 +412,6 @@ public class Program
 		long[] ids = new long[tranCount * objsPerTran];
 
 		int c = 0;
-		int finished = 0;
 		for (int i = 0; i < tranCount; i++)
 		{
 			VehicleDTO[] vehicles = new VehicleDTO[objsPerTran];
@@ -377,11 +426,9 @@ public class Program
 				ids[c++] = tids[j];
 			}
 
-			finished++;
-			statistics.TransactionsFinished(ref finished);
+			statistics.Inc();
 		}
 
-		statistics.TransactionsFinished(ref finished);
 		return ids;
 	}
 
@@ -393,7 +440,6 @@ public class Program
 		DateTime dt = DateTime.UtcNow;
 
 		int c = 0;
-		int finished = 0;
 		for (int i = 0; i < tranCount; i++)
 		{
 			RideDTO[] rides = new RideDTO[objsPerTran];
@@ -408,11 +454,9 @@ public class Program
 				ids[c++] = tids[j];
 			}
 
-			finished++;
-			statistics.TransactionsFinished(ref finished);
+			statistics.Inc();
 		}
 
-		statistics.TransactionsFinished(ref finished);
 		return ids;
 	}
 
@@ -420,7 +464,6 @@ public class Program
 		long[] ids, int tranCount, int objsPerTran)
 	{
 		int c = 0;
-		int finished = 0;
 		for (int i = 0; i < tranCount; i++)
 		{
 			long[] vehicleIds = new long[objsPerTran];
@@ -431,11 +474,8 @@ public class Program
 
 			await service.UpdateVehiclePositions(vehicleIds, 3.0, 3.0);
 
-			finished++;
-			statistics.TransactionsFinished(ref finished);
+			statistics.Inc();
 		}
-
-		statistics.TransactionsFinished(ref finished);
 	}
 
 	private static async Task UpdateRidesWorker(IMobilityService service, Statistics statistics,
@@ -443,7 +483,6 @@ public class Program
 	{
 		DateTime dt = DateTime.UtcNow;
 		int c = 0;
-		int finished = 0;
 		for (int i = 0; i < tranCount; i++)
 		{
 			RideDTO[] rides = new RideDTO[objsPerTran];
@@ -454,20 +493,16 @@ public class Program
 
 			await service.UpdateRides(rides);
 
-			finished++;
-			statistics.TransactionsFinished(ref finished);
+			statistics.Inc();
 		}
-
-		statistics.TransactionsFinished(ref finished);
 	}
 
 	private static async Task CopyVehiclesPositionWorker(IMobilityService service, Statistics statistics,
 		long[] ids, int tranCount, int objsPerTran)
 	{
-			int c1 = 0;
-			int c2 = ids.Length / 2;
+		int c1 = 0;
+		int c2 = ids.Length / 2;
 
-			int finished = 0;
 		for (int i = 0; i < tranCount / 2; i++)
 		{
 			long[] srcVehicleIds = new long[objsPerTran];
@@ -480,18 +515,16 @@ public class Program
 
 			await service.CopyVehiclePositions(srcVehicleIds, dstVehicleIds);
 
-			finished++;
-			statistics.TransactionsFinished(ref finished);
+			statistics.Inc();
 		}
 
-		statistics.TransactionsFinished(ref finished);
+		statistics.Inc();
 	}
 
 	private static async Task DeleteVehiclesWorker(IMobilityService service, Statistics statistics,
 		long[] ids, int tranCount, int objsPerTran)
 	{
 		int c = 0;
-		int finished = 0;
 		for (int i = 0; i < tranCount; i++)
 		{
 			long[] vehicleIds = new long[objsPerTran];
@@ -502,18 +535,14 @@ public class Program
 
 			await service.DeleteVehicles(vehicleIds);
 
-			finished++;
-			statistics.TransactionsFinished(ref finished);
+			statistics.Inc();
 		}
-
-		statistics.TransactionsFinished(ref finished);
 	}
 
 	private static async Task DeleteRidesWorker(IMobilityService service, Statistics statistics,
 		long[] ids, int tranCount, int objsPerTran)
 	{
 		int c = 0;
-		int finished = 0;
 		for (int i = 0; i < tranCount; i++)
 		{
 			long[] rideIds = new long[objsPerTran];
@@ -524,40 +553,38 @@ public class Program
 
 			await service.DeleteRides(rideIds);
 
-			finished++;
-			statistics.TransactionsFinished(ref finished);
+			statistics.Inc();
 		}
-
-		statistics.TransactionsFinished(ref finished);
 	}
 
 	private static async Task GetVehiclesWorker(IMobilityService service, Statistics statistics,
 		long[] ids, int tranCount, int objsPerTran)
 	{
 		int c = 0;
-		int finished = 0;
 		for (int i = 0; i < tranCount; i++)
 		{
-			long[] vehicleIds = new long[objsPerTran];
-			for (int j = 0; j < objsPerTran; j++)
-			{
-				vehicleIds[j] = ids[c++];
-			}
+			//long[] vehicleIds = new long[objsPerTran];
+			//for (int j = 0; j < objsPerTran; j++)
+			//{
+			//	vehicleIds[j] = ids[c++];
+			//	if (c == ids.Length)
+			//		c = 0;
+			//}
 
-			await service.GetVehicles(vehicleIds);
+			//await service.GetVehicles(vehicleIds);
 
-			finished++;
-			statistics.TransactionsFinished(ref finished);
+			await service.GetVehicleYear(ids[c++]);
+			if (c == ids.Length)
+				c = 0;
+
+			statistics.Inc();
 		}
-
-		statistics.TransactionsFinished(ref finished);
 	}
 
 	private static async Task GetRideVehiclesWorker(IMobilityService service, Statistics statistics,
 		long[] ids, int tranCount, int objsPerTran)
 	{
 		int c = 0;
-		int finished = 0;
 		for (int i = 0; i < tranCount; i++)
 		{
 			long[] rideIds = new long[objsPerTran];
@@ -568,18 +595,14 @@ public class Program
 
 			await service.GetRideVehicle(rideIds);
 
-			finished++;
-			statistics.TransactionsFinished(ref finished);
+			statistics.Inc();
 		}
-
-		statistics.TransactionsFinished(ref finished);
 	}
 
 	private static async Task GetVehicleRidesWorker(IMobilityService service, Statistics statistics,
 		long[] ids, int tranCount, int objsPerTran)
 	{
 		int c = 0;
-		int finished = 0;
 		for (int i = 0; i < tranCount; i++)
 		{
 			long[] vehicleIds = new long[objsPerTran];
@@ -590,63 +613,7 @@ public class Program
 
 			await service.GetVehicleRides(vehicleIds);
 
-			finished++;
-			statistics.TransactionsFinished(ref finished);
+			statistics.Inc();
 		}
-
-		statistics.TransactionsFinished(ref finished);
-	}
-}
-
-internal class Statistics
-{
-	static int updateTranCountPeriod = 4;
-
-	string title, format;
-	long transactionCount;
-	Timer timer;
-	Stopwatch stopwatch;
-	long prevTransactionCount;
-	Stopwatch totalTime;
-
-	public Statistics(string title)
-	{
-		this.format = title + ": {0} T/s";
-		this.title = title;
-	}
-
-	public void Start()
-	{
-		stopwatch = Stopwatch.StartNew();
-		totalTime = Stopwatch.StartNew();
-		timer = new Timer(p =>
-		{
-			double time = stopwatch.Elapsed.TotalSeconds;
-			stopwatch.Restart();
-			long t = prevTransactionCount;
-			prevTransactionCount = transactionCount;
-			long rate = (long)((prevTransactionCount - t) / time);
-			Console.WriteLine(format, rate);
-		}, null, 250, 250);
-	}
-
-	public void TransactionsFinished(ref int count)
-	{
-		if (count != updateTranCountPeriod)
-			return;
-
-		Interlocked.Add(ref transactionCount, count);
-		count = 0;
-	}
-
-	public void Stop()
-	{
-		totalTime.Stop();
-		timer.Dispose();
-	}
-
-	public void Write()
-	{
-		Console.WriteLine("{0}: {1} T/s", title, transactionCount / totalTime.Elapsed.TotalSeconds);
 	}
 }

@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
+using Velox.Common;
 
 namespace Velox.Networking;
 
@@ -11,20 +12,21 @@ internal sealed partial class ClientConnection : Connection
 	IPEndPoint endpoint;
 	bool failedToOpen;
 
-	public unsafe ClientConnection(IPEndPoint endpoint, int bufferPoolSize, TimeSpan inactivityInterval,
+	public unsafe ClientConnection(IPEndPoint endpoint, MessageChunkPool chunkPool, TimeSpan inactivityInterval,
 		TimeSpan inactivityTimeout, int maxQueuedChunkCount, bool groupSmallMessages, HandleMessageDelegate messageHandler) :
-		base(bufferPoolSize, inactivityInterval, inactivityTimeout, maxQueuedChunkCount, groupSmallMessages, messageHandler)
+		base(chunkPool, inactivityInterval, inactivityTimeout, maxQueuedChunkCount, groupSmallMessages, messageHandler)
 	{
 		this.endpoint = endpoint;
 	}
 
-	protected override long BaseMsgId => 1;
-
 	public bool FailedToOpen => failedToOpen;
 
-	protected override bool IsResponseMessage(long msgId)
+	public override ulong MessageIdBit => 0x0000000000000000;
+
+	protected override bool IsResponseMessage(ulong msgId)
 	{
-		return msgId > 0;
+		Checker.AssertFalse(msgId == 0);
+		return (msgId & 0x8000000000000000) == 0x0000000000000000;
 	}
 
 	public void Open()
@@ -66,9 +68,9 @@ internal sealed partial class ClientConnection : Connection
 		if (inactivityTimeout != TimeSpan.MaxValue)
 			NativeSocket.TurnOnKeepAlive(socket.Handle, inactivityInterval, inactivityTimeout);
 
-		socket.NoDelay = true;
-		socket.ReceiveBufferSize = MessageChunk.LargeBufferSize * 2;
-		socket.SendBufferSize = MessageChunk.LargeBufferSize * 2;
+		socket.NoDelay = false;
+		socket.ReceiveBufferSize = tcpBufferSize;
+		socket.SendBufferSize = tcpBufferSize;
 
 		TaskCompletionSource<bool> tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -126,7 +128,7 @@ internal sealed partial class ClientConnection : Connection
 			tcs.SetResult(true);
 
 			// We immediately start receiving data on this connection.
-			StartReceivingAsync();
+			StartReceiving();
 		}
 		finally
 		{

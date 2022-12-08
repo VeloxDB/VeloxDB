@@ -11,7 +11,7 @@ internal sealed class EngineLock
 	static int ownershipCount;
 
 	StorageEngine engine;
-	ReaderWriterLockSlim sync;
+	MultiSpinRWLock sync;
 
 	RWSpinLock drainSync;
 	bool isDraining;
@@ -19,7 +19,7 @@ internal sealed class EngineLock
 	public EngineLock(StorageEngine engine)
 	{
 		this.engine = engine;
-		sync = new ReaderWriterLockSlim(LockRecursionPolicy.NoRecursion);
+		sync = new MultiSpinRWLock();
 	}
 
 	public bool IsReentrancy => ownershipCount > 0;
@@ -74,15 +74,15 @@ internal sealed class EngineLock
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public bool TryCreateTransactionAndEnterReadLock(int timeout = -1)
+	public bool TryCreateTransactionAndEnterReadLock(out int handle, int timeout = -1)
 	{
 		bool isReentrancy = ownershipCount > 0;
-		if (!TryEnterReadLock(timeout))
+		if (!TryEnterReadLock(timeout, out handle))
 			return false;
 
 		if (isDraining && !isReentrancy)
 		{
-			ExitReadLock();
+			ExitReadLock(handle);
 			return false;
 		}
 
@@ -90,36 +90,42 @@ internal sealed class EngineLock
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public void EnterReadLockNoDraining()
+	public int EnterReadLockNoDraining()
 	{
 		while (true)
 		{
-			EnterReadLock();
+			int handle = EnterReadLock();
 
 			if (!isDraining)
-				return;
+				return handle;
 
-			ExitReadLock();
+			ExitReadLock(handle);
 			Thread.Sleep(1);
 		}
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public void EnterReadLock()
+	public int EnterReadLock()
 	{
+		int handle = -1;
 		if (ownershipCount == 0)
-			sync.EnterReadLock();
+			handle = sync.EnterReadLock();
 
 		ownershipCount++;
+		return handle;
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public bool TryEnterReadLock(int timeout)
+	private bool TryEnterReadLock(int timeout, out int handle)
 	{
+		handle = -1;
 		if (ownershipCount == 0)
 		{
-			if (!sync.TryEnterReadLock(timeout))
+			if (!sync.TryEnterReadLock(timeout, out handle))
+			{
+				handle = -1;
 				return false;
+			}
 		}
 
 		ownershipCount++;
@@ -127,12 +133,15 @@ internal sealed class EngineLock
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public void ExitReadLock()
+	public void ExitReadLock(int handle)
 	{
 		ownershipCount--;
 
 		if (ownershipCount == 0)
-			sync.ExitReadLock();
+		{
+			Checker.AssertTrue(handle >= 0);
+			sync.ExitReadLock(handle);
+		}
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Reflection.Emit;
 using System.Threading;
 using System.Threading.Tasks;
+using Velox.Client;
 using Velox.Common;
 using Velox.Networking;
 using static Velox.Protocol.ProtocolTypeDescriptor;
@@ -119,10 +120,10 @@ internal sealed class DeserializerManager
 		{
 			args = method.GetParameters().Skip(paramSkipCount).Select(x => x.ParameterType.MakeByRefType()).ToArray();
 		}
-		else if (method.ReturnType != typeof(void) && method.ReturnType != typeof(Task))
+		else if (method.ReturnType != typeof(void) && method.ReturnType != typeof(DatabaseTask))
 		{
 			Type argType;
-			if (method.ReturnType.IsGenericType && method.ReturnType.GetGenericTypeDefinition() == typeof(Task<>))
+			if (method.ReturnType.IsGenericType && method.ReturnType.GetGenericTypeDefinition() == typeof(DatabaseTask<>))
 			{
 				argType = method.ReturnType.GetGenericArguments()[0];
 			}

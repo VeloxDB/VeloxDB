@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Reflection;
+using System.Reflection.Metadata;
 using System.Runtime.CompilerServices;
 
 namespace Velox.Common;
@@ -19,14 +21,30 @@ internal unsafe sealed class MultiSpinRWLock : IDisposable
 	public int EnterReadLock()
 	{
 		int handle = ProcessorNumber.GetCore();
-		((RWSpinLockFair*)((byte*)syncs + (handle << AlignedAllocator.CacheLineSizeLog)))->EnterReadLock();
+		RWSpinLockFair* rw = (RWSpinLockFair*)CacheLineMemoryManager.GetBuffer(syncs, handle);
+		rw->EnterReadLock();
 		return handle;
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public bool TryEnterReadLock(int timeout, out int handle)
+	{
+		if (timeout == -1)
+		{
+			handle = EnterReadLock();
+			return true;
+		}
+
+		handle = ProcessorNumber.GetCore();
+		RWSpinLockFair* rw = (RWSpinLockFair*)CacheLineMemoryManager.GetBuffer(syncs, handle);
+		return rw->TryEnterReadLock(timeout);
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public void ExitReadLock(int handle)
 	{
-		((RWSpinLockFair*)((byte*)syncs + (handle << AlignedAllocator.CacheLineSizeLog)))->ExitReadLock();
+		RWSpinLockFair* rw = (RWSpinLockFair*)CacheLineMemoryManager.GetBuffer(syncs, handle);
+		rw->ExitReadLock();
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -34,7 +52,8 @@ internal unsafe sealed class MultiSpinRWLock : IDisposable
 	{
 		for (int i = 0; i < ProcessorNumber.CoreCount; i++)
 		{
-			((RWSpinLockFair*)((byte*)syncs + (i << AlignedAllocator.CacheLineSizeLog)))->EnterWriteLock();
+			RWSpinLockFair* rw = (RWSpinLockFair*)CacheLineMemoryManager.GetBuffer(syncs, i);
+			rw->EnterWriteLock();
 		}
 	}
 
@@ -43,7 +62,8 @@ internal unsafe sealed class MultiSpinRWLock : IDisposable
 	{
 		for (int i = 0; i < ProcessorNumber.CoreCount; i++)
 		{
-			((RWSpinLockFair*)((byte*)syncs + (i << AlignedAllocator.CacheLineSizeLog)))->ExitWriteLock();
+			RWSpinLockFair* rw = (RWSpinLockFair*)CacheLineMemoryManager.GetBuffer(syncs, i);
+			rw->ExitWriteLock();
 		}
 	}
 

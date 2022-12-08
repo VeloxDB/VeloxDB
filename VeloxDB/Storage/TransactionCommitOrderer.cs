@@ -10,9 +10,9 @@ internal sealed class TransactionCommitOrderer
 {
 	ArrayQueue<Transaction> queue;
 
-	public TransactionCommitOrderer()
+	public TransactionCommitOrderer(StorageEngineSettings settings)
 	{
-		queue = new ArrayQueue<Transaction>(Environment.ProcessorCount * 2);
+		queue = new ArrayQueue<Transaction>(settings.CommitWorkerCount + 1);
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -43,7 +43,7 @@ internal sealed class TransactionCommitOrderer
 		queue[i] = item;
 	}
 
-	private bool Dequeue(ulong id, out Transaction tran)
+	private bool Dequeue(ulong version, out Transaction tran)
 	{
 		if (queue.Count == 0)
 		{
@@ -52,7 +52,7 @@ internal sealed class TransactionCommitOrderer
 		}
 
 		tran = queue.Peek();
-		if (tran.CommitVersion != id)
+		if (tran.CommitVersion != version)
 			return false;
 
 		queue.Dequeue();

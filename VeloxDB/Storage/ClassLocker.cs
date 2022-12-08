@@ -144,7 +144,7 @@ internal unsafe sealed class ClassLocker : IDisposable
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private WriterState* GetWriter(int index)
 	{
-		return ((WriterState*)((byte*)writerStates + (index << AlignedAllocator.CacheLineSizeLog)));
+		return (WriterState*)CacheLineMemoryManager.GetBuffer(writerStates, index);
 	}
 
 #if TEST_BUILD

@@ -17,13 +17,14 @@ internal sealed class InsertLWClusterCommand : Command
 	[Param("host1", "Host name or the address of the first node.", ShortName = "h1")]
 	public string Host1 { get; set; }
 
-	[Param("node-name1", "Name of the first node. If the node exists, that node is joined to the HA cluster, otherwise a new node is created.")]
+	[Param("node-name1", "Name of the first node. If the node exists, that node is joined to the HA cluster, otherwise a new node is created." +
+		"If ommited, host name 1 is used instead.")]
 	public string NodeName1 { get; set; }
 
 	[Param("host2", "Host name or the address of the second node.", ShortName = "h2", IsMandatory = true)]
 	public string Host2 { get; set; }
 
-	[Param("node-name2", "Name of the second node. If ommited, host name is used instead.")]
+	[Param("node-name2", "Name of the second node. If ommited, host name 2 is used instead.")]
 	public string NodeName2 { get; set; }
 
 	[Param("elector-port", "Election endpoint port. Default is " + ClusterConfiguration.DefaultElectorPortString + ".")]

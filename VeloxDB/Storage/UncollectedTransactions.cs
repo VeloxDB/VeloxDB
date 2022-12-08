@@ -21,6 +21,8 @@ internal unsafe sealed class UncollectedTransactions
 
 	long traceId;
 
+	ulong lastCollectedVersion;
+
 	public UncollectedTransactions(MemoryManager memoryManager, StorageEngineSettings sett, Action<IntPtr> executor, long traceId)
 	{
 		TTTrace.Write(traceId);
@@ -38,12 +40,26 @@ internal unsafe sealed class UncollectedTransactions
 		itemCount = 0;
 		bufferCount = 0;
 		firstBuffer = null;
+
+		lastCollectedVersion = 0;
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public void Reset()
+	{
+		lastCollectedVersion = 0;
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public void Insert(Transaction tran)
 	{
-		TTTrace.Write(traceId, tran.Id);
+		TTTrace.Write(traceId, tran.Id, tran.CommitVersion, lastCollectedVersion);
+
+		if (tran.CommitVersion <= lastCollectedVersion)
+		{
+			EnqueueCommands(tran, lastCollectedVersion);
+			return;
+		}
 
 		queue.Enqueue(tran);
 
@@ -63,7 +79,9 @@ internal unsafe sealed class UncollectedTransactions
 
 	public void Collect(ulong oldestReadVersion)
 	{
-		TTTrace.Write(traceId, oldestReadVersion, queue.Count);
+		TTTrace.Write(traceId, oldestReadVersion, queue.Count, lastCollectedVersion);
+
+		this.lastCollectedVersion = oldestReadVersion;
 
 		while (queue.Count > 0)
 		{

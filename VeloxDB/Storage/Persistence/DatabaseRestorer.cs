@@ -70,16 +70,10 @@ internal unsafe sealed class DatabaseRestorer
 				trace.Debug("Incomplete log entries found. Stopping logSeqNum " +
 					"is {0}. Database restoration will be restarted.", stoppingLogSeqNum);
 			}
-			else
-			{
-				trace.Info("Database {0} restored.", database.Id);
-			}
 
 			TTTrace.Write(database.TraceId, database.Id, stoppingLogSeqNum);
 			return stoppingLogSeqNum == UnusedLogSeqNum;
 		}
-
-		trace.Info("Database {0} restored.", database.Id);
 
 		return true;
 	}

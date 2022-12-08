@@ -3,7 +3,7 @@
 	<PropertyGroup>
 		<OutputType>Exe</OutputType>
 		<TargetFramework>net6.0</TargetFramework>
-		<Platforms>AnyCPU;x64</Platforms>
+		<Platforms>x64</Platforms>
 		<AssemblyName>vlx</AssemblyName>
 		<Product>VeloxDB</Product>
 		<Company>Velox</Company>
@@ -13,14 +13,6 @@
 		<Nullable>disable</Nullable>
 		<RootNamespace>Velox.ClientApp</RootNamespace>
 		<UseCommonOutputDirectory>true</UseCommonOutputDirectory>
-	</PropertyGroup>
-
-	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
-	  <DefineConstants>$(DefineConstants)TRACE;TEST_BUILD;</DefineConstants>
-	</PropertyGroup>
-
-	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
-	  <DefineConstants>$(DefineConstants)TRACE;</DefineConstants>
 	</PropertyGroup>
 
 	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">

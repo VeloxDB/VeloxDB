@@ -5,9 +5,14 @@ VisualStudioVersion = 17.2.32616.157
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Server", "Server\Server.csproj", "{47E665FF-E4BF-4ED3-B25E-303599E5C72C}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "API", "API\API.csproj", "{6E3C529D-6E31-4DC2-A90E-8531BECBA2AC}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "API", "API\API.csproj", "{6E3C529D-6E31-4DC2-A90E-8531BECBA2AC}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Client", "Client\Client.csproj", "{575A9D0B-47E3-404B-954E-ECD618D96A30}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Client", "Client\Client.csproj", "{575A9D0B-47E3-404B-954E-ECD618D96A30}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{4F12BCA3-0BE6-440E-8136-DAA0A28FEDFB}"
+	ProjectSection(SolutionItems) = preProject
+		readem.txt = readem.txt
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

@@ -6,7 +6,7 @@ using Velox.Common;
 
 namespace Velox.ObjectInterface;
 
-internal sealed class DeletedSet// : IEnumerable<long>
+internal sealed class DeletedSet
 {
 	const int capacity = 1024;
 

@@ -1,12 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Velox.Common;
 
 namespace Velox.Networking;
 
-internal unsafe delegate void ProcessChunkDelegate(int size, ref object state, ref byte* buffer, ref int capacity);
+internal unsafe delegate bool ProcessChunkDelegate(int size, ref object state, ref byte* buffer, ref int capacity);
 
 internal unsafe sealed class MessageWriter
 {
@@ -21,7 +20,7 @@ internal unsafe sealed class MessageWriter
 	public byte* buffer;
 
 	object state;
-	long msgId;
+	ulong messageId;
 	ProcessChunkDelegate processor;
 	bool isFirst;
 
@@ -33,19 +32,19 @@ internal unsafe sealed class MessageWriter
 	{
 	}
 
-	internal void Init(object state, byte* buffer, int capacity, ProcessChunkDelegate processor, long msgId)
+	internal void Init(object state, byte* buffer, int capacity, ProcessChunkDelegate processor, ulong messageId)
 	{
 		this.buffer = buffer;
 		this.state = state;
 		this.capacity = capacity;
 		this.processor = processor;
-		this.msgId = msgId;
+		this.messageId = messageId;
 		this.isFirst = true;
 		this.offset = 0;
 
 		this.offset += sizeof(int); // Chunk size
 		WriteInt(HeaderVersion);
-		WriteLong(msgId);           // Message id
+		WriteULong(messageId);      // Message id
 		this.offset++;              // Chunk type
 	}
 
@@ -1142,15 +1141,20 @@ internal unsafe sealed class MessageWriter
 		*((int*)buffer) = offset;
 		*(buffer + sizeof(int) + sizeof(int) + sizeof(long)) = (byte)flags;
 
-		processor(offset, ref state, ref buffer, ref capacity);
-
-		if (!isLast)
+		if (processor(offset, ref state, ref buffer, ref capacity))
 		{
-			isFirst = false;
-			offset = sizeof(int);  // Skip chunk size
-			WriteInt(HeaderVersion);
-			WriteLong(msgId);       // Message id
-			this.offset++;          // Is last chunk
+			if (!isLast)
+			{
+				isFirst = false;
+				offset = sizeof(int);       // Skip chunk size
+				WriteInt(HeaderVersion);
+				WriteULong(messageId);      // Message id
+				this.offset++;              // Is last chunk
+			}
+		}
+		else
+		{
+			// else we just got an upgrade of the small first chunk to a large one, nothing to do here
 		}
 	}
 }

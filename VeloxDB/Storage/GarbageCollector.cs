@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using Velox.Common;
-using static System.Math;
 
 namespace Velox.Storage;
 
@@ -64,29 +63,33 @@ internal unsafe sealed class GarbageCollector
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public void TransactionCompleted(Transaction tran, DatabaseVersions versions)
+	public Transaction TransactionCompleted(Transaction tran)
 	{
-		TTTrace.Write(database.TraceId, tran.Id, versions.ReadVersion);
+		return activeTrans.TransactionCompleted(tran);
+	}
 
+	public void PrepareGarbage(Transaction tran, Transaction lastReader, ulong databaseReadVersion)
+	{
+		TTTrace.Write(database.TraceId, tran.Id, tran.ReadVersion, databaseReadVersion);
 
-		activeTrans.TransactionCompleted(tran, versions.ReadVersion);
-		if (tran.Type == TransactionType.ReadWrite)
+		ulong lastReadVersion = lastReader == null ? databaseReadVersion : lastReader.ReadVersion;
+
+		lock (uncollectedTrans)
 		{
-			uncollectedTrans.Insert(tran);
-			TransactionContext tc = tran.Context;
-			for (int i = 0; i < tc.MergedWith.Count; i++)
+			uncollectedTrans.Collect(lastReadVersion);
+
+			if (tran.Type == TransactionType.ReadWrite)
 			{
-				activeTrans.TransactionCompleted(tc.MergedWith[i], versions.ReadVersion);
+				if (tran.IsAlignment)
+				{
+					uncollectedTrans.Reset();
+				}
+				else
+				{
+					uncollectedTrans.Insert(tran);
+				}
 			}
 		}
-
-		if (tran.Type == TransactionType.ReadWrite && tran.IsAlignment)
-			return;
-
-		Transaction lastReader = activeTrans.GetFirst();
-		ulong lastReadVersion = lastReader == null ? versions.ReadVersion : lastReader.ReadVersion;
-
-		uncollectedTrans.Collect(lastReadVersion);
 	}
 
 	public void Flush()
@@ -109,7 +112,7 @@ internal unsafe sealed class GarbageCollector
 
 			if (p == destroyCommand)
 				return;
-			
+
 			if (p == pauseCommand)
 			{
 				CountedManualResetEvent sd = unpauseEvent;
@@ -243,7 +246,7 @@ internal unsafe sealed class GarbageCollector
 
 	public void GetOldestReaders(DatabaseVersions versions, out ulong readVer)
 	{
-		Transaction tran = activeTrans.GetFirst();
+		Transaction tran = activeTrans.GetOldestReader();
 		if (tran == null)
 			readVer = versions.ReadVersion;
 		else

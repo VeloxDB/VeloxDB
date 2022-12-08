@@ -1,11 +1,10 @@
 ﻿using System;
-using System.Threading;
 using Velox.Common;
 using Velox.Networking;
 
 namespace Velox.Client;
 
-internal sealed class PooledConnection
+internal unsafe sealed class PooledConnection
 {
 	private enum State
 	{
@@ -14,9 +13,11 @@ internal sealed class PooledConnection
 		Closed
 	}
 
-	readonly object sync = new object();
+	MultiSpinRWLock sync;
+	object countersHandle;
+	long* pendingCounters;
+
 	ConnectionPool owner;
-	int pendingReqCount;
 	State state;
 	ClientConnection connection;
 	TimeSpan timestamp;
@@ -28,7 +29,16 @@ internal sealed class PooledConnection
 		this.timestamp = timestamp;
 		this.state = State.Open;
 
+		sync = new MultiSpinRWLock();
+		pendingCounters = (long*)CacheLineMemoryManager.Allocate(sizeof(long), out countersHandle);
+
 		this.connection.ResponseProcessed += ResponseProcessed;
+	}
+
+	~PooledConnection()
+	{
+		sync.Dispose();
+		CacheLineMemoryManager.Free(countersHandle);
 	}
 
 	public ConnectionPool Owner => owner;
@@ -43,13 +53,14 @@ internal sealed class PooledConnection
 
 	public void Invalidate()
 	{
-		lock (sync)
+		sync.EnterWriteLock();
+		try
 		{
 			if (state == State.Closing || state == State.Closed)
 				return;
 
 			owner.RemoveConnection(this);
-			if (pendingReqCount == 0)
+			if (PendingCount() == 0)
 			{
 				state = State.Closed;
 				connection.CloseAsync();
@@ -59,34 +70,71 @@ internal sealed class PooledConnection
 				state = State.Closing;
 			}
 		}
+		finally
+		{
+			sync.ExitWriteLock();
+		}
+	}
+
+	private long PendingCount()
+	{
+		long s = 0;
+		for (int i = 0; i < ProcessorNumber.CoreCount; i++)
+		{
+			s += *(long*)CacheLineMemoryManager.GetBuffer(pendingCounters, i);
+		}
+
+		return s;
 	}
 
 	private bool TryStartRequest()
 	{
-		lock (sync)
+		int handle = sync.EnterReadLock();
+		try
 		{
 			if (state != State.Open)
 				return false;
 
-			pendingReqCount++;
+			NativeInterlocked64* p = (NativeInterlocked64*)CacheLineMemoryManager.GetBuffer(pendingCounters, handle);
+			p->Increment();
 			return true;
+		}
+		finally
+		{
+			sync.ExitReadLock(handle);
 		}
 	}
 
 	private void EndRequest()
 	{
-		lock (sync)
+		int handle = sync.EnterReadLock();
+		try
 		{
-			pendingReqCount--;
-			Checker.AssertFalse(pendingReqCount < 0);
-			if (state != State.Open)
+			NativeInterlocked64* p = (NativeInterlocked64*)CacheLineMemoryManager.GetBuffer(pendingCounters, handle);
+			p->Decrement();
+		}
+		finally
+		{
+			sync.ExitReadLock(handle);
+		}
+
+		if (state == State.Closing)
+		{
+			sync.EnterWriteLock();
+			try
 			{
-				Checker.AssertTrue(state != State.Closed);
-				if (pendingReqCount == 0)
+				if (state == State.Closing)
 				{
-					state = State.Closed;
-					connection.CloseAsync();
+					if (PendingCount() == 0)
+					{
+						state = State.Closed;
+						connection.CloseAsync();
+					}
 				}
+			}
+			finally
+			{
+				sync.ExitWriteLock();
 			}
 		}
 	}

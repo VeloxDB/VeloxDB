@@ -92,7 +92,7 @@ internal sealed class PersistenceConfigMode : Mode
 		{
 			try
 			{
-				persistenceConfig = databaseAdministration.GetPersistenceConfiguration().Result;
+				persistenceConfig = databaseAdministration.GetPersistenceConfiguration().GetResult();
 				if (persistenceConfig == null)
 					persistenceConfig = new PersistenceDescriptor(new List<LogDescriptor>());
 			}

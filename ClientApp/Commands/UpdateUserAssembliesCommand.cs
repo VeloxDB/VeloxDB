@@ -50,7 +50,7 @@ internal sealed class UpdateUserAssembliesCommand : BindableCommand
 		{
 			try
 			{
-				assemblyState = databaseAdministration.GetAssemblyState(false).Result;
+				assemblyState = databaseAdministration.GetAssemblyState(false).GetResult();
 			}
 			catch (AggregateException e)
 			{

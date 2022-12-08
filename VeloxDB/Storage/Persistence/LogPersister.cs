@@ -83,6 +83,7 @@ internal unsafe sealed class LogPersister : IDisposable
 	public int SnapshotCount => snapshotCount;
 	public string Name => logDesc.Name;
 	public int LogIndex => logIndex;
+	public bool SectorSizeMismatch => fileWriter.SectorSizeMismatch;
 
 	public static void GetLogNames(StorageEngine engine, LogDescriptor ld, out string[] logs)
 	{

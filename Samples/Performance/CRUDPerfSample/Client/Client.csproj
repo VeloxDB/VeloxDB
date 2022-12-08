@@ -9,11 +9,13 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Velox" Version="0.1.11" />
+    <ProjectReference Include="..\API\API.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\API\API.csproj" />
+    <Reference Include="vlxl">
+      <HintPath>..\..\..\..\..\bin\vlxl.dll</HintPath>
+    </Reference>
   </ItemGroup>
 
 </Project>

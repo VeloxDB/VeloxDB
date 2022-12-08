@@ -126,7 +126,7 @@ internal static class Methods
 	public static readonly MethodInfo ArrayLengthMethod = typeof(Array).GetProperty(nameof(Array.Length), BindingFlags.DeclaredOnly | BindingFlags.Public | BindingFlags.Instance).GetGetMethod();
 	public static readonly MethodInfo SerializePolymorphMethod = typeof(Methods).GetMethod(nameof(SerializePolymorphType), BindingFlags.DeclaredOnly | BindingFlags.Public | BindingFlags.Static);
 	public static readonly MethodInfo SerializerContextTryWriteMethod = typeof(SerializerContext).GetMethod(nameof(SerializerContext.TryWriteInstance), BindingFlags.DeclaredOnly | BindingFlags.Public | BindingFlags.Instance);
-	public static readonly MethodInfo SerializerContextGetMethod  = typeof(SerializerContext).GetProperty(nameof(SerializerContext.Instance), BindingFlags.DeclaredOnly | BindingFlags.Public | BindingFlags.Static).GetGetMethod();
+	public static readonly MethodInfo SerializerContextGetMethod = typeof(SerializerContext).GetProperty(nameof(SerializerContext.Instance), BindingFlags.DeclaredOnly | BindingFlags.Public | BindingFlags.Static).GetGetMethod();
 	public static readonly MethodInfo SerializerContextInitMethod = typeof(SerializerContext).GetMethod(nameof(SerializerContext.Init), BindingFlags.DeclaredOnly | BindingFlags.Public | BindingFlags.Instance);
 	public static readonly MethodInfo SerializerContextSerQueuedMethod = typeof(SerializerContext).GetMethod(nameof(SerializerContext.SerializeQueued), BindingFlags.DeclaredOnly | BindingFlags.Public | BindingFlags.Instance);
 	public static readonly MethodInfo DeserializePolymorphMethod = typeof(Methods).GetMethod(nameof(DeserializePolymorphType), BindingFlags.DeclaredOnly | BindingFlags.Public | BindingFlags.Static);
@@ -142,6 +142,8 @@ internal static class Methods
 	public static readonly FieldInfo MessageWriterOffsetFld = typeof(MessageWriter).GetField(nameof(MessageWriter.offset), BindingFlags.DeclaredOnly | BindingFlags.Public | BindingFlags.Instance);
 	public static readonly FieldInfo MessageWriterSizeFld = typeof(MessageWriter).GetField(nameof(MessageWriter.capacity), BindingFlags.DeclaredOnly | BindingFlags.Public | BindingFlags.Instance);
 	public static readonly FieldInfo MessageWriterBufferFld = typeof(MessageWriter).GetField(nameof(MessageWriter.buffer), BindingFlags.DeclaredOnly | BindingFlags.Public | BindingFlags.Instance);
+
+	public static readonly MethodInfo ConnReleaseLastChunkMethod = typeof(Connection).GetMethod(nameof(Connection.ReleaseLastChunk), BindingFlags.DeclaredOnly | BindingFlags.Public | BindingFlags.Instance);
 
 	public static void GenerateForLoop(ILGenerator il, Action<LocalBuilder> bodyGenerator, LocalBuilder lenVar)
 	{

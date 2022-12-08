@@ -247,6 +247,9 @@ internal sealed class ClusterStatusCommand : BindableCommand
 
 	private bool IsPrimaryInGW(ReplicationElement element, Dictionary<string, NodeState> nodeStates)
 	{
+		if (element.Parent == null)
+			return true;
+
 		if (element.Parent.Type != ElementType.GlobalWrite)
 			return false;
 

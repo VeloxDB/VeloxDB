@@ -49,7 +49,8 @@ internal unsafe sealed partial class MemoryManager : IDisposable
 		}
 
 		IntPtr[] p = AlignedAllocator.AllocateMultiple(PerCPUData.Size, ProcessorNumber.CoreCount, true);
-		perCPUData = (PerCPUData**)AlignedAllocator.Allocate(PerCPUData.Size);
+		perCPUData = (PerCPUData**)AlignedAllocator.Allocate(sizeof(PerCPUData*) * ProcessorNumber.CoreCount);
+
 		for (int i = 0; i < ProcessorNumber.CoreCount; i++)
 		{
 			perCPUData[i] = (PerCPUData*)p[i];
@@ -424,6 +425,7 @@ internal unsafe sealed partial class MemoryManager : IDisposable
 		}
 	}
 
+	[StructLayout(LayoutKind.Sequential, Pack = 1, Size = 1)]
 	public struct BufferList
 	{
 		public const int Size = 16;

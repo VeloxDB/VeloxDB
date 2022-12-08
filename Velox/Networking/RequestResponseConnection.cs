@@ -7,6 +7,9 @@ internal sealed class RequestResponseConnection
 {
 	static DeserializerDelegate<int> dummyDeserializer = (r) => 0;
 
+	[ThreadStatic]
+	static int assignedPooledConnection;
+
 	readonly object eventPoolSync = new object();
 	int eventPoolCount;
 	EventWaitHandle[] eventPool;
@@ -14,7 +17,7 @@ internal sealed class RequestResponseConnection
 	Connection[] connections;
 
 	readonly object sync = new object();
-	int connectionPoolCount;
+	int currPoolConnection;
 	Connection[] connectionPool;
 	ConnectionState state;
 	bool closeCalled;
@@ -43,7 +46,7 @@ internal sealed class RequestResponseConnection
 		for (int i = 0; i < connections.Length; i++)
 		{
 			connections[i].AddClosedHandlerSafe(ConnectionClosedHandler);
-			PutConnection(connections[i]);
+			connectionPool[i] = connections[i];
 		}
 	}
 
@@ -65,79 +68,52 @@ internal sealed class RequestResponseConnection
 
 	public void SendMessage(SerializerDelegate serializer)
 	{
-		using (GetConnection(out Connection connection))
-		{
-			connection.SendMessage(serializer);
-		}
+		GetConnection().SendMessage(serializer);
 	}
 
 	public void SendMessage<T1>(SerializerDelegate<T1> serializer, T1 value1)
 	{
-		using (GetConnection(out Connection connection))
-		{
-			connection.SendMessage(serializer, value1);
-		}
+		GetConnection().SendMessage(serializer, value1);
 	}
 
 	public void SendMessage<T1, T2>(SerializerDelegate<T1, T2> serializer, T1 value1, T2 value2)
 	{
-		using (GetConnection(out Connection connection))
-		{
-			connection.SendMessage(serializer, value1, value2);
-		}
+		GetConnection().SendMessage(serializer, value1, value2);
 	}
 
 	public void SendMessage<T1, T2, T3>(SerializerDelegate<T1, T2, T3> serializer, T1 value1, T2 value2, T3 value3)
 	{
-		using (GetConnection(out Connection connection))
-		{
-			connection.SendMessage(serializer, value1, value2, value3);
-		}
+		GetConnection().SendMessage(serializer, value1, value2, value3);
 	}
 
 	public void SendMessage<T1, T2, T3, T4>(SerializerDelegate<T1, T2, T3, T4> serializer,
 		T1 value1, T2 value2, T3 value3, T4 value4)
 	{
-		using (GetConnection(out Connection connection))
-		{
-			connection.SendMessage(serializer, value1, value2, value3, value4);
-		}
+		GetConnection().SendMessage(serializer, value1, value2, value3, value4);
 	}
 
 	public void SendMessage<T1, T2, T3, T4, T5>(SerializerDelegate<T1, T2, T3, T4, T5> serializer,
 		T1 value1, T2 value2, T3 value3, T4 value4, T5 value5)
 	{
-		using (GetConnection(out Connection connection))
-		{
-			connection.SendMessage(serializer, value1, value2, value3, value4, value5);
-		}
+		GetConnection().SendMessage(serializer, value1, value2, value3, value4, value5);
 	}
 
 	public void SendMessage<T1, T2, T3, T4, T5, T6>(SerializerDelegate<T1, T2, T3, T4, T5, T6> serializer,
 		T1 value1, T2 value2, T3 value3, T4 value4, T5 value5, T6 value6)
 	{
-		using (GetConnection(out Connection connection))
-		{
-			connection.SendMessage(serializer, value1, value2, value3, value4, value5, value6);
-		}
+		GetConnection().SendMessage(serializer, value1, value2, value3, value4, value5, value6);
 	}
 
 	public void SendMessage<T1, T2, T3, T4, T5, T6, T7>(SerializerDelegate<T1, T2, T3, T4, T5, T6, T7> serializer,
 		T1 value1, T2 value2, T3 value3, T4 value4, T5 value5, T6 value6, T7 value7)
 	{
-		using (GetConnection(out Connection connection))
-		{
-			connection.SendMessage(serializer, value1, value2, value3, value4, value5, value6, value7);
-		}
+		GetConnection().SendMessage(serializer, value1, value2, value3, value4, value5, value6, value7);
 	}
 
 	public void SendMessage<T1, T2, T3, T4, T5, T6, T7, T8>(SerializerDelegate<T1, T2, T3, T4, T5, T6, T7, T8> serializer,
 		T1 value1, T2 value2, T3 value3, T4 value4, T5 value5, T6 value6, T7 value7, T8 value8)
 	{
-		using (GetConnection(out Connection connection))
-		{
-			connection.SendMessage(serializer, value1, value2, value3, value4, value5, value6, value7, value8);
-		}
+		GetConnection().SendMessage(serializer, value1, value2, value3, value4, value5, value6, value7, value8);
 	}
 
 	public void SendRequest(SerializerDelegate serializer, int timeout = -1)
@@ -149,10 +125,7 @@ internal sealed class RequestResponseConnection
 	{
 		ResponseData<TRes> rd = new ResponseData<TRes>(GetEvent(), deserializer);
 		HandleResponseDelegate responseCallback = ResponseCallbackFactory<TRes>.Callback;
-		using (GetConnection(out Connection connection))
-		{
-			connection.SendRequest(serializer, responseCallback, rd);
-		}
+		GetConnection().SendRequest(serializer, responseCallback, rd);
 
 		bool b = rd.TryWaitResponse(timeout, out EventWaitHandle e);
 		PutEvent(e);
@@ -175,10 +148,7 @@ internal sealed class RequestResponseConnection
 	{
 		ResponseData<TRes> rd = new ResponseData<TRes>(GetEvent(), deserializer);
 		HandleResponseDelegate responseCallback = ResponseCallbackFactory<TRes>.Callback;
-		using (GetConnection(out Connection connection))
-		{
-			connection.SendRequest(serializer, value1, responseCallback, rd);
-		}
+		GetConnection().SendRequest(serializer, value1, responseCallback, rd);
 
 		bool b = rd.TryWaitResponse(timeout, out EventWaitHandle e);
 		PutEvent(e);
@@ -201,10 +171,7 @@ internal sealed class RequestResponseConnection
 	{
 		ResponseData<TRes> rd = new ResponseData<TRes>(GetEvent(), deserializer);
 		HandleResponseDelegate responseCallback = ResponseCallbackFactory<TRes>.Callback;
-		using (GetConnection(out Connection connection))
-		{
-			connection.SendRequest(serializer, value1, value2, responseCallback, rd);
-		}
+		GetConnection().SendRequest(serializer, value1, value2, responseCallback, rd);
 
 		bool b = rd.TryWaitResponse(timeout, out EventWaitHandle e);
 		PutEvent(e);
@@ -227,10 +194,7 @@ internal sealed class RequestResponseConnection
 	{
 		ResponseData<TRes> rd = new ResponseData<TRes>(GetEvent(), deserializer);
 		HandleResponseDelegate responseCallback = ResponseCallbackFactory<TRes>.Callback;
-		using (GetConnection(out Connection connection))
-		{
-			connection.SendRequest(serializer, value1, value2, value3, responseCallback, rd);
-		}
+		GetConnection().SendRequest(serializer, value1, value2, value3, responseCallback, rd);
 
 		bool b = rd.TryWaitResponse(timeout, out EventWaitHandle e);
 		PutEvent(e);
@@ -254,10 +218,7 @@ internal sealed class RequestResponseConnection
 	{
 		ResponseData<TRes> rd = new ResponseData<TRes>(GetEvent(), deserializer);
 		HandleResponseDelegate responseCallback = ResponseCallbackFactory<TRes>.Callback;
-		using (GetConnection(out Connection connection))
-		{
-			connection.SendRequest(serializer, value1, value2, value3, value4, responseCallback, rd);
-		}
+		GetConnection().SendRequest(serializer, value1, value2, value3, value4, responseCallback, rd);
 
 		bool b = rd.TryWaitResponse(timeout, out EventWaitHandle e);
 		PutEvent(e);
@@ -282,10 +243,7 @@ internal sealed class RequestResponseConnection
 	{
 		ResponseData<TRes> rd = new ResponseData<TRes>(GetEvent(), deserializer);
 		HandleResponseDelegate responseCallback = ResponseCallbackFactory<TRes>.Callback;
-		using (GetConnection(out Connection connection))
-		{
-			connection.SendRequest(serializer, value1, value2, value3, value4, value5, responseCallback, rd);
-		}
+		GetConnection().SendRequest(serializer, value1, value2, value3, value4, value5, responseCallback, rd);
 
 		bool b = rd.TryWaitResponse(timeout, out EventWaitHandle e);
 		PutEvent(e);
@@ -309,10 +267,7 @@ internal sealed class RequestResponseConnection
 	{
 		ResponseData<TRes> rd = new ResponseData<TRes>(GetEvent(), deserializer);
 		HandleResponseDelegate responseCallback = ResponseCallbackFactory<TRes>.Callback;
-		using (GetConnection(out Connection connection))
-		{
-			connection.SendRequest(serializer, value1, value2, value3, value4, value5, value6, responseCallback, rd);
-		}
+		GetConnection().SendRequest(serializer, value1, value2, value3, value4, value5, value6, responseCallback, rd);
 
 		bool b = rd.TryWaitResponse(timeout, out EventWaitHandle e);
 		PutEvent(e);
@@ -337,10 +292,7 @@ internal sealed class RequestResponseConnection
 	{
 		ResponseData<TRes> rd = new ResponseData<TRes>(GetEvent(), deserializer);
 		HandleResponseDelegate responseCallback = ResponseCallbackFactory<TRes>.Callback;
-		using (GetConnection(out Connection connection))
-		{
-			connection.SendRequest(serializer, value1, value2, value3, value4, value5, value6, value7, responseCallback, rd);
-		}
+		GetConnection().SendRequest(serializer, value1, value2, value3, value4, value5, value6, value7, responseCallback, rd);
 
 		bool b = rd.TryWaitResponse(timeout, out EventWaitHandle e);
 		PutEvent(e);
@@ -365,10 +317,7 @@ internal sealed class RequestResponseConnection
 	{
 		ResponseData<TRes> rd = new ResponseData<TRes>(GetEvent(), deserializer);
 		HandleResponseDelegate responseCallback = ResponseCallbackFactory<TRes>.Callback;
-		using (GetConnection(out Connection connection))
-		{
-			connection.SendRequest(serializer, value1, value2, value3, value4, value5, value6, value7, value8, responseCallback, rd);
-		}
+		GetConnection().SendRequest(serializer, value1, value2, value3, value4, value5, value6, value7, value8, responseCallback, rd);
 
 		bool b = rd.TryWaitResponse(timeout, out EventWaitHandle e);
 		PutEvent(e);
@@ -381,27 +330,13 @@ internal sealed class RequestResponseConnection
 		return rd.Value;
 	}
 
-	private PooledConnection GetConnection(out Connection connection)
+	private Connection GetConnection()
 	{
-		lock (sync)
-		{
-			if (connectionPoolCount == 0)
-			{
-				connection = connections[0];
-				return new PooledConnection();
-			}
+		int assigned = assignedPooledConnection;
+		if (assigned == 0)
+			assigned = assignedPooledConnection = Interlocked.Increment(ref currPoolConnection);
 
-			connection = connectionPool[--connectionPoolCount];
-			return new PooledConnection(this, connection);
-		}
-	}
-
-	private void PutConnection(Connection connection)
-	{
-		lock (sync)
-		{
-			connectionPool[connectionPoolCount++] = connection;
-		}
+		return connectionPool[assigned % connectionPool.Length];
 	}
 
 	private EventWaitHandle GetEvent()
@@ -430,8 +365,7 @@ internal sealed class RequestResponseConnection
 	{
 		lock (sync)
 		{
-			if (state != ConnectionState.Closed)
-				Dispose();
+			Dispose();
 
 			if (closeCalled)
 				return;
@@ -460,24 +394,6 @@ internal sealed class RequestResponseConnection
 			{
 				connections[i].Close();
 			}
-		}
-	}
-
-	private struct PooledConnection : IDisposable
-	{
-		RequestResponseConnection owner;
-		Connection connection;
-
-		public PooledConnection(RequestResponseConnection owner, Connection connection)
-		{
-			this.owner = owner;
-			this.connection = connection;
-		}
-
-		public void Dispose()
-		{
-			if (connection != null)
-				owner.PutConnection(connection);
 		}
 	}
 

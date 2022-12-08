@@ -79,7 +79,7 @@ internal sealed class DatabaseVersions
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public ulong GetNextTranId()
 	{
-		return ++tranId;
+		return Interlocked.Increment(ref tranId);
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]

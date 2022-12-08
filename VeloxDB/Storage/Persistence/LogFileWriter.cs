@@ -56,6 +56,8 @@ internal unsafe sealed class LogFileWriter : IDisposable
 		buffer = AlignedAllocator.Allocate(capacity + additionalCapacity, (int)writer.SectorSize);
 	}
 
+	public bool SectorSizeMismatch => writer.SecotSizeMismatch;
+
 	public static LogFileHeader CreateEmpty(string fileName, uint timestamp, bool hasSnapshot, long size, bool isPackedFormat)
 	{
 		string path = Path.GetDirectoryName(fileName);

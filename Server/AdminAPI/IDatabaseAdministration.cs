@@ -1,16 +1,17 @@
-﻿using Velox.Protocol;
+﻿using Velox.Client;
+using Velox.Protocol;
 
 namespace Velox.Server;
 
 [DbAPI(Name = AdminAPIServiceNames.DatabaseAdministration)]
 public interface IDatabaseAdministration
 {
-    [DbAPIOperation(OperationType = DbAPIOperationType.Read)]
-    Task<UserAssembliesState> GetAssemblyState(bool hashOnly = true);
+	[DbAPIOperation(OperationType = DbAPIOperationType.Read)]
+	DatabaseTask<UserAssembliesState> GetAssemblyState(bool hashOnly = true);
 
-    [DbAPIOperation(OperationType = DbAPIOperationType.Read)]
-    Task<PersistenceDescriptor> GetPersistenceConfiguration();
+	[DbAPIOperation(OperationType = DbAPIOperationType.Read)]
+	DatabaseTask<PersistenceDescriptor> GetPersistenceConfiguration();
 
-    Task UpdateUserAssemblies(AssemblyUpdate assemblyUpdate, Guid assemblyVersionGuid);
-    Task UpdatePersistenceConfiguration(PersistenceDescriptor persistenceDescriptor);
+	DatabaseTask UpdateUserAssemblies(AssemblyUpdate assemblyUpdate, Guid assemblyVersionGuid);
+	DatabaseTask UpdatePersistenceConfiguration(PersistenceDescriptor persistenceDescriptor);
 }

@@ -1,9 +1,10 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Reflection.Metadata;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using Velox.Common;
@@ -560,7 +561,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		// opportunity to refresh current executing physical CPU
 		ProcessorNumber.Refresh();
 
-		if (!engineLock.TryCreateTransactionAndEnterReadLock())
+		if (!engineLock.TryCreateTransactionAndEnterReadLock(out int handle))
 			throw new DatabaseException(DatabaseErrorDetail.Create(DatabaseErrorType.DatabaseBusy));
 
 		try
@@ -578,7 +579,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		}
 		finally
 		{
-			engineLock.ExitReadLock();
+			engineLock.ExitReadLock(handle);
 		}
 	}
 
@@ -743,7 +744,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		TransactionContext tc = tran.Context;
 		bool isSuccess = false;
 
-		replicator.PreTransactionCommit(tran);
+		replicator.PreTransactionCommit(tran, out int handle);
 
 		try
 		{
@@ -785,7 +786,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		}
 		finally
 		{
-			replicator.PostTransactionCommit(tran, isSuccess);
+			replicator.PostTransactionCommit(tran, isSuccess, handle);
 		}
 	}
 
@@ -806,7 +807,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 	public List<Transaction> CreateAlignmentTransactions(TransactionType type,
 		ReplicatedDatabases alignedDatabases, out List<DatabaseVersions> versions)
 	{
-		if (!engineLock.TryCreateTransactionAndEnterReadLock())
+		if (!engineLock.TryCreateTransactionAndEnterReadLock(out int handle))
 			throw new DatabaseException(DatabaseErrorDetail.Create(DatabaseErrorType.DatabaseBusy));
 
 		try
@@ -834,7 +835,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		}
 		finally
 		{
-			engineLock.ExitReadLock();
+			engineLock.ExitReadLock(handle);
 		}
 	}
 
@@ -849,7 +850,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 			if (disposed)
 				throw new DatabaseException(DatabaseErrorDetail.Create(DatabaseErrorType.DatabaseDisposed));
 
-			if (!engineLock.TryCreateTransactionAndEnterReadLock(timeout))
+			if (!engineLock.TryCreateTransactionAndEnterReadLock(out int handle, timeout))
 				throw new DatabaseException(DatabaseErrorDetail.Create(DatabaseErrorType.DatabaseBusy));
 
 			try
@@ -861,7 +862,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 			}
 			finally
 			{
-				engineLock.ExitReadLock();
+				engineLock.ExitReadLock(handle);
 			}
 		}
 		finally
@@ -1431,17 +1432,23 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		long count = tc.LockedClasses->Count;
 		for (int i = 0; i < count; i++)
 		{
-			ushort classIndex = ClassIndexMultiSet.GetClassIndex(tc.LockedClasses, i);
-			Class @class = database.GetClass(classIndex, out ClassLocker locker).MainClass;
-			@class.CommitClassReadLock(locker, tran.CommitVersion);
+			ushort classIndex = ClassIndexMultiSet.GetClassIndex(tc.LockedClasses, i, out ushort indexCount);
+			for (int j = 0; j < indexCount; j++)
+			{
+				Class @class = database.GetClass(classIndex, out ClassLocker locker).MainClass;
+				@class.CommitClassReadLock(locker, tran.CommitVersion);
+			}
 		}
 
 		count = tc.WrittenClasses->Count;
 		for (int i = 0; i < count; i++)
 		{
-			ushort classIndex = ClassIndexMultiSet.GetClassIndex(tc.WrittenClasses, i);
-			Class @class = database.GetClass(classIndex, out ClassLocker locker).MainClass;
-			@class.CommitClassWriteLock(locker, tran.CommitVersion);
+			ushort classIndex = ClassIndexMultiSet.GetClassIndex(tc.WrittenClasses, i, out ushort indexCount);
+			for (int j = 0; j < indexCount; j++)
+			{
+				Class @class = database.GetClass(classIndex, out ClassLocker locker).MainClass;
+				@class.CommitClassWriteLock(locker, tran.CommitVersion);
+			}
 		}
 
 		ModifiedList l1 = tc.AffectedObjects;
@@ -1532,17 +1539,23 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		count = tc.WrittenClasses->Count;
 		for (int i = 0; i < count; i++)
 		{
-			ushort classIndex = ClassIndexMultiSet.GetClassIndex(tc.WrittenClasses, i);
-			Class @class = database.GetClass(classIndex, out ClassLocker locker).MainClass;
-			@class.RollbackClassWriteLock(locker);
+			ushort classIndex = ClassIndexMultiSet.GetClassIndex(tc.WrittenClasses, i, out ushort indexCount);
+			for (int j = 0; j < indexCount; j++)
+			{
+				Class @class = database.GetClass(classIndex, out ClassLocker locker).MainClass;
+				@class.RollbackClassWriteLock(locker);
+			}
 		}
 
 		count = tc.LockedClasses->Count;
 		for (int i = 0; i < count; i++)
 		{
-			ushort classIndex = ClassIndexMultiSet.GetClassIndex(tc.LockedClasses, i);
-			Class @class = database.GetClass(classIndex, out ClassLocker locker).MainClass;
-			@class.RollbackClassReadLock(locker);
+			ushort classIndex = ClassIndexMultiSet.GetClassIndex(tc.LockedClasses, i, out ushort indexCount);
+			for (int j = 0; j < indexCount; j++)
+			{
+				Class @class = database.GetClass(classIndex, out ClassLocker locker).MainClass;
+				@class.RollbackClassReadLock(locker);
+			}
 		}
 
 		l1 = tran.Context.AffectedObjects;

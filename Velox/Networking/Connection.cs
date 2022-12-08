@@ -1,8 +1,14 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Drawing;
 using System.Linq;
 using System.Net;
+using System.Net.Mail;
 using System.Net.Sockets;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Velox.Common;
@@ -10,7 +16,7 @@ using Velox.Common;
 namespace Velox.Networking;
 
 internal delegate void MessageWriterDelegate(MessageWriter writer);
-internal delegate void HandleMessageDelegate(Connection connection, long requestId, MessageReader reader);
+internal delegate void HandleMessageDelegate(Connection connection, ulong requestId, MessageReader reader);
 internal delegate void HandleResponseDelegate(Connection connection, object state, Exception error, MessageReader reader);
 internal delegate void SerializerDelegate(MessageWriter writer);
 internal delegate void SerializerDelegate<T1>(MessageWriter writer, T1 value1);
@@ -34,8 +40,14 @@ internal abstract class Connection
 {
 	public const int AwaiterPoolCount = 128;
 	public const int MaxRequestArguments = 8;
+	public const int receiveGroupSize = 8;
 
-	protected RWSpinLock sync;
+	protected const int tcpBufferSize = 1024 * 1024 * 2;
+
+	[ThreadStatic]
+	static bool earlyReleasedLastChunk;
+
+	protected MultiSpinRWLock sync;
 
 	protected Socket socket;
 
@@ -45,79 +57,67 @@ internal abstract class Connection
 	protected TimeSpan inactivityInterval;
 	protected TimeSpan inactivityTimeout;
 
-	readonly object receiveSync = new object();
-	bool isAsyncReceiveStarted;
-	volatile bool isReceiving;
-
 	volatile bool closeRequested;
 	HandleMessageDelegate messageHandler;
 
-	long messageId;
-
 	IncompleteMessageCollection incompleteMessages;
-	ItemPool<MessageChunk> largeChunkPool;
-	ItemPool<MessageChunk> smallChunkPool;
-	ProcessChunkDelegate socketSender;
+	MessageChunkPool chunkPool;
+
+	ProcessChunkDelegate socketSenderDelegate;
+	GroupingSender groupingSender;
 
 	MessageReaderCallback readerCallback;
 	PendingRequests pendingRequests;
 
-	WaitCallback receiveExecutor;
-
-	SendWorker sendWorker;
-
 	object tag;
+
+	Action<ChunkRange> chunkDelegator;
+	Action<byte[]> managedMemDelegator;
+	Action<MessageChunk> processor;
 
 	public event Action Closed;
 	public event Action<HandleResponseDelegate> ResponseProcessed;
 
-	internal unsafe Connection(int bufferPoolSize, TimeSpan inactivityInterval, TimeSpan inactivityTimeout,
+	internal unsafe Connection(MessageChunkPool chunkPool, TimeSpan inactivityInterval, TimeSpan inactivityTimeout,
 		int maxQueuedChunkCount, bool groupSmallMessages, HandleMessageDelegate messageHandler)
 	{
 		this.inactivityInterval = inactivityInterval;
 		this.inactivityTimeout = inactivityTimeout;
 		this.state = ConnectionState.Created;
 		this.messageHandler = messageHandler;
+		this.chunkPool = chunkPool;
 
-		socketSender = SendChunk;
-		isReceiving = true;
+		socketSenderDelegate = SendChunk;
+		chunkDelegator = DelegateGroupWorkItemsFromChunk;
+		managedMemDelegator = DelegateGroupWorkItemsFromManagedMemory;
+		processor = ProcessMessage;
 
-		messageId = BaseMsgId;
+		sync = new MultiSpinRWLock();
 
-		sync = new RWSpinLock();
-
-		int largeChunkCount = Math.Max(4, (int)(bufferPoolSize * 0.8) / MessageChunk.LargeBufferSize);
-		int smallChunkCount = Math.Max(16, (int)(bufferPoolSize * 0.2) / MessageChunk.LargeBufferSize);
-
-		smallChunkPool = new ItemPool<MessageChunk>(smallChunkCount,
-			new MessageChunkFactory(ReceiveCompleted, MessageChunk.SmallBufferSize));
-
-		largeChunkPool = new ItemPool<MessageChunk>(largeChunkCount,
-			new MessageChunkFactory(ReceiveCompleted, MessageChunk.LargeBufferSize));
-
-		if (groupSmallMessages)
-			sendWorker = new SendWorker(this);
-
-		incompleteMessages = new IncompleteMessageCollection(smallChunkPool,
-			largeChunkPool, maxQueuedChunkCount, StopReceiving, ContinueReceiving);
+		incompleteMessages = new IncompleteMessageCollection(chunkPool, maxQueuedChunkCount, StopReceiving, ContinueReceiving);
 
 		readerCallback = new MessageReaderCallback(ProvideNextMessageChunk);
-		receiveExecutor = s => ReceiveCompleted(socket, (SocketAsyncEventArgs)s);
 
 		pendingRequests = new PendingRequests(this);
 	}
 
-	public Connection(Socket socket, int bufferPoolSize, TimeSpan inactivityInterval,
+	public Connection(Socket socket, MessageChunkPool chunkPool, TimeSpan inactivityInterval,
 		TimeSpan inactivityTimeout, int maxQueuedChunkCount, bool groupSmallMessages, HandleMessageDelegate messageHandler) :
-		this(bufferPoolSize, inactivityInterval, inactivityTimeout, maxQueuedChunkCount, groupSmallMessages, messageHandler)
+		this(chunkPool, inactivityInterval, inactivityTimeout, maxQueuedChunkCount, groupSmallMessages, messageHandler)
 	{
 		this.socket = socket;
 		state = ConnectionState.Opened;
 	}
 
+	~Connection()
+	{
+		sync.Dispose();
+	}
+
 	public ConnectionState State => state;
 
-	protected abstract long BaseMsgId { get; }
+	public abstract ulong MessageIdBit { get; }
+
 	public object Tag { get => tag; set => tag = value; }
 
 	public bool TrySetTagIfNull(object tag)
@@ -125,129 +125,111 @@ internal abstract class Connection
 		return Interlocked.CompareExchange(ref this.tag, tag, null) == null;
 	}
 
-	protected abstract bool IsResponseMessage(long msgId);
+	protected abstract bool IsResponseMessage(ulong msgId);
 
 	public void SendMessage(SerializerDelegate serializer)
 	{
-		long currMsgId = Interlocked.Increment(ref messageId);
-		SendMessageInternal(serializer, currMsgId, null, null);
+		SendMessageInternal(serializer, 0, null, null);
 	}
 
 	public void SendMessage<T1>(SerializerDelegate<T1> serializer, T1 value1)
 	{
-		long currMsgId = Interlocked.Increment(ref messageId);
-		SendMessageInternal(serializer, value1, currMsgId, null, null);
+		SendMessageInternal(serializer, value1, 0, null, null);
 	}
 
 	public void SendMessage<T1, T2>(SerializerDelegate<T1, T2> serializer, T1 value1, T2 value2)
 	{
-		long currMsgId = Interlocked.Increment(ref messageId);
-		SendMessageInternal(serializer, value1, value2, currMsgId, null, null);
+		SendMessageInternal(serializer, value1, value2, 0, null, null);
 	}
 
 	public void SendMessage<T1, T2, T3>(SerializerDelegate<T1, T2, T3> serializer, T1 value1, T2 value2, T3 value3)
 	{
-		long currMsgId = Interlocked.Increment(ref messageId);
-		SendMessageInternal(serializer, value1, value2, value3, currMsgId, null, null);
+		SendMessageInternal(serializer, value1, value2, value3, 0, null, null);
 	}
 
 	public void SendMessage<T1, T2, T3, T4>(SerializerDelegate<T1, T2, T3, T4> serializer, T1 value1, T2 value2, T3 value3, T4 value4)
 	{
-		long currMsgId = Interlocked.Increment(ref messageId);
-		SendMessageInternal(serializer, value1, value2, value3, value4, currMsgId, null, null);
+		SendMessageInternal(serializer, value1, value2, value3, value4, 0, null, null);
 	}
 
 	public void SendMessage<T1, T2, T3, T4, T5>(SerializerDelegate<T1, T2, T3, T4, T5> serializer,
 		T1 value1, T2 value2, T3 value3, T4 value4, T5 value5)
 	{
-		long currMsgId = Interlocked.Increment(ref messageId);
-		SendMessageInternal(serializer, value1, value2, value3, value4, value5, currMsgId, null, null);
+		SendMessageInternal(serializer, value1, value2, value3, value4, value5, 0, null, null);
 	}
 
 	public void SendMessage<T1, T2, T3, T4, T5, T6>(SerializerDelegate<T1, T2, T3, T4, T5, T6> serializer,
 		T1 value1, T2 value2, T3 value3, T4 value4, T5 value5, T6 value6)
 	{
-		long currMsgId = Interlocked.Increment(ref messageId);
-		SendMessageInternal(serializer, value1, value2, value3, value4, value5, value6, currMsgId, null, null);
+		SendMessageInternal(serializer, value1, value2, value3, value4, value5, value6, 0, null, null);
 	}
 
 	public void SendMessage<T1, T2, T3, T4, T5, T6, T7>(SerializerDelegate<T1, T2, T3, T4, T5, T6, T7> serializer,
 		T1 value1, T2 value2, T3 value3, T4 value4, T5 value5, T6 value6, T7 value7)
 	{
-		long currMsgId = Interlocked.Increment(ref messageId);
-		SendMessageInternal(serializer, value1, value2, value3, value4, value5, value6, value7, currMsgId, null, null);
+		SendMessageInternal(serializer, value1, value2, value3, value4, value5, value6, value7, 0, null, null);
 	}
 
 	public void SendMessage<T1, T2, T3, T4, T5, T6, T7, T8>(SerializerDelegate<T1, T2, T3, T4, T5, T6, T7, T8> serializer,
 		T1 value1, T2 value2, T3 value3, T4 value4, T5 value5, T6 value6, T7 value7, T8 value8)
 	{
-		long currMsgId = Interlocked.Increment(ref messageId);
-		SendMessageInternal(serializer, value1, value2, value3, value4, value5, value6, value7, value8, currMsgId, null, null);
+		SendMessageInternal(serializer, value1, value2, value3, value4, value5, value6, value7, value8, 0, null, null);
 	}
 
 	public void SendRequest(SerializerDelegate serializer, HandleResponseDelegate responseCallback, object responseState)
 	{
-		long currMsgId = Interlocked.Increment(ref messageId);
-		SendMessageInternal(serializer, currMsgId, responseCallback, responseState);
+		SendMessageInternal(serializer, 0, responseCallback, responseState);
 	}
 
 	public void SendRequest<T1>(SerializerDelegate<T1> serializer, T1 value1, HandleResponseDelegate responseCallback, object responseState)
 	{
-		long currMsgId = Interlocked.Increment(ref messageId);
-		SendMessageInternal(serializer, value1, currMsgId, responseCallback, responseState);
+		SendMessageInternal(serializer, value1, 0, responseCallback, responseState);
 	}
 
 	public void SendRequest<T1, T2>(SerializerDelegate<T1, T2> serializer, T1 value1, T2 value2,
 		HandleResponseDelegate responseCallback, object responseState)
 	{
-		long currMsgId = Interlocked.Increment(ref messageId);
-		SendMessageInternal(serializer, value1, value2, currMsgId, responseCallback, responseState);
+		SendMessageInternal(serializer, value1, value2, 0, responseCallback, responseState);
 	}
 
 	public void SendRequest<T1, T2, T3>(SerializerDelegate<T1, T2, T3> serializer, T1 value1, T2 value2, T3 value3,
 		HandleResponseDelegate responseCallback, object responseState)
 	{
-		long currMsgId = Interlocked.Increment(ref messageId);
-		SendMessageInternal(serializer, value1, value2, value3, currMsgId, responseCallback, responseState);
+		SendMessageInternal(serializer, value1, value2, value3, 0, responseCallback, responseState);
 	}
 
 	public void SendRequest<T1, T2, T3, T4>(SerializerDelegate<T1, T2, T3, T4> serializer, T1 value1, T2 value2, T3 value3, T4 value4,
 		HandleResponseDelegate responseCallback, object responseState)
 	{
-		long currMsgId = Interlocked.Increment(ref messageId);
-		SendMessageInternal(serializer, value1, value2, value3, value4, currMsgId, responseCallback, responseState);
+		SendMessageInternal(serializer, value1, value2, value3, value4, 0, responseCallback, responseState);
 	}
 
 	public void SendRequest<T1, T2, T3, T4, T5>(SerializerDelegate<T1, T2, T3, T4, T5> serializer, T1 value1, T2 value2,
 		T3 value3, T4 value4, T5 value5, HandleResponseDelegate responseCallback, object responseState)
 	{
-		long currMsgId = Interlocked.Increment(ref messageId);
-		SendMessageInternal(serializer, value1, value2, value3, value4, value5, currMsgId, responseCallback, responseState);
+		SendMessageInternal(serializer, value1, value2, value3, value4, value5, 0, responseCallback, responseState);
 	}
 
 	public void SendRequest<T1, T2, T3, T4, T5, T6>(SerializerDelegate<T1, T2, T3, T4, T5, T6> serializer, T1 value1, T2 value2,
 		T3 value3, T4 value4, T5 value5, T6 value6, HandleResponseDelegate responseCallback, object responseState)
 	{
-		long currMsgId = Interlocked.Increment(ref messageId);
-		SendMessageInternal(serializer, value1, value2, value3, value4, value5, value6, currMsgId, responseCallback, responseState);
+		SendMessageInternal(serializer, value1, value2, value3, value4, value5, value6, 0, responseCallback, responseState);
 	}
 
 	public void SendRequest<T1, T2, T3, T4, T5, T6, T7>(SerializerDelegate<T1, T2, T3, T4, T5, T6, T7> serializer, T1 value1, T2 value2,
 		T3 value3, T4 value4, T5 value5, T6 value6, T7 value7, HandleResponseDelegate responseCallback, object responseState)
 	{
-		long currMsgId = Interlocked.Increment(ref messageId);
-		SendMessageInternal(serializer, value1, value2, value3, value4, value5, value6, value7, currMsgId, responseCallback, responseState);
+		SendMessageInternal(serializer, value1, value2, value3, value4, value5, value6, value7, 0, responseCallback, responseState);
 	}
 
 	public void SendRequest<T1, T2, T3, T4, T5, T6, T7, T8>(SerializerDelegate<T1, T2, T3, T4, T5, T6, T7, T8> serializer, T1 value1,
 		T2 value2, T3 value3, T4 value4, T5 value5, T6 value6, T7 value7, T8 value8,
 		HandleResponseDelegate responseCallback, object responseState)
 	{
-		long currMsgId = Interlocked.Increment(ref messageId);
-		SendMessageInternal(serializer, value1, value2, value3, value4, value5, value6, value7, value8, currMsgId, responseCallback, responseState);
+		SendMessageInternal(serializer, value1, value2, value3, value4, value5, value6, value7, value8, 0, responseCallback, responseState);
 	}
 
-	public void SendResponse(SerializerDelegate serializer, long requestId)
+	public void SendResponse(SerializerDelegate serializer, ulong requestId)
 	{
 		try
 		{
@@ -258,7 +240,7 @@ internal abstract class Connection
 		}
 	}
 
-	public void SendResponse<T1>(SerializerDelegate<T1> serializer, T1 value1, long requestId)
+	public void SendResponse<T1>(SerializerDelegate<T1> serializer, T1 value1, ulong requestId)
 	{
 		try
 		{
@@ -269,7 +251,7 @@ internal abstract class Connection
 		}
 	}
 
-	public void SendResponse<T1, T2>(SerializerDelegate<T1, T2> serializer, T1 value1, T2 value2, long requestId)
+	public void SendResponse<T1, T2>(SerializerDelegate<T1, T2> serializer, T1 value1, T2 value2, ulong requestId)
 	{
 		try
 		{
@@ -280,7 +262,7 @@ internal abstract class Connection
 		}
 	}
 
-	public void SendResponse<T1, T2, T3>(SerializerDelegate<T1, T2, T3> serializer, T1 value1, T2 value2, T3 value3, long requestId)
+	public void SendResponse<T1, T2, T3>(SerializerDelegate<T1, T2, T3> serializer, T1 value1, T2 value2, T3 value3, ulong requestId)
 	{
 		try
 		{
@@ -292,7 +274,7 @@ internal abstract class Connection
 	}
 
 	public void SendResponse<T1, T2, T3, T4>(SerializerDelegate<T1, T2, T3, T4> serializer,
-		T1 value1, T2 value2, T3 value3, T4 value4, long requestId)
+		T1 value1, T2 value2, T3 value3, T4 value4, ulong requestId)
 	{
 		try
 		{
@@ -304,7 +286,7 @@ internal abstract class Connection
 	}
 
 	public void SendResponse<T1, T2, T3, T4, T5>(SerializerDelegate<T1, T2, T3, T4, T5> serializer,
-		T1 value1, T2 value2, T3 value3, T4 value4, T5 value5, long requestId)
+		T1 value1, T2 value2, T3 value3, T4 value4, T5 value5, ulong requestId)
 	{
 		try
 		{
@@ -315,10 +297,10 @@ internal abstract class Connection
 		}
 	}
 
-	private unsafe void SendMessageInternal(SerializerDelegate serializer, long msgId,
+	private unsafe void SendMessageInternal(SerializerDelegate serializer, ulong messageId,
 		HandleResponseDelegate responseCallback, object responseState)
 	{
-		sync.EnterReadLock();
+		int lockHandle = sync.EnterReadLock();
 
 		try
 		{
@@ -328,22 +310,28 @@ internal abstract class Connection
 			if (state > ConnectionState.Opened)
 				throw CreateClosedException();
 
-			MessageChunk chunk = smallChunkPool.Get();
+			MessageChunk chunk = chunkPool.GetSmall();
 			MessageWriter writer = chunk.Writer;
 
 			try
 			{
-				if (responseCallback != null)
-					pendingRequests.Add(msgId, new PendingRequests.PendingRequest(responseCallback, responseState));
+				if (messageId != 0)
+				{
+					Checker.AssertTrue(responseCallback == null);
+				}
+				else
+				{
+					messageId = pendingRequests.Add(new PendingRequests.PendingRequest(responseCallback, responseState), lockHandle);
+				}
 
-				writer.Init(chunk, chunk.PBuffer, chunk.BufferSize, socketSender, msgId);
+				writer.Init(chunk, chunk.PBuffer, chunk.BufferSize, socketSenderDelegate, messageId);
 				serializer.Invoke(writer);
 				writer.EmptyBuffer(true);
 			}
 			catch (Exception e)
 			{
 				if (responseCallback != null)
-					pendingRequests.TryRemove(msgId, out _);
+					pendingRequests.TryRemove(messageId, out _);
 
 				if (e is SocketException)
 				{
@@ -356,14 +344,14 @@ internal abstract class Connection
 		}
 		finally
 		{
-			sync.ExitReadLock();
+			sync.ExitReadLock(lockHandle);
 		}
 	}
 
-	private unsafe void SendMessageInternal<T1>(SerializerDelegate<T1> serializer, T1 value1, long msgId,
+	private unsafe void SendMessageInternal<T1>(SerializerDelegate<T1> serializer, T1 value1, ulong messageId,
 		HandleResponseDelegate responseCallback, object responseState)
 	{
-		sync.EnterReadLock();
+		int lockHandle = sync.EnterReadLock();
 
 		try
 		{
@@ -373,22 +361,28 @@ internal abstract class Connection
 			if (state > ConnectionState.Opened)
 				throw CreateClosedException();
 
-			MessageChunk chunk = smallChunkPool.Get();
+			MessageChunk chunk = chunkPool.GetSmall();
 			MessageWriter writer = chunk.Writer;
 
 			try
 			{
-				if (responseCallback != null)
-					pendingRequests.Add(msgId, new PendingRequests.PendingRequest(responseCallback, responseState));
+				if (messageId != 0)
+				{
+					Checker.AssertTrue(responseCallback == null);
+				}
+				else
+				{
+					messageId = pendingRequests.Add(new PendingRequests.PendingRequest(responseCallback, responseState), lockHandle);
+				}
 
-				writer.Init(chunk, chunk.PBuffer, chunk.BufferSize, socketSender, msgId);
+				writer.Init(chunk, chunk.PBuffer, chunk.BufferSize, socketSenderDelegate, messageId);
 				serializer.Invoke(writer, value1);
 				writer.EmptyBuffer(true);
 			}
 			catch (Exception e)
 			{
 				if (responseCallback != null)
-					pendingRequests.TryRemove(msgId, out _);
+					pendingRequests.TryRemove(messageId, out _);
 
 				if (e is SocketException)
 				{
@@ -401,14 +395,14 @@ internal abstract class Connection
 		}
 		finally
 		{
-			sync.ExitReadLock();
+			sync.ExitReadLock(lockHandle);
 		}
 	}
 
 	private unsafe void SendMessageInternal<T1, T2>(SerializerDelegate<T1, T2> serializer, T1 value1, T2 value2,
-		long msgId, HandleResponseDelegate responseCallback, object responseState)
+		ulong messageId, HandleResponseDelegate responseCallback, object responseState)
 	{
-		sync.EnterReadLock();
+		int lockHandle = sync.EnterReadLock();
 
 		try
 		{
@@ -418,22 +412,28 @@ internal abstract class Connection
 			if (state > ConnectionState.Opened)
 				throw CreateClosedException();
 
-			MessageChunk chunk = smallChunkPool.Get();
+			MessageChunk chunk = chunkPool.GetSmall();
 			MessageWriter writer = chunk.Writer;
 
 			try
 			{
-				if (responseCallback != null)
-					pendingRequests.Add(msgId, new PendingRequests.PendingRequest(responseCallback, responseState));
+				if (messageId != 0)
+				{
+					Checker.AssertTrue(responseCallback == null);
+				}
+				else
+				{
+					messageId = pendingRequests.Add(new PendingRequests.PendingRequest(responseCallback, responseState), lockHandle);
+				}
 
-				writer.Init(chunk, chunk.PBuffer, chunk.BufferSize, socketSender, msgId);
+				writer.Init(chunk, chunk.PBuffer, chunk.BufferSize, socketSenderDelegate, messageId);
 				serializer.Invoke(writer, value1, value2);
 				writer.EmptyBuffer(true);
 			}
 			catch (Exception e)
 			{
 				if (responseCallback != null)
-					pendingRequests.TryRemove(msgId, out _);
+					pendingRequests.TryRemove(messageId, out _);
 
 				if (e is SocketException)
 				{
@@ -446,14 +446,14 @@ internal abstract class Connection
 		}
 		finally
 		{
-			sync.ExitReadLock();
+			sync.ExitReadLock(lockHandle);
 		}
 	}
 
 	private unsafe void SendMessageInternal<T1, T2, T3>(SerializerDelegate<T1, T2, T3> serializer, T1 value1, T2 value2, T3 value3,
-		long msgId, HandleResponseDelegate responseCallback, object responseState)
+		ulong messageId, HandleResponseDelegate responseCallback, object responseState)
 	{
-		sync.EnterReadLock();
+		int lockHandle = sync.EnterReadLock();
 
 		try
 		{
@@ -463,22 +463,28 @@ internal abstract class Connection
 			if (state > ConnectionState.Opened)
 				throw CreateClosedException();
 
-			MessageChunk chunk = smallChunkPool.Get();
+			MessageChunk chunk = chunkPool.GetSmall();
 			MessageWriter writer = chunk.Writer;
 
 			try
 			{
-				if (responseCallback != null)
-					pendingRequests.Add(msgId, new PendingRequests.PendingRequest(responseCallback, responseState));
+				if (messageId != 0)
+				{
+					Checker.AssertTrue(responseCallback == null);
+				}
+				else
+				{
+					messageId = pendingRequests.Add(new PendingRequests.PendingRequest(responseCallback, responseState), lockHandle);
+				}
 
-				writer.Init(chunk, chunk.PBuffer, chunk.BufferSize, socketSender, msgId);
+				writer.Init(chunk, chunk.PBuffer, chunk.BufferSize, socketSenderDelegate, messageId);
 				serializer.Invoke(writer, value1, value2, value3);
 				writer.EmptyBuffer(true);
 			}
 			catch (Exception e)
 			{
 				if (responseCallback != null)
-					pendingRequests.TryRemove(msgId, out _);
+					pendingRequests.TryRemove(messageId, out _);
 
 				if (e is SocketException)
 				{
@@ -491,14 +497,14 @@ internal abstract class Connection
 		}
 		finally
 		{
-			sync.ExitReadLock();
+			sync.ExitReadLock(lockHandle);
 		}
 	}
 
 	private unsafe void SendMessageInternal<T1, T2, T3, T4>(SerializerDelegate<T1, T2, T3, T4> serializer, T1 value1, T2 value2,
-		T3 value3, T4 value4, long msgId, HandleResponseDelegate responseCallback, object responseState)
+		T3 value3, T4 value4, ulong messageId, HandleResponseDelegate responseCallback, object responseState)
 	{
-		sync.EnterReadLock();
+		int lockHandle = sync.EnterReadLock();
 
 		try
 		{
@@ -508,22 +514,28 @@ internal abstract class Connection
 			if (state > ConnectionState.Opened)
 				throw CreateClosedException();
 
-			MessageChunk chunk = smallChunkPool.Get();
+			MessageChunk chunk = chunkPool.GetSmall();
 			MessageWriter writer = chunk.Writer;
 
 			try
 			{
-				if (responseCallback != null)
-					pendingRequests.Add(msgId, new PendingRequests.PendingRequest(responseCallback, responseState));
+				if (messageId != 0)
+				{
+					Checker.AssertTrue(responseCallback == null);
+				}
+				else
+				{
+					messageId = pendingRequests.Add(new PendingRequests.PendingRequest(responseCallback, responseState), lockHandle);
+				}
 
-				writer.Init(chunk, chunk.PBuffer, chunk.BufferSize, socketSender, msgId);
+				writer.Init(chunk, chunk.PBuffer, chunk.BufferSize, socketSenderDelegate, messageId);
 				serializer.Invoke(writer, value1, value2, value3, value4);
 				writer.EmptyBuffer(true);
 			}
 			catch (Exception e)
 			{
 				if (responseCallback != null)
-					pendingRequests.TryRemove(msgId, out _);
+					pendingRequests.TryRemove(messageId, out _);
 
 				if (e is SocketException)
 				{
@@ -536,14 +548,14 @@ internal abstract class Connection
 		}
 		finally
 		{
-			sync.ExitReadLock();
+			sync.ExitReadLock(lockHandle);
 		}
 	}
 
 	private unsafe void SendMessageInternal<T1, T2, T3, T4, T5>(SerializerDelegate<T1, T2, T3, T4, T5> serializer, T1 value1,
-		T2 value2, T3 value3, T4 value4, T5 value5, long msgId, HandleResponseDelegate responseCallback, object responseState)
+		T2 value2, T3 value3, T4 value4, T5 value5, ulong messageId, HandleResponseDelegate responseCallback, object responseState)
 	{
-		sync.EnterReadLock();
+		int lockHandle = sync.EnterReadLock();
 
 		try
 		{
@@ -553,22 +565,28 @@ internal abstract class Connection
 			if (state > ConnectionState.Opened)
 				throw CreateClosedException();
 
-			MessageChunk chunk = smallChunkPool.Get();
+			MessageChunk chunk = chunkPool.GetSmall();
 			MessageWriter writer = chunk.Writer;
 
 			try
 			{
-				if (responseCallback != null)
-					pendingRequests.Add(msgId, new PendingRequests.PendingRequest(responseCallback, responseState));
+				if (messageId != 0)
+				{
+					Checker.AssertTrue(responseCallback == null);
+				}
+				else
+				{
+					messageId = pendingRequests.Add(new PendingRequests.PendingRequest(responseCallback, responseState), lockHandle);
+				}
 
-				writer.Init(chunk, chunk.PBuffer, chunk.BufferSize, socketSender, msgId);
+				writer.Init(chunk, chunk.PBuffer, chunk.BufferSize, socketSenderDelegate, messageId);
 				serializer.Invoke(writer, value1, value2, value3, value4, value5);
 				writer.EmptyBuffer(true);
 			}
 			catch (Exception e)
 			{
 				if (responseCallback != null)
-					pendingRequests.TryRemove(msgId, out _);
+					pendingRequests.TryRemove(messageId, out _);
 
 				if (e is SocketException)
 				{
@@ -581,15 +599,15 @@ internal abstract class Connection
 		}
 		finally
 		{
-			sync.ExitReadLock();
+			sync.ExitReadLock(lockHandle);
 		}
 	}
 
 	private unsafe void SendMessageInternal<T1, T2, T3, T4, T5, T6>(SerializerDelegate<T1, T2, T3, T4, T5, T6> serializer,
 		T1 value1, T2 value2, T3 value3, T4 value4, T5 value5, T6 value6,
-		long msgId, HandleResponseDelegate responseCallback, object responseState)
+		ulong messageId, HandleResponseDelegate responseCallback, object responseState)
 	{
-		sync.EnterReadLock();
+		int lockHandle = sync.EnterReadLock();
 
 		try
 		{
@@ -599,22 +617,28 @@ internal abstract class Connection
 			if (state > ConnectionState.Opened)
 				throw CreateClosedException();
 
-			MessageChunk chunk = smallChunkPool.Get();
+			MessageChunk chunk = chunkPool.GetSmall();
 			MessageWriter writer = chunk.Writer;
 
 			try
 			{
-				if (responseCallback != null)
-					pendingRequests.Add(msgId, new PendingRequests.PendingRequest(responseCallback, responseState));
+				if (messageId != 0)
+				{
+					Checker.AssertTrue(responseCallback == null);
+				}
+				else
+				{
+					messageId = pendingRequests.Add(new PendingRequests.PendingRequest(responseCallback, responseState), lockHandle);
+				}
 
-				writer.Init(chunk, chunk.PBuffer, chunk.BufferSize, socketSender, msgId);
+				writer.Init(chunk, chunk.PBuffer, chunk.BufferSize, socketSenderDelegate, messageId);
 				serializer.Invoke(writer, value1, value2, value3, value4, value5, value6);
 				writer.EmptyBuffer(true);
 			}
 			catch (Exception e)
 			{
 				if (responseCallback != null)
-					pendingRequests.TryRemove(msgId, out _);
+					pendingRequests.TryRemove(messageId, out _);
 
 				if (e is SocketException)
 				{
@@ -627,15 +651,15 @@ internal abstract class Connection
 		}
 		finally
 		{
-			sync.ExitReadLock();
+			sync.ExitReadLock(lockHandle);
 		}
 	}
 
 	private unsafe void SendMessageInternal<T1, T2, T3, T4, T5, T6, T7>(SerializerDelegate<T1, T2, T3, T4, T5, T6, T7> serializer,
 		T1 value1, T2 value2, T3 value3, T4 value4, T5 value5, T6 value6, T7 value7,
-		long msgId, HandleResponseDelegate responseCallback, object responseState)
+		ulong messageId, HandleResponseDelegate responseCallback, object responseState)
 	{
-		sync.EnterReadLock();
+		int lockHandle = sync.EnterReadLock();
 
 		try
 		{
@@ -645,22 +669,28 @@ internal abstract class Connection
 			if (state > ConnectionState.Opened)
 				throw CreateClosedException();
 
-			MessageChunk chunk = smallChunkPool.Get();
+			MessageChunk chunk = chunkPool.GetSmall();
 			MessageWriter writer = chunk.Writer;
 
 			try
 			{
-				if (responseCallback != null)
-					pendingRequests.Add(msgId, new PendingRequests.PendingRequest(responseCallback, responseState));
+				if (messageId != 0)
+				{
+					Checker.AssertTrue(responseCallback == null);
+				}
+				else
+				{
+					messageId = pendingRequests.Add(new PendingRequests.PendingRequest(responseCallback, responseState), lockHandle);
+				}
 
-				writer.Init(chunk, chunk.PBuffer, chunk.BufferSize, socketSender, msgId);
+				writer.Init(chunk, chunk.PBuffer, chunk.BufferSize, socketSenderDelegate, messageId);
 				serializer.Invoke(writer, value1, value2, value3, value4, value5, value6, value7);
 				writer.EmptyBuffer(true);
 			}
 			catch (Exception e)
 			{
 				if (responseCallback != null)
-					pendingRequests.TryRemove(msgId, out _);
+					pendingRequests.TryRemove(messageId, out _);
 
 				if (e is SocketException)
 				{
@@ -673,15 +703,15 @@ internal abstract class Connection
 		}
 		finally
 		{
-			sync.ExitReadLock();
+			sync.ExitReadLock(lockHandle);
 		}
 	}
 
 	private unsafe void SendMessageInternal<T1, T2, T3, T4, T5, T6, T7, T8>(SerializerDelegate<T1, T2, T3, T4, T5, T6, T7, T8> serializer,
 		T1 value1, T2 value2, T3 value3, T4 value4, T5 value5, T6 value6, T7 value7, T8 value8,
-		long msgId, HandleResponseDelegate responseCallback, object responseState)
+		ulong messageId, HandleResponseDelegate responseCallback, object responseState)
 	{
-		sync.EnterReadLock();
+		int lockHandle = sync.EnterReadLock();
 
 		try
 		{
@@ -691,22 +721,28 @@ internal abstract class Connection
 			if (state > ConnectionState.Opened)
 				throw CreateClosedException();
 
-			MessageChunk chunk = smallChunkPool.Get();
+			MessageChunk chunk = chunkPool.GetSmall();
 			MessageWriter writer = chunk.Writer;
 
 			try
 			{
-				if (responseCallback != null)
-					pendingRequests.Add(msgId, new PendingRequests.PendingRequest(responseCallback, responseState));
+				if (messageId != 0)
+				{
+					Checker.AssertTrue(responseCallback == null);
+				}
+				else
+				{
+					messageId = pendingRequests.Add(new PendingRequests.PendingRequest(responseCallback, responseState), lockHandle);
+				}
 
-				writer.Init(chunk, chunk.PBuffer, chunk.BufferSize, socketSender, msgId);
+				writer.Init(chunk, chunk.PBuffer, chunk.BufferSize, socketSenderDelegate, messageId);
 				serializer.Invoke(writer, value1, value2, value3, value4, value5, value6, value7, value8);
 				writer.EmptyBuffer(true);
 			}
 			catch (Exception e)
 			{
 				if (responseCallback != null)
-					pendingRequests.TryRemove(msgId, out _);
+					pendingRequests.TryRemove(messageId, out _);
 
 				if (e is SocketException)
 				{
@@ -719,210 +755,416 @@ internal abstract class Connection
 		}
 		finally
 		{
-			sync.ExitReadLock();
+			sync.ExitReadLock(lockHandle);
 		}
 	}
 
-	private unsafe void SendChunk(int size, ref object state, ref byte* buffer, ref int capacity)
+	private void StopReceiving()
+	{
+		// Currently we do not support stop receiving
+	}
+
+	private void ContinueReceiving()
+	{
+		// Currently we do not support stop receiving
+	}
+
+	private unsafe bool SendChunk(int size, ref object state, ref byte* buffer, ref int capacity)
 	{
 		MessageChunk chunk = (MessageChunk)state;
-		chunk.UpdateSize();
+		Checker.AssertTrue(size == chunk.ChunkSize);
 
-		if (sendWorker != null && chunk.IsTheOnlyOne && chunk.ChunkSize <= MessageChunk.SmallBufferSize)
+		if (chunk.IsFirst && !chunk.IsLast && chunk.BufferSize == MessageChunk.SmallBufferSize)
 		{
-			sendWorker.Enqueue(chunk);
+			// Promote to large chunk to avoid splitting the request
+			MessageChunk largeChunk = chunkPool.GetLarge();
+			Utils.CopyMemory(chunk.PBuffer, largeChunk.PBuffer, chunk.ChunkSize);
+			chunk.SwapWriters(largeChunk);
+			chunkPool.Put(chunk);
+			state = largeChunk;
+			buffer = largeChunk.PBuffer;
+			capacity = largeChunk.BufferSize;
+			return false;
+		}
+
+		if (chunk.IsTheOnlyOne && chunk.ChunkSize <= MessageChunk.SmallBufferSize)
+		{
+			groupingSender.Send((IntPtr)chunk.PBuffer, chunk.ChunkSize);
+			chunkPool.Put(chunk);
 		}
 		else
 		{
 			try
 			{
-				lock (socket)
+				socket.Send(new ReadOnlySpan<byte>(chunk.PBuffer, chunk.ChunkSize));
+
+				if (chunk.IsLast)
 				{
-					int n = socket.Send(new ReadOnlySpan<byte>(chunk.PBuffer, size));
-					if (n != size)
-						throw new InvalidOperationException(); // Should never happen with blocking sockets
+					chunkPool.Put(chunk);
+				}
+				else if (chunk.IsFirst)
+				{
+					MessageChunk largeChunk = chunkPool.GetLarge();
+					chunk.SwapWriters(largeChunk);
+					chunkPool.Put(chunk);
+					state = largeChunk;
+					buffer = largeChunk.PBuffer;
+					capacity = largeChunk.BufferSize;
 				}
 			}
 			catch (Exception e)
 			{
-				chunk.ReturnToPool(smallChunkPool, largeChunkPool);
+				chunkPool.Put(chunk);
 				if (e is SocketException)
-					throw new CommunicationException("Failed to send data over a socket.", e);
+					throw new CommunicationException(e);
 
 				throw;
 			}
 		}
 
-		if (chunk.IsLast)
-		{
-			chunk.ReturnToPool(smallChunkPool, largeChunkPool);
-		}
-		else if (chunk.IsFirst)
-		{
-			MessageChunk largeChunk = largeChunkPool.Get();
-			chunk.SwapWriters(largeChunk);
-			smallChunkPool.Put(chunk);
-			state = largeChunk;
-			buffer = largeChunk.PBuffer;
-			capacity = largeChunk.BufferSize;
-		}
+		return true;
 	}
 
-	private void ContinueReceiving()
+	protected void StartReceiving()
 	{
-		isReceiving = true;
-		StartReceivingAsync();
+		groupingSender = new GroupingSender(socket);    // At this point we are guaranteed to have a socket
+		Thread t = new Thread(ReceiveWorker);
+		t.IsBackground = true;
+		t.Start();
 	}
 
-	private void StopReceiving()
+	private unsafe void ReceiveWorker()
 	{
-		isReceiving = false;
-	}
-
-	protected void StartReceivingAsync()
-	{
-		if (!isReceiving)
-			return;
-
-		lock (receiveSync)
-		{
-			if (isAsyncReceiveStarted)
-				return;
-
-			MessageChunk chunk = largeChunkPool.Get();
-			isAsyncReceiveStarted = true;
-			if (socket.ReceiveAsync(chunk.Args))
-				return;
-
-			ThreadPool.UnsafeQueueUserWorkItem(receiveExecutor, chunk.Args);
-		}
-	}
-
-	private unsafe void ReceiveCompleted(object sender, SocketAsyncEventArgs args)
-	{
-		MessageChunk chunk = (MessageChunk)args.UserToken;
-
-		sync.EnterReadLock();
+		int currPool = 0;   // We take chunks from all pools (from all CPUs to avoid starving a single pool)
+		MessageChunk receiveChunk = chunkPool.GetLarge(currPool);
 
 		try
 		{
-			try
+			int totalReceived = 0;
+			while (true)
 			{
-				if (state == ConnectionState.Closed)
+				int n;
+				try
 				{
-					args.Dispose();
-					return;
+					n = socket.Receive(new Span<byte>((byte*)receiveChunk.PBuffer + totalReceived,
+						MessageChunk.LargeBufferSize - totalReceived));
+				}
+				catch (Exception e) when (e is ObjectDisposedException || e is SocketException)
+				{
+					n = 0;
 				}
 
-				while (true)
+				if (n == 0)
 				{
-					if (args.SocketError != SocketError.Success || args.BytesTransferred == 0)
-						throw new SocketException((int)args.SocketError);
-
-					int received = args.BytesTransferred + args.Offset;
-					byte* p = chunk.PBuffer;
-					while (true)
-					{
-						if (received < sizeof(int))
-						{
-							PrepareAfterPartialReceive(args, chunk, p, received);
-							break;
-						}
-
-						int chunkSize = *(int*)p;
-						if (received < chunkSize)
-						{
-							PrepareAfterPartialReceive(args, chunk, p, received);
-							break;
-						}
-
-						ExtractChunk(out MessageChunk extracted, ref received, ref p);
-						PreProcessMessage(extracted);
-					}
-
-					if (socket.ReceiveAsync(args))
-						return;
+					Task.Run(() => CloseAsyncInternal());
+					break;
 				}
-			}
-			finally
-			{
-				sync.ExitReadLock();
+
+				totalReceived += n;
+
+				int handle = sync.EnterReadLock();
+
+				try
+				{
+					if (state == ConnectionState.Closed)
+						break;
+
+					DelegateWorkItems(ref currPool, ref receiveChunk, ref totalReceived);
+				}
+				catch (Exception e) when (e is CorruptMessageException || e is UnsupportedHeaderException || e is ObjectDisposedException)
+				{
+					Task.Run(() => CloseAsyncInternal());
+					break;
+				}
+				finally
+				{
+					sync.ExitReadLock(handle);
+				}
 			}
 		}
-		catch (CorruptMessageException)
+		finally
 		{
-			Task.Run(() => CloseAsyncInternal());
+			if (receiveChunk != null)
+				chunkPool.Put(receiveChunk);
+		}
+	}
+
+	private unsafe void DelegateWorkItems(ref int currPool, ref MessageChunk receiveChunk, ref int totalReceived)
+	{
+		if (totalReceived < 4)
+			return;
+
+		if (totalReceived < receiveChunk.ChunkSize)
+			return;
+
+		if (totalReceived == receiveChunk.ChunkSize && totalReceived > MessageChunk.SmallBufferSize)
+		{
+			PreProcessMessage(receiveChunk, DelegationType.Global);
+			currPool = (currPool + 1) % ProcessorNumber.CoreCount;
+			receiveChunk = chunkPool.GetLarge(currPool);
+			totalReceived = 0;
 			return;
 		}
-		catch (Exception e) when (e is SocketException || e is UnsupportedHeaderException)
-		{
-			if (chunk.IsFirst)
-				chunk.ReturnToPool(smallChunkPool, largeChunkPool);
 
+		if (totalReceived <= MessageChunk.SmallBufferSize * 2)
+		{
+			DelegateUsingManagedMemory(receiveChunk, ref totalReceived);
+		}
+		else
+		{
+			DelegateUsingChunk(ref currPool, ref receiveChunk, ref totalReceived);
+		}
+	}
+
+	private unsafe bool TryPeekMessage(byte* buffer, int size, out int chunkSize)
+	{
+		if (size < 4)
+		{
+			chunkSize = 0;
+			return false;
+		}
+
+		chunkSize = *(int*)buffer;
+		if (chunkSize > MessageChunk.LargeBufferSize)
+			throw new CorruptMessageException();
+
+		return chunkSize <= size;
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	private unsafe void DelegateManagedRange(byte* buffer, int size)
+	{
+		byte[] data = GC.AllocateUninitializedArray<byte>(size);
+		fixed (byte* bp = data)
+		{
+			Utils.CopyMemory(buffer, bp, size);
+			ThreadPool.UnsafeQueueUserWorkItem(managedMemDelegator, data, false);
+		}
+	}
+
+	private unsafe void DelegateUsingManagedMemory(MessageChunk receiveChunk, ref int totalReceived)
+	{
+		byte* buffer = receiveChunk.PBuffer;
+
+		int groupSize = 0;
+		int itemCount = 0;
+		int offset = 0;
+
+		while (TryPeekMessage(buffer + offset, totalReceived - offset, out int chunkSize))
+		{
+			itemCount++;
+			offset += chunkSize;
+			groupSize += chunkSize;
+
+			if (itemCount == receiveGroupSize)
+			{
+				DelegateManagedRange(buffer + offset - groupSize, groupSize);
+				itemCount = 0;
+				groupSize = 0;
+			}
+		}
+
+		if (itemCount > 0)
+			DelegateManagedRange(buffer + offset - groupSize, groupSize);
+
+		Checker.AssertTrue(offset <= totalReceived);
+		if (offset < totalReceived)
+			Utils.CopyMemory(buffer + offset, buffer, totalReceived - offset);
+
+		totalReceived -= offset;
+	}
+
+	private unsafe void DelegateUsingChunk(ref int currPool, ref MessageChunk receiveChunk, ref int totalReceived)
+	{
+		receiveChunk.SetupAutomaticCleanup(int.MaxValue);   // This will prevent cleanup until we are done here
+
+		byte* buffer = receiveChunk.PBuffer;
+		MessageChunk newReceiveChunk = null;
+
+		int groupCount = 0;
+
+		try
+		{
+			int groupSize = 0;
+			int itemCount = 0;
+			int offset = 0;
+
+			while (true)
+			{
+				if (offset + 4 > totalReceived)
+					break;
+
+				int chunkSize = *(int*)(buffer + offset);
+				if (chunkSize > MessageChunk.LargeBufferSize)
+					throw new CorruptMessageException();
+
+				if (offset + chunkSize > totalReceived)
+					break;
+
+				itemCount++;
+				offset += chunkSize;
+				groupSize += chunkSize;
+
+				if (itemCount == receiveGroupSize)
+				{
+					ThreadPool.UnsafeQueueUserWorkItem(chunkDelegator, new ChunkRange(receiveChunk, offset - groupSize, groupSize), false);
+					groupCount++;
+					itemCount = 0;
+					groupSize = 0;
+				}
+			}
+
+			if (itemCount > 0)
+			{
+				groupCount++;
+				ThreadPool.UnsafeQueueUserWorkItem(chunkDelegator, new ChunkRange(receiveChunk, offset - groupSize, groupSize), false);
+			}
+
+			Checker.AssertTrue(offset <= totalReceived);
+
+			currPool = (currPool + 1) % ProcessorNumber.CoreCount;
+			newReceiveChunk = chunkPool.GetLarge(currPool);
+			if (offset < totalReceived)
+				Utils.CopyMemory(buffer + offset, newReceiveChunk.PBuffer, totalReceived - offset);
+
+			totalReceived -= offset;
+		}
+		finally
+		{
+			receiveChunk.DecRefCount(int.MaxValue - groupCount, chunkPool);
+			receiveChunk = newReceiveChunk;
+		}
+	}
+
+	private unsafe void DelegateGroupWorkItemsFromChunk(ChunkRange range)
+	{
+		MessageChunk chunk = range.Chunk;
+		int size = range.Size;
+		byte* buffer = chunk.PBuffer + range.Offset;
+
+		while (size > 0)
+		{
+			MessageChunk extracted = ExtractChunk(ref size, ref buffer);
+
+			try
+			{
+				PreProcessMessage(extracted, DelegationType.Local);
+			}
+			catch (Exception e) when (e is CorruptMessageException || e is UnsupportedHeaderException || e is ObjectDisposedException)
+			{
+				chunkPool.Put(extracted);
+				Task.Run(() => CloseAsyncInternal());
+				return;
+			}
+		}
+
+		chunk.DecRefCount(1, chunkPool);
+		Checker.AssertTrue(size == 0);
+	}
+
+	private unsafe void DelegateGroupWorkItemsFromManagedMemory(byte[] range)
+	{
+		MessageChunk extracted = null;
+		fixed (byte* bp = range)
+		{
+			byte* buffer = bp;
+			int size = range.Length;
+			while (size > 0)
+			{
+				extracted = ExtractChunk(ref size, ref buffer);
+				if (size == 0)
+					break;
+
+				try
+				{
+					PreProcessMessage(extracted, DelegationType.Local);
+				}
+				catch (Exception e) when (e is CorruptMessageException || e is UnsupportedHeaderException || e is ObjectDisposedException)
+				{
+					chunkPool.Put(extracted);
+					Task.Run(() => CloseAsyncInternal());
+					return;
+				}
+			}
+
+			Checker.AssertTrue(size == 0);
+		}
+
+		try
+		{
+			PreProcessMessage(extracted, DelegationType.Sync);
+		}
+		catch (Exception e) when (e is CorruptMessageException || e is UnsupportedHeaderException || e is ObjectDisposedException)
+		{
+			chunkPool.Put(extracted);
 			Task.Run(() => CloseAsyncInternal());
 			return;
 		}
 	}
 
-	private unsafe void ExtractChunk(out MessageChunk extracted, ref int received, ref byte* p)
+	private unsafe MessageChunk ExtractChunk(ref int received, ref byte* p)
 	{
+		MessageChunk extracted;
+
 		int size = *(int*)p;
 		if (size <= MessageChunk.SmallBufferSize)
 		{
-			extracted = smallChunkPool.Get();
+			extracted = chunkPool.GetSmall();
 		}
 		else
 		{
-			extracted = largeChunkPool.Get();
+			extracted = chunkPool.GetLarge();
 		}
 
 		Utils.CopyMemory(p, extracted.PBuffer, size);
 		p += size;
 		received -= size;
-		extracted.UpdateSize();
-		extracted.ReadHeader();
+		return extracted;
 	}
 
-	private unsafe void PrepareAfterPartialReceive(SocketAsyncEventArgs args, MessageChunk chunk, byte* p, int received)
+	private void PreProcessMessage(MessageChunk chunk, DelegationType delegationType)
 	{
-		if (p != chunk.PBuffer && received > 0)
-			Utils.CopyMemory(p, chunk.PBuffer, received);
+		chunk.ReadHeader();
+		if (chunk.IsFirst && chunk.ChunkSize > MessageChunk.LargeBufferSize)
+			throw new CorruptMessageException();
 
-		args.SetBuffer(received, MessageChunk.LargeBufferSize - received);
-	}
-
-	private void PreProcessMessage(MessageChunk chunk)
-	{
-		PendingRequests.PendingRequest pendingRequest = new PendingRequests.PendingRequest();
 		ChunkAwaiter nextChunkAwaiter = incompleteMessages.ChunkReceived(chunk, out bool chunkConsumed);
-
 		if (chunkConsumed)
 			return;
 
-		if (IsResponseMessage(chunk.MessageId))
+		Checker.AssertTrue(chunk.IsFirst);
+		chunk.Awaiter = nextChunkAwaiter;
+		if (delegationType == DelegationType.Sync)
 		{
-			if (chunk.IsFirst && !pendingRequests.TryRemove(chunk.MessageId, out pendingRequest))
-				throw new CorruptMessageException();
+			ProcessMessage(chunk);
 		}
 		else
 		{
-			if (messageHandler == null)
-				throw new CorruptMessageException();
+			ThreadPool.UnsafeQueueUserWorkItem(processor, chunk, delegationType == DelegationType.Local);
 		}
-
-		if (chunk.IsFirst)
-			ThreadPool.UnsafeQueueUserWorkItem(x => ProcessMessage(chunk, nextChunkAwaiter, pendingRequest), null);
 	}
 
-	private unsafe void ProcessMessage(MessageChunk chunk, ChunkAwaiter nextChunkAwaiter, PendingRequests.PendingRequest pendingRequest)
+	private unsafe void ProcessMessage(MessageChunk chunk)
 	{
-		chunk.Awaiter = nextChunkAwaiter;
-		MessageReader reader = chunk.Reader;
-
-		reader.Init(chunk, chunk.PBuffer, chunk.HeaderSize, chunk.ChunkSize, chunk.BufferSize, readerCallback);
-
 		try
 		{
+			PendingRequests.PendingRequest pendingRequest = new PendingRequests.PendingRequest();
+			if (IsResponseMessage(chunk.MessageId))
+			{
+				if (!pendingRequests.TryRemove(chunk.MessageId, out pendingRequest))
+					throw new CorruptMessageException();
+			}
+			else
+			{
+				if (messageHandler == null)
+					throw new CorruptMessageException();
+			}
+
+			MessageReader reader = chunk.Reader;
+
+			earlyReleasedLastChunk = false;
+			reader.Init(chunk, chunk.PBuffer, chunk.HeaderSize, chunk.ChunkSize, chunk.BufferSize, readerCallback);
+
 			if (pendingRequest.Callback != null)
 			{
 				try
@@ -936,12 +1178,12 @@ internal abstract class Connection
 			}
 			else
 			{
+				Checker.AssertFalse(chunk.MessageId == 0);
 				messageHandler(this, chunk.MessageId, reader);
 			}
 
-			MessageChunk lastChunk = (MessageChunk)reader.State;
-			Checker.AssertTrue(object.ReferenceEquals(lastChunk.Reader, reader));
-			lastChunk.ReturnToPool(smallChunkPool, largeChunkPool);
+			if (!earlyReleasedLastChunk)
+				ReleaseLastChunk(reader);
 		}
 		catch (Exception e) when (e is ObjectDisposedException || e is SocketException ||
 			e is CommunicationObjectAbortedException || e is CorruptMessageException || e is ChunkTimeoutException)
@@ -950,11 +1192,22 @@ internal abstract class Connection
 		}
 	}
 
+	public void ReleaseLastChunk(MessageReader reader)
+	{
+		MessageChunk lastChunk = (MessageChunk)reader.State;
+		if (lastChunk != null)
+		{
+			earlyReleasedLastChunk = true;
+			Checker.AssertTrue(object.ReferenceEquals(lastChunk.Reader, reader));
+			chunkPool.Put(lastChunk);
+		}
+	}
+
 	private unsafe void ProvideNextMessageChunk(object state, out object newState, out byte* newBuffer, out int newOffset, out int newCapacity)
 	{
 		MessageChunk currChunk = (MessageChunk)state;
 
-		sync.EnterReadLock();
+		int lockHandle = sync.EnterReadLock();
 
 		try
 		{
@@ -967,7 +1220,7 @@ internal abstract class Connection
 			incompleteMessages.WaitNextChunk(currChunk, out MessageChunk nextChunk, out ChunkAwaiter nextChunkAwaiter);
 
 			nextChunk.SwapReaders(currChunk);
-			currChunk.ReturnToPool(smallChunkPool, largeChunkPool);
+			chunkPool.Put(currChunk);
 
 			nextChunk.Awaiter = nextChunkAwaiter;
 			newState = nextChunk;
@@ -977,7 +1230,7 @@ internal abstract class Connection
 		}
 		finally
 		{
-			sync.ExitReadLock();
+			sync.ExitReadLock(lockHandle);
 		}
 	}
 
@@ -1049,10 +1302,10 @@ internal abstract class Connection
 			sync.ExitWriteLock();
 		}
 
+		groupingSender.Close();
+
 		pendingRequests.Close(this, CreateClosedException());
 		incompleteMessages.Dispose();
-		smallChunkPool.Close();
-		largeChunkPool.Close();
 
 		SocketAsyncEventArgs e = new SocketAsyncEventArgs();
 		e.UserToken = tcs;
@@ -1069,8 +1322,6 @@ internal abstract class Connection
 		{
 			tcs.SetException(ex);
 		}
-
-		sendWorker?.Dispose();
 
 		return tcs.Task;
 	}
@@ -1159,46 +1410,120 @@ internal abstract class Connection
 		return endpoints;
 	}
 
-	private sealed class PendingRequests
+	public unsafe sealed class PendingRequests
 	{
-		readonly object sync = new object();
+		MultiSpinLock sync;
+
 		Connection owner;
-		Dictionary<long, PendingRequest> map;
+		Dictionary<ulong, PendingRequest>[] requests = new Dictionary<ulong, PendingRequest>[ProcessorNumber.CoreCount];
+
+		ulong messageIdBit;
+		object idsHandle;
+		ulong* currMessageIds;
+
+		static PendingRequests()
+		{
+			if (ProcessorNumber.CoreCount > 8192)
+				throw new NotSupportedException("Processor with more than 8192 cores is not supported.");
+		}
 
 		public PendingRequests(Connection owner)
 		{
 			this.owner = owner;
-			map = new Dictionary<long, PendingRequest>(8);
-		}
+			this.messageIdBit = owner.MessageIdBit;
 
-		public void Add(long msgId, PendingRequest request)
-		{
-			lock (sync)
+			sync = new MultiSpinLock();
+			currMessageIds = (ulong*)CacheLineMemoryManager.Allocate(sizeof(long), out idsHandle);
+			for (int i = 0; i < requests.Length; i++)
 			{
-				map.Add(msgId, request);
+				ulong* currMessageId = (ulong*)CacheLineMemoryManager.GetBuffer(currMessageIds, i);
+				*currMessageId = 0;
+				requests[i] = new Dictionary<ulong, PendingRequest>(1024 * 8);
 			}
 		}
 
-		public bool TryRemove(long msgId, out PendingRequest request)
+		public ulong ReserveId(int procNum)
 		{
-			lock (sync)
+			sync.Enter(procNum);
+			try
 			{
-				return map.Remove(msgId, out request);
+				NativeInterlocked64* currMessageId = (NativeInterlocked64*)CacheLineMemoryManager.GetBuffer(currMessageIds, procNum);
+				ulong messageId = (ulong)currMessageId->Increment();
+				messageId = messageIdBit | ((ulong)procNum << 50) | messageId;
+				return messageId;
+			}
+			finally
+			{
+				sync.Exit(procNum);
+			}
+		}
+
+		public ulong Add(PendingRequest request, int procNum)
+		{
+			if (request.Callback == null)
+				return ReserveId(procNum);
+
+			sync.Enter(procNum);
+			try
+			{
+				NativeInterlocked64* currMessageId = (NativeInterlocked64*)CacheLineMemoryManager.GetBuffer(currMessageIds, procNum);
+				ulong messageId = (ulong)currMessageId->Increment();
+				messageId = messageIdBit | ((ulong)procNum << 50) | messageId;
+				requests[procNum].Add(messageId, request);
+				return messageId;
+			}
+			finally
+			{
+				sync.Exit(procNum);
+			}
+		}
+
+		public bool TryRemove(ulong messageId, out PendingRequest request)
+		{
+			if (messageId == 0)
+			{
+				request = new PendingRequest();
+				return false;
+			}
+
+			int procNum = (int)((messageId >> 50) & 0x1fff);
+
+			sync.Enter(procNum);
+			try
+			{
+				if (requests[procNum] == null)
+					throw new ObjectDisposedException(string.Empty, (Exception)null);
+
+				return requests[procNum].Remove(messageId, out request);
+			}
+			finally
+			{
+				sync.Exit(procNum);
 			}
 		}
 
 		public void Close(Connection conn, Exception e)
 		{
-			lock (sync)
+			for (int i = 0; i < requests.Length; i++)
 			{
-				foreach (KeyValuePair<long, PendingRequest> pendingRequest in map)
+				sync.Enter(i);
+				try
 				{
-					ThreadPool.UnsafeQueueUserWorkItem(x => pendingRequest.Value.Callback(conn, pendingRequest.Value.State, e, null), null);
-				}
+					foreach (KeyValuePair<ulong, PendingRequest> request in requests[i])
+					{
+						ThreadPool.UnsafeQueueUserWorkItem(x => request.Value.Callback(conn, request.Value.State, e, null), null);
+					}
 
-				map.Clear();
-				map = null;
+					requests[i].Clear();
+					requests[i] = null;
+				}
+				finally
+				{
+					sync.Exit(i);
+				}
 			}
+
+			CacheLineMemoryManager.Free(idsHandle);
 		}
 
 		public struct PendingRequest
@@ -1214,136 +1539,24 @@ internal abstract class Connection
 		}
 	}
 
-	private unsafe sealed class SendWorker
+	private struct ChunkRange
 	{
-		readonly object sync = new object();
-		ManualResetEventSlim freeSignal;
-		SemaphoreSlim readySignal;
+		public MessageChunk Chunk { get; private set; }
+		public int Offset { get; private set; }
+		public int Size { get; private set; }
 
-		Connection owner;
-
-		Thread thread;
-
-		int offset;
-		byte* fillBuffer;
-		byte* sendBuffer;
-
-		bool disposed;
-
-		public SendWorker(Connection owner)
+		public ChunkRange(MessageChunk chunk, int offset, int size)
 		{
-			this.owner = owner;
-
-			freeSignal = new ManualResetEventSlim(true);
-			readySignal = new SemaphoreSlim(0);
-
-			fillBuffer = (byte*)NativeAllocator.Allocate(MessageChunk.LargeBufferSize);
-			sendBuffer = (byte*)NativeAllocator.Allocate(MessageChunk.LargeBufferSize);
-
-			thread = new Thread(Sender);
-			thread.IsBackground = true;
-			thread.Name = "SocketSender";
-			thread.Start();
+			this.Chunk = chunk;
+			this.Offset = offset;
+			this.Size = size;
 		}
+	}
 
-		public void Enqueue(MessageChunk chunk)
-		{
-			Checker.AssertFalse(disposed);  // Since we are comming through a connection lock
-			Checker.AssertTrue(chunk.ChunkSize < MessageChunk.SmallBufferSize);
-
-			while (true)
-			{
-				freeSignal.Wait();
-				Monitor.Enter(sync);
-
-				if (disposed)
-				{
-					Monitor.Exit(sync);
-					return;
-				}
-
-				if (MessageChunk.LargeBufferSize - offset >= MessageChunk.SmallBufferSize)
-					break;
-
-				Monitor.Exit(sync);
-			}
-
-			bool fireReady = false;
-			try
-			{
-				Utils.CopyMemory(chunk.PBuffer, fillBuffer + offset, chunk.ChunkSize);
-				fireReady = offset == 0;
-				offset += chunk.ChunkSize;
-
-				if (MessageChunk.LargeBufferSize - offset < MessageChunk.SmallBufferSize)
-					freeSignal.Reset();
-			}
-			finally
-			{
-				Monitor.Exit(sync);
-			}
-
-			if (fireReady)
-				readySignal.Release();
-		}
-
-		private void Sender()
-		{
-			while (true)
-			{
-				int sendSize;
-				readySignal.Wait();
-				lock (sync)
-				{
-					if (disposed)
-						return;
-
-					bool full = MessageChunk.LargeBufferSize - offset < MessageChunk.SmallBufferSize;
-
-					Checker.AssertFalse(offset == 0);
-					Utils.Exchange(ref fillBuffer, ref sendBuffer);
-					sendSize = offset;
-					offset = 0;
-
-					if (full)
-						freeSignal.Set();
-				}
-
-				Socket socket = owner.socket;
-				lock (socket)
-				{
-					try
-					{
-						int n = socket.Send(new ReadOnlySpan<byte>(sendBuffer, sendSize));
-						if (n != sendSize)
-							throw new InvalidOperationException(); // Should never happen with blocking sockets
-					}
-					catch
-					{
-						Task.Run(() => owner.CloseAsync());
-						return;
-					}
-				}
-			}
-		}
-
-		public void Dispose()
-		{
-			lock (sync)
-			{
-				if (disposed)
-					return;
-
-				disposed = true;
-			}
-
-			readySignal.Release();
-			freeSignal.Set();
-
-			NativeAllocator.Free((IntPtr)fillBuffer);
-			NativeAllocator.Free((IntPtr)sendBuffer);
-
-			thread.Join();
-		}
+	private enum DelegationType
+	{
+		Global = 1,
+		Local = 2,
+		Sync = 3
 	}
 }

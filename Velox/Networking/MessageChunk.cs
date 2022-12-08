@@ -1,4 +1,4 @@
- using System;
+﻿using System;
 using System.Diagnostics;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
@@ -21,68 +21,44 @@ internal unsafe sealed class MessageChunk : IDisposable
 	public const int SmallBufferSize = 1024 * 4;
 	public const int LargeBufferSize = 1024 * 64;
 
-	SocketAsyncEventArgs args;
 	int bufferSize;
-	byte[] buffer;
 	byte* pbuffer;
 
 	MessageWriter writer;
 	MessageReader reader;
-	long messageId;
-	int chunkSize;
+	ulong messageId;
 	ChunkAwaiter awaiter;
 	int headerSize;
-	GCHandle pinnedBuffer;
+	int poolIndex;
+	int refCount;
 	bool disposed;
 
-	public MessageChunk(EventHandler<SocketAsyncEventArgs> completedHandler, int bufferSize)
+	public MessageChunk(int bufferSize)
 	{
 		this.bufferSize = bufferSize;
-
-		if (bufferSize == SmallBufferSize)
-		{
-			this.pbuffer = (byte*)NativeAllocator.Allocate(SmallBufferSize);
-		}
-		else
-		{
-			this.buffer = GC.AllocateArray<byte>(bufferSize, true);
-			this.args = new SocketAsyncEventArgs();
-			this.Args.UserToken = this;
-			this.Args.SetBuffer(this.buffer, 0, bufferSize);
-			if (completedHandler != null)
-				this.Args.Completed += completedHandler;
-
-			pinnedBuffer = GCHandle.Alloc(this.buffer, GCHandleType.Pinned);
-			this.pbuffer = (byte*)pinnedBuffer.AddrOfPinnedObject();
-		}
-
 		this.writer = new MessageWriter();
 		this.reader = new MessageReader();
+		pbuffer = (byte*)AlignedAllocator.Allocate(bufferSize, false);
 	}
 
 	public int BufferSize => bufferSize;
-	public SocketAsyncEventArgs Args => args;
 	public byte* PBuffer => pbuffer;
 	public MessageWriter Writer => writer;
 	public MessageReader Reader => reader;
-	public long MessageId => messageId;
-	public int ChunkSize => chunkSize;
+	public ulong MessageId => messageId;
+	public int ChunkSize => *((int*)pbuffer);
 	public int HeaderSize => headerSize;
 	public ChunkAwaiter Awaiter { get => awaiter; set => awaiter = value; }
 	public bool IsFirst => (*PFlags & ChunkFlags.First) != ChunkFlags.None;
 	public bool IsLast => (*PFlags & ChunkFlags.Last) != ChunkFlags.None;
 	public bool IsTheOnlyOne => *PFlags == ChunkFlags.TheOnlyOne;
+	public int PoolIndex { get => poolIndex; set => poolIndex = value; }
 
 	private ChunkFlags* PFlags => (ChunkFlags*)(&pbuffer[sizeof(int) + sizeof(int) + sizeof(long)]);
 
 	~MessageChunk()
 	{
 		CleanUp(false);
-	}
-
-	public unsafe void UpdateSize()
-	{
-		chunkSize = *((int*)pbuffer);
 	}
 
 	public unsafe void ReadHeader()
@@ -96,21 +72,17 @@ internal unsafe sealed class MessageChunk : IDisposable
 
 	private void ReaderHeader1()
 	{
-		messageId = ((long*)(pbuffer + sizeof(int) + sizeof(int)))[0];
+		messageId = *((ulong*)(pbuffer + sizeof(int) + sizeof(int)));
 		headerSize = MessageWriter.Header1Size;
-	}
-
-	internal void Init()
-	{
 	}
 
 	public void Reset()
 	{
 		reader.Reset();
 		writer.Reset();
-		args?.SetBuffer(0, bufferSize);
 		awaiter = null;
 		messageId = 0;
+		refCount = 0;
 	}
 
 	public void SwapReaders(MessageChunk chunk)
@@ -128,19 +100,21 @@ internal unsafe sealed class MessageChunk : IDisposable
 		chunk.writer = temp;
 	}
 
-	public void ReturnToPool(ItemPool<MessageChunk> smallChunkPool, ItemPool<MessageChunk> largeChunkPool)
-	{
-		if (BufferSize == SmallBufferSize)
-			smallChunkPool.Put(this);
-		else
-			largeChunkPool.Put(this);
-	}
-
 	public void CopyContent(MessageChunk chunk)
 	{
 		Utils.CopyMemory(chunk.PBuffer, PBuffer, chunk.ChunkSize);
-		UpdateSize();
 		ReadHeader();
+	}
+
+	public void SetupAutomaticCleanup(int refCount)
+	{
+		this.refCount = refCount;
+	}
+
+	public void DecRefCount(int amount, MessageChunkPool chunkPool)
+	{
+		if (Interlocked.Add(ref refCount, -amount) == 0)
+			chunkPool.Put(this);
 	}
 
 	public void Dispose()
@@ -153,47 +127,8 @@ internal unsafe sealed class MessageChunk : IDisposable
 	{
 		if (!disposed)
 		{
-			if (disposing && args != null)
-				args.Dispose();
-
-			if (pinnedBuffer.IsAllocated)
-				pinnedBuffer.Free();
-			else
-				NativeAllocator.Free((IntPtr)pbuffer);
-
+			AlignedAllocator.Free((IntPtr)pbuffer);
 			disposed = true;
 		}
-	}
-}
-
-internal sealed class MessageChunkFactory : IItemFactory<MessageChunk>
-{
-	int bufferSize;
-	EventHandler<SocketAsyncEventArgs> completedHandler;
-
-	public MessageChunkFactory(EventHandler<SocketAsyncEventArgs> completedHandler, int bufferSize)
-	{
-		this.completedHandler = completedHandler;
-		this.bufferSize = bufferSize;
-	}
-
-	public void Init(MessageChunk item)
-	{
-		item.Init();
-	}
-
-	public MessageChunk Create()
-	{
-		return new MessageChunk(completedHandler, bufferSize);
-	}
-
-	public void Reset(MessageChunk item)
-	{
-		item.Reset();
-	}
-
-	public void Destroy(MessageChunk item)
-	{
-		item.Dispose();
 	}
 }

@@ -49,14 +49,14 @@ internal sealed class StorageEngineSettings
 		autoMergeInverseReferences = true;
 		collectionGrowthFactor = 2.0f;
 
-		gcWorkerCount = ProcessorNumber.CoreCount;
+		gcWorkerCount = Math.Max(2, ProcessorNumber.CoreCount / 4);
 		gcTranCountThreshold = 128;
 		gcItemCountThreshold = 128 * 1024;
 
 		allowInternalParallelization = true;
 		allowUnexistingDirectoryForLog = true;
 
-		bufferPoolSize = 1024 * 1024 * 4;
+		bufferPoolSize = 1024 * 1024 * 32;
 
 		autoSnapshotOnShutdown = false;
 
@@ -72,9 +72,9 @@ internal sealed class StorageEngineSettings
 		replicationSyncTimeout = TimeSpan.FromSeconds(60);
 		replicationSyncTresholdSize = 1024 * 1024 * 512;
 
-		commitWorkerCount = 4;
-		maxMergedTransactionCount = 512;
-		maxMergedOperationCount = 1024 * 8;
+		commitWorkerCount = Math.Max(ProcessorNumber.CoreCount / 4, 4);
+		maxMergedTransactionCount = 256;
+		maxMergedOperationCount = 1024 * 4;
 
 		preAlignmentRatio = 0.3f;
 		usePreAlignment = false;

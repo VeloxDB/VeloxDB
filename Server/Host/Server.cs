@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using System.Reflection;
@@ -63,17 +63,17 @@ internal sealed class Server : IDisposable
 		if (!LoadClusterConfiguration())
 			return;
 
-		if(!InitDatabaseEngine())
+		if (!InitDatabaseEngine())
 		{
 			return;
 		}
 
-		if(updateAsmDir != null && !UpdateAssembliesFromDirectory(updateAsmDir))
+		if (updateAsmDir != null && !UpdateAssembliesFromDirectory(updateAsmDir))
 		{
 			return;
 		}
 
-		if(persistenceDir != null && !InitPersistance(persistenceDir))
+		if (persistenceDir != null && !InitPersistance(persistenceDir))
 		{
 			return;
 		}
@@ -85,7 +85,7 @@ internal sealed class Server : IDisposable
 		engine.SubscribeToStateChanges(OnEngineStateChange);
 		Tracing.Info("Server successfully started.");
 
-		if(blocking)
+		if (blocking)
 		{
 			Console.CancelKeyPress += (sender, events) => Terminate();
 			terminateEvent.WaitOne();
@@ -98,7 +98,7 @@ internal sealed class Server : IDisposable
 		Checker.AssertNotNull(configuration.Replication);
 		Checker.AssertNotNull(engine, databaseAdministration);
 
-		if(!configuration.Replication.IsStandalone)
+		if (!configuration.Replication.IsStandalone)
 		{
 			Tracing.Error("--init-persistence can't be used with replication.");
 			return false;
@@ -109,7 +109,7 @@ internal sealed class Server : IDisposable
 			databaseAdministration.InitPersistence(persistenceDir);
 			return true;
 		}
-		catch(DatabaseException dbe)
+		catch (DatabaseException dbe)
 		{
 			Tracing.Error(dbe.Message);
 			return false;
@@ -121,13 +121,13 @@ internal sealed class Server : IDisposable
 		Checker.AssertNotNull(configuration.Replication);
 		Checker.AssertNotNull(engine, databaseAdministration);
 
-		if(!configuration.Replication.IsStandalone)
+		if (!configuration.Replication.IsStandalone)
 		{
 			Tracing.Error("--update-assemblies can't be used with replication.");
 			return false;
 		}
 
-		if(!Directory.Exists(updateAsmDir))
+		if (!Directory.Exists(updateAsmDir))
 		{
 			Tracing.Error("Directory {0} doesn't exist.", updateAsmDir);
 			return false;
@@ -136,11 +136,11 @@ internal sealed class Server : IDisposable
 		try
 		{
 			List<string> errors = databaseAdministration.UpdateAssembliesFromDirectory(updateAsmDir);
-			foreach(string error in errors)
+			foreach (string error in errors)
 				Tracing.Error(error);
 			return errors.Count == 0;
 		}
-		catch(DatabaseException dbe)
+		catch (DatabaseException dbe)
 		{
 			Tracing.Error(dbe.Message);
 			return false;
@@ -157,7 +157,7 @@ internal sealed class Server : IDisposable
 		Checker.AssertNotNull(configuration.Replication);
 
 		IReadOnlyCollection<string> errors;
-		if(clusterConfiguration != null)
+		if (clusterConfiguration != null)
 		{
 			List<string> errorList = new List<string>();
 			configuration.TryLoadClusterConfig(clusterConfiguration, errorList);
@@ -189,7 +189,8 @@ internal sealed class Server : IDisposable
 		try
 		{
 			engine = new StorageEngine(configuration.Database.SystemDatabasePath, replication, localWriteElector, globalWriteElector, trace);
-		}catch(SharingViolationException)
+		}
+		catch (SharingViolationException)
 		{
 			Tracing.Error("One or more of database files are in use. Is vlxdbsrv already running?");
 			return false;
@@ -205,21 +206,21 @@ internal sealed class Server : IDisposable
 		Checker.AssertNotNull(adminHost, execHost);
 		nodeAdministration.OnStateChanged(info);
 
-		if(LocalWritePrimaryChanged(info))
-			if(info.IsLocalWritePrimary)
+		if (LocalWritePrimaryChanged(info))
+			if (info.IsLocalWritePrimary)
 				adminHost.StartService(AdminAPIServiceNames.LocalWriteClusterAdministration);
 			else
 				adminHost.StopService(AdminAPIServiceNames.LocalWriteClusterAdministration);
 
-		if(AssembliesChanged(info))
+		if (AssembliesChanged(info))
 		{
 			HostExecutionInterface(info.Assemblies, info.ModelVersionGuid, info.AssembliesVersionGuid, info.ModelDescriptor, info.IsWriteMaster,
 								   (AssemblyData)(info.CustomObject));
 		}
 
-		if(WriteMasterChanged(info))
+		if (WriteMasterChanged(info))
 		{
-			if(info.IsWriteMaster)
+			if (info.IsWriteMaster)
 			{
 				adminHost.StartService(AdminAPIServiceNames.DatabaseAdministration);
 				execHost.StartService(string.Empty);
@@ -236,7 +237,7 @@ internal sealed class Server : IDisposable
 
 	private bool LocalWritePrimaryChanged(DatabaseInfo info)
 	{
-		if(lastReplInfo == null)
+		if (lastReplInfo == null)
 			return info.IsLocalWritePrimary;
 
 		return info.IsLocalWritePrimary != lastReplInfo.IsLocalWritePrimary;
@@ -244,14 +245,14 @@ internal sealed class Server : IDisposable
 
 	private bool WriteMasterChanged(DatabaseInfo info)
 	{
-		if(lastReplInfo == null)
+		if (lastReplInfo == null)
 			return info.IsWriteMaster;
 
 		return info.IsWriteMaster != lastReplInfo.IsWriteMaster;
 	}
 	private bool AssembliesChanged(DatabaseInfo info)
 	{
-		if(lastReplInfo == null)
+		if (lastReplInfo == null)
 			return true;
 
 		return !info.AssembliesVersionGuid.Equals(lastReplInfo.AssembliesVersionGuid);
@@ -287,7 +288,7 @@ internal sealed class Server : IDisposable
 		HostedModel? oldHostedModel = hostedModel;
 		hostedModel = new HostedModel(engine, ctxPool, modelVersionGuid, assemblyVersionGuid, modelDesc, loadedAssemblies);
 
-		if(oldHostedModel != null)
+		if (oldHostedModel != null)
 			oldHostedModel.Assemblies.Unload();
 
 		execHost.HostService(string.Empty, typeof(ObjectModel), apis, hostedModel.ExecutionRequestCallback,
@@ -299,7 +300,7 @@ internal sealed class Server : IDisposable
 		Checker.AssertNotNull(engine);
 		List<object> result = new List<object>();
 
-		foreach(Type classType in AssemblyUtils.GetDBApiTypes(assemblies))
+		foreach (Type classType in AssemblyUtils.GetDBApiTypes(assemblies))
 		{
 			object? instance;
 
@@ -307,7 +308,7 @@ internal sealed class Server : IDisposable
 			{
 				instance = Activator.CreateInstance(classType);
 			}
-			catch(Exception e)
+			catch (Exception e)
 			{
 				engine.Trace.Error(e, "Exception encountered while trying to host {0}.", classType.FullName);
 				continue;
@@ -326,14 +327,14 @@ internal sealed class Server : IDisposable
 
 		LocalWriteClusterAdministration localWriteClusterAdministration =
 			new LocalWriteClusterAdministration((IElector)localWriteElector!, (IElector)globalWriteElector!, engine);
- 		adminHost.HostService(AdminAPIServiceNames.LocalWriteClusterAdministration, new object[] { localWriteClusterAdministration },
-		 					  (r) => r.Execute().SendResponse(null), Guid.NewGuid(), isInitiallyStopped: true);
+		adminHost.HostService(AdminAPIServiceNames.LocalWriteClusterAdministration, new object[] { localWriteClusterAdministration },
+							  (r) => r.Execute().SendResponse(null), Guid.NewGuid(), isInitiallyStopped: true);
 	}
 
 	private void HostDatabaseAdministrationInterface()
 	{
 		Checker.AssertNotNull(adminHost, databaseAdministration);
-		adminHost.HostService(AdminAPIServiceNames.DatabaseAdministration, new object[]{ databaseAdministration },
+		adminHost.HostService(AdminAPIServiceNames.DatabaseAdministration, new object[] { databaseAdministration },
 							  (r) => r.Execute().SendResponse(null), Guid.NewGuid(), isInitiallyStopped: true);
 	}
 
@@ -400,11 +401,15 @@ internal sealed class Server : IDisposable
 		Checker.AssertNotNull(node.AdministrationAdress);
 
 		List<IPEndPoint> endpoints = new List<IPEndPoint>(2) { node.AdministrationAdress.ToIPEndPoint() };
-		if (!IPAddress.IsLoopback(endpoints[0].Address))
+		if (!IPAddress.IsLoopback(endpoints[0].Address) && !IPAddress.Any.Equals(endpoints[0].Address))
 			endpoints.Add(new IPEndPoint(IPAddress.Loopback, endpoints[0].Port));
 
 		adminHost = new DbAPIHost(AdminBacklogSize, AdminMaxOpenConnCount, endpoints.ToArray(),
 								  AdminBufferPoolSize, AdminInactivityInterval, AdminInactivityTimeout, AdminMaxQueuedChunkCount);
+		foreach (IPEndPoint endpoint in endpoints)
+		{
+			Tracing.Info("Administration ednpoint hosted on {0}.", endpoint);
+		}
 
 		Checker.AssertNotNull(configuration.ExecutionEndpoint);
 		HostEndpointConfiguration executionEndpoint = configuration.ExecutionEndpoint;
@@ -414,8 +419,13 @@ internal sealed class Server : IDisposable
 		Checker.AssertNotNull(executionEndpoint.MaxQueuedChunkCount);
 
 		endpoints = new List<IPEndPoint>(2) { node.ExecutionAdress.ToIPEndPoint() };
-		if (!IPAddress.IsLoopback(endpoints[0].Address))
+		if (!IPAddress.IsLoopback(endpoints[0].Address) && !IPAddress.Any.Equals(endpoints[0].Address))
 			endpoints.Add(new IPEndPoint(IPAddress.Loopback, endpoints[0].Port));
+
+		foreach (IPEndPoint endpoint in endpoints)
+		{
+			Tracing.Info("Execution ednpoint hosted on {0}.", endpoint);
+		}
 
 		execHost = new DbAPIHost((int)executionEndpoint.BacklogSize, (int)executionEndpoint.BufferPoolSize,
 									  endpoints.ToArray(), (int)executionEndpoint.BufferPoolSize,
@@ -446,8 +456,8 @@ internal sealed class Server : IDisposable
 		ObjectModelData objectModelData;
 
 		public LoadedAssemblies Assemblies { get; private set; }
-		public SimpleGuid ModelVersionGuid {get; private set;}
-		public SimpleGuid AssemblyVersionGuid {get; private set;}
+		public SimpleGuid ModelVersionGuid { get; private set; }
+		public SimpleGuid AssemblyVersionGuid { get; private set; }
 
 		public HostedModel(StorageEngine engine, ObjectModelContextPool contextPool, SimpleGuid modelVersionGuid,
 						   SimpleGuid assemblyVersionGuid, DataModelDescriptor modelDesc, LoadedAssemblies assemblies)
@@ -459,7 +469,7 @@ internal sealed class Server : IDisposable
 			objectModelData = new ObjectModelData(modelDesc, assemblies.Loaded);
 			this.Assemblies = assemblies;
 		}
-		
+
 		public void ExecutionRequestCallback(ParametrizedAPIRequest request)
 		{
 			Checker.AssertNotNull(engine);

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
@@ -10,8 +10,6 @@ using Velox.Descriptor;
 using Velox.Storage.ModelUpdate;
 using static Velox.Storage.Persistence.DatabaseRestorer;
 using System.IO;
-using System.Diagnostics;
-using Microsoft.VisualBasic;
 
 namespace Velox.Storage;
 
@@ -73,7 +71,7 @@ internal unsafe sealed partial class Database
 		standbyAlignCodeCache = new StandbyAlignCodeCache();
 
 		versions = new DatabaseVersions(this);
-		tranOrderer = new TransactionCommitOrderer();
+		tranOrderer = new TransactionCommitOrderer(engine.Settings);
 		hashReaders = new HashReadersCollection(model);
 		refValidator = new ReferenceIntegrityValidator(engine, this);
 
@@ -184,7 +182,10 @@ internal unsafe sealed partial class Database
 
 		workers.WaitAndClose();
 
-		engine.Trace.Debug("Database {0} restored.", id);
+		if (id == DatabaseId.User)
+			engine.Trace.Info("Database restored.");
+		else
+			engine.Trace.Debug("Database {0} restored.", id);
 	}
 
 	private static bool LogExists(string[] logNames, string[] snapshotNames)
@@ -631,14 +632,13 @@ internal unsafe sealed partial class Database
 
 		TakeDatabaseLock(type == TransactionType.Read || allowOtherWriteTransactions);
 
-		ulong tranId;
+		ulong tranId = ulong.MaxValue;
+		if (type == TransactionType.ReadWrite)
+			tranId = versions.GetNextTranId();
+
 		lock (tranSync)
 		{
-			tranId = versions.GetNextTranId();
-			if (readVersion == 0)
-				readVersion = versions.ReadVersion;
-
-			tran.InitReadVersion(readVersion);
+			tran.InitReadVersion(readVersion == 0 ? versions.ReadVersion : readVersion);
 			gc.InsertTransaction(tran);
 		}
 
@@ -652,10 +652,27 @@ internal unsafe sealed partial class Database
 	{
 		TTTrace.Write(engine.TraceId, id, tran.Id);
 
+		Transaction lastReader = null;
 		lock (tranSync)
 		{
-			gc.TransactionCompleted(tran, versions);
+			lastReader = gc.TransactionCompleted(tran);
 		}
+
+		if (tran.Type == TransactionType.ReadWrite)
+		{
+			TransactionContext tc = tran.Context;
+			for (int i = 0; i < tc.MergedWith.Count; i++)
+			{
+				lock (tranSync)
+				{
+					Transaction temp = gc.TransactionCompleted(tc.MergedWith[i]);
+					if (temp != null)
+						lastReader = temp;
+				}
+			}
+		}
+
+		gc.PrepareGarbage(tran, lastReader, versions.ReadVersion);
 
 		ReleaseDatabaseLock(tran.AllowsOtherTrans);
 	}

@@ -8,11 +8,11 @@ namespace Velox.ObjectInterface;
 
 internal unsafe class ObjectModelContextPool
 {
-	const int perCoreCount = 8;
-
-	// This offset is used to guarantee that each per-core pool array does not share cache lines with other pools
-	// which would cause false cache line sharing in the CPU, ruining parallelism.
-	int perCoreOffset = 16;
+#if DEBUG
+	static readonly int perCoreCount = 8;
+#else
+	static readonly int perCoreCount = 32;
+#endif
 
 	StorageEngine engine;
 
@@ -43,16 +43,16 @@ internal unsafe class ObjectModelContextPool
 		perCorePools = new ObjectModelContext[ProcessorNumber.CoreCount][];
 		for (int i = 0; i < ProcessorNumber.CoreCount; i++)
 		{
-			int* pc = ((int*)((byte*)perCoreCounts + (i << AlignedAllocator.CacheLineSizeLog)));
+			int* pc = (int*)CacheLineMemoryManager.GetBuffer(perCoreCounts, i);
 			*pc = perCoreCount;
-			perCorePools[i] = new ObjectModelContext[perCoreCount + perCoreOffset * 2];
+			perCorePools[i] = new ObjectModelContext[perCoreCount];
 			for (int j = 0; j < perCoreCount; j++)
 			{
-				perCorePools[i][perCoreOffset + j] = new ObjectModelContext(engine, idRange, i);
+				perCorePools[i][j] = new ObjectModelContext(engine, idRange, i);
 			}
 		}
 
-		perCoreSync = new MultiSpinLock(true);
+		perCoreSync = new MultiSpinLock();
 	}
 
 	internal StorageEngine Engine => engine;
@@ -64,10 +64,10 @@ internal unsafe class ObjectModelContextPool
 		try
 		{
 			int procNum = lockHandle;
-			int* pc = ((int*)((byte*)perCoreCounts + (procNum << AlignedAllocator.CacheLineSizeLog)));
+			int* pc = (int*)CacheLineMemoryManager.GetBuffer(perCoreCounts, procNum);
 			if (*pc > 0)
 			{
-				ObjectModelContext mc = perCorePools[procNum][perCoreOffset + *pc - 1];
+				ObjectModelContext mc = perCorePools[procNum][*pc - 1];
 				Checker.AssertTrue(mc.PhysCorePool == procNum);
 				*pc = *pc - 1;
 				return mc;
@@ -95,9 +95,9 @@ internal unsafe class ObjectModelContextPool
 		perCoreSync.Enter(procNum);
 		try
 		{
-			int* pc = ((int*)((byte*)perCoreCounts + (procNum << AlignedAllocator.CacheLineSizeLog)));
+			int* pc = (int*)CacheLineMemoryManager.GetBuffer(perCoreCounts, procNum);
 			Checker.AssertTrue(*pc < perCoreCount);
-			perCorePools[procNum][perCoreOffset + *pc] = mc;
+			perCorePools[procNum][*pc] = mc;
 			*pc = *pc + 1;
 		}
 		finally
@@ -110,13 +110,15 @@ internal unsafe class ObjectModelContextPool
 	{
 		lock (sync)
 		{
-			if (globalCount == 0)
-				return new ObjectModelContext(engine, idRange, -1);
-
-			ObjectModelContext tc = globalPool[--globalCount];
-			Checker.AssertTrue(tc.PhysCorePool == -1);
-			return tc;
+			if (globalCount > 0)
+			{
+				ObjectModelContext tc = globalPool[--globalCount];
+				Checker.AssertTrue(tc.PhysCorePool == -1);
+				return tc;
+			}
 		}
+
+		return new ObjectModelContext(engine, idRange, -1);
 	}
 
 	private void PutGlobalContext(ObjectModelContext tc)
