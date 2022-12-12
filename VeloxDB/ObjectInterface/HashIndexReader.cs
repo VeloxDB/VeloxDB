@@ -11,6 +11,7 @@ namespace Velox.ObjectInterface;
 /// </summary>
 /// <typeparam name="T">Type of <see cref="DatabaseObject"/> being looked up.</typeparam>
 /// <typeparam name="TKey1">Type of the key.</typeparam>
+/// <seealso href="../articles/guide/data_model.html#hash-indexes">VeloxDB The definitive guide: Hash indexes</seealso>
 /// <seealso cref="HashIndexAttribute"/>
 /// <seealso cref="ObjectModel.GetHashIndex{T, TKey1}(string)"/>
 public sealed class HashIndexReader<T, TKey1> where T : DatabaseObject
@@ -102,6 +103,7 @@ public sealed class HashIndexReader<T, TKey1> where T : DatabaseObject
 /// <typeparam name="T">Type of <see cref="DatabaseObject"/> being looked up.</typeparam>
 /// <typeparam name="TKey1">Type of the first key.</typeparam>
 /// <typeparam name="TKey2">Type of the second key.</typeparam>
+/// <seealso href="../articles/guide/data_model.html#hash-indexes">VeloxDB The definitive guide: Hash indexes</seealso>
 /// <seealso cref="HashIndexAttribute"/>
 /// <seealso cref="ObjectModel.GetHashIndex{T, TKey1}(string)"/>
 
@@ -197,6 +199,7 @@ public sealed class HashIndexReader<T, TKey1, TKey2> where T : DatabaseObject
 /// <typeparam name="TKey1">Type of the first key.</typeparam>
 /// <typeparam name="TKey2">Type of the second key.</typeparam>
 /// <typeparam name="TKey3">Type of the third key.</typeparam>
+/// <seealso href="../articles/guide/data_model.html#hash-indexes">VeloxDB The definitive guide: Hash indexes</seealso>
 /// <seealso cref="HashIndexAttribute"/>
 /// <seealso cref="ObjectModel.GetHashIndex{T, TKey1}(string)"/>
 public sealed class HashIndexReader<T, TKey1, TKey2, TKey3> where T : DatabaseObject
@@ -294,6 +297,7 @@ public sealed class HashIndexReader<T, TKey1, TKey2, TKey3> where T : DatabaseOb
 /// <typeparam name="TKey2">Type of the second key.</typeparam>
 /// <typeparam name="TKey3">Type of the third key.</typeparam>
 /// <typeparam name="TKey4">Type of the fourth key.</typeparam>
+/// <seealso href="../articles/guide/data_model.html#hash-indexes">VeloxDB The definitive guide: Hash indexes</seealso>
 /// <seealso cref="HashIndexAttribute"/>
 /// <seealso cref="ObjectModel.GetHashIndex{T, TKey1}(string)"/>
 public sealed class HashIndexReader<T, TKey1, TKey2, TKey3, TKey4> where T : DatabaseObject

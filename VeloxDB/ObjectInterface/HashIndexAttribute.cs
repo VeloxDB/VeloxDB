@@ -6,6 +6,7 @@ namespace Velox.ObjectInterface;
 /// <summary>
 /// Apply this attribute to a <see cref="DatabaseObject"/> class to define a hash index.
 /// </summary>
+/// <seealso href="../articles/guide/data_model.html#hash-indexes">VeloxDB The definitive guide: Hash indexes</seealso>
 /// <seealso cref="HashIndexReader{T, TKey1}"/>
 /// <seealso cref="HashIndexReader{T, TKey1, TKey2}"/>
 /// <seealso cref="HashIndexReader{T, TKey1, TKey2}"/>

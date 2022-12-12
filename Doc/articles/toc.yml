@@ -10,3 +10,5 @@
     href: guide/architecture.md
   - name: Data Model
     href: guide/data_model.md
+  - name: Persistance
+    href: guide/persistence.md

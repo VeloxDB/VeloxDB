@@ -15,10 +15,4 @@ public abstract partial class Student : Person
 	public static partial Student FromDTO(ObjectModel om, StudentDTO dto);
 }
 
-#region StudentDTO
-public class StudentDTO : PersonDTO
-{
-	public List<CourseDTO>? Courses { get; set; }
-	public int[]? Scores { get; set; }
-}
-#endregion
+

@@ -18,8 +18,3 @@ public abstract partial class Person : DatabaseObject
 	public static partial Person FromDTO(ObjectModel om, PersonDTO dto);
 }
 
-public class PersonDTO
-{
-	public string? Name { get; set; }
-	public string? Address { get; set; }
-}

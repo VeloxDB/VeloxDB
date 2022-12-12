@@ -7,7 +7,7 @@ namespace Velox.ObjectInterface;
 /// </summary>
 /// <remarks>
 ///	VeloxDB persists data in log files. It is possible to use multiple log files.
-///	For more information about how and when to use additional log files <see href="~/articles/tech.md#logs">Logs</see>.
+///	For more information about how and when to use additional log files <see href="~/articles/guide/persistence.md#log_files">Log files</see>.
 /// </remarks>
 [AttributeUsage(AttributeTargets.Class, Inherited = false, AllowMultiple = false)]
 public sealed class LogAttribute : Attribute

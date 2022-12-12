@@ -104,7 +104,7 @@ We will now define DTO classes, which will be used to transfer data between the 
 
 [!code-csharp[Main](../../../Samples/GetStarted/VlxBlog/DTO.cs)]
 
-For more information about why we use DTOs see [Data Transfer Objects](../tech.md#data-transfer-objects).
+<!-- For more information about why we use DTOs see [Data Transfer Objects](../tech.md#data-transfer-objects).-->
 
 #### Create ToDTO and FromDTO methods
 Copying data between model and DTOs can be cumbersome. For that reason VeloxDB comes with builtin automapper that can save you from typing some boilerplate code. To use automapper make Blog and Post database classes in Model.cs partial. Also add highlighted methods to Blog and Post.
@@ -126,11 +126,11 @@ All business logic is defined in server side methods, we call these methods data
 
 The methods described in this file can be called from the client using Velox protocol library. This will be covered in the next chapter. To define a database API operation you need to create a class marked with the <xref:Velox.Protocol.DbAPIAttribute>. Each method should be decorated with the <xref:Velox.Protocol.DbAPIOperationAttribute>.
 
-For more information see [VeloxDB Protocol](../tech.md#veloxdb-protocol).
+<!-- For more information see [VeloxDB Protocol](../tech.md#veloxdb-protocol).-->
 
 The first argument of all Database operations must be of type <xref:Velox.ObjectInterface.ObjectModel>. <xref:Velox.ObjectInterface.ObjectModel> is used to access the data in the database. In this example we use the [GetObject][2] method to read objects, by Id, from the database and [CreateObject][3] to create new objects.
 
-Each operation corresponds to a single transaction inside the database. While an operation is running, changes it makes to the model are not visible to other operations. After an operation completes successfully its changes are committed to the database automatically. If an operation throws an exception all changes are rolled back. If your operation only reads data from the database, you can set <xref:Velox.Protocol.DbAPIOperationAttribute.OperationType> to <xref:Velox.Protocol.DbAPIOperationType.Read>. For more information about transactions see [Transactions](../tech.md#transactions).
+Each operation corresponds to a single transaction inside the database. While an operation is running, changes it makes to the model are not visible to other operations. After an operation completes successfully its changes are committed to the database automatically. If an operation throws an exception all changes are rolled back. If your operation only reads data from the database, you can set <xref:Velox.Protocol.DbAPIOperationAttribute.OperationType> to <xref:Velox.Protocol.DbAPIOperationType.Read>. For more information about transactions see [Transactions](architecture.md#transactions).
 
 #### Running the server
 
@@ -156,7 +156,7 @@ You should see an output similar to this:
 22-06-24 11:05:13.941 [1B22] [Info] Server successfully started.
 ```
 
-VeloxDB NuGet package comes bundled with the VeloxDB server. When you run your project, the server starts, loads the assembly and creates the database if it doesn't already exist. The database files are placed in project's output directory in vlxdata subdirectory. This is the development deployment. For the recommended production deployment please see [Deploying VeloxDB](../tech.md#deploying-veloxdb).
+VeloxDB NuGet package comes bundled with the VeloxDB server. When you run your project, the server starts, loads the assembly and creates the database if it doesn't already exist. The database files are placed in project's output directory in vlxdata subdirectory. This is the development deployment. For the recommended production deployment please see [Downloading and configuring the database](#downloading-and-configuring-the-database).
 
 ### Building a client
 
@@ -307,7 +307,7 @@ Following table summarizes available configuration parameters:
 
 | Parameter                                          | Description                                                                                                                                                                                                                                                                                                        | Default value                                                      |
 |----------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------|
-| ExecutionEndpoint/<br>BacklogSize                  | TCP babklog queue size. VeloxDB client APIs use persistent connections to the database server so this number can remain low.                                                                                                                                                                                       | 20                                                                 |
+| ExecutionEndpoint/<br>BacklogSize                  | TCP backlog queue size. VeloxDB client APIs use persistent connections to the database server so this number can remain low.                                                                                                                                                                                       | 20                                                                 |
 | ExecutionEndpoint/<br>MaxOpenConnCount             | Maximum number of open client connections.                                                                                                                                                                                                                                                                         | 10                                                                 |
 | ExecutionEndpoint/<br>BufferPoolSize               | Amount of pooled memory (in bytes) per each client connection. VeloxDB protocol requires memory to serve client requests. This memory is used to accept input data as well as to send response data. Increase this value if you regularly send or receive large amounts of data.                                  | 128KB                                                              |
 | ExecutionEndpoint/<br>InactivityInterval           | If no requests have been executed by the connection during this time (in seconds), VeloxDB sends a keep-alive message to the client to verify that the connection is still alive. This is a decimal value.                                                                                                         | 2 sec                                                              |
@@ -325,7 +325,7 @@ Following table summarizes available configuration parameters:
 
 You do not need to edit any of these parameters. The default values were chosen to fit most needs. However, you might want to configure directory paths. To start the VeloxDB database server on Windows, run the vlxdbsrv.exe. On Linux run the following command:
 ```sh
-dotnet vlxdbsrv.dll
+./vlxdbsrv
 ```
 
 Configuration can be loaded from more than one vlxdbcfg.json file. Each successive config file overrides the previously loaded values. Following locations are probed for config files (in this order):
@@ -336,7 +336,7 @@ Configuration can be loaded from more than one vlxdbcfg.json file. Each successi
 
 The last config file can be provided as a command line argument when starting the server. Following example illustrates this:
 ```sh
-dotnet vlxdbsrv.dll --config path/vlxdbcfg.json
+./vlxdbsrv --config path/vlxdbcfg.json
 ```
 
 Since VeloxDB only allows a single database per running server instance, this allows you to run multiple server instances from a single installation directory.

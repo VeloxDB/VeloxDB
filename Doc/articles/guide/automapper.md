@@ -82,9 +82,44 @@ VeloxDB automapper is aware of object identity, if two objects point to the same
 
 ## Polymorphism
 
+Polymorphism is a key feature of object-oriented programming languages, and it is supported by VeloxDB's automapper. Polymorphism allows for objects of different types to be treated as if they were of a common base type. This can be useful in many situations, such as when working with collections of objects or when creating methods that operate on objects of multiple types.
+
+VeloxDB automapper supports polymorphism through the use of the <xref:Velox.ObjectInterface.SupportPolymorphismAttribute> attribute. This attribute is applied to methods in base classes to signal that they support polymorphism. When the <xref:Velox.ObjectInterface.SupportPolymorphismAttribute> attribute is used, the automapper will generate polymorphism-aware `To` and `From` methods for the class. These methods will automatically return or create objects of the most specific type that matches the input data. Without using this attribute, attempting to add an automapper method to a subclass will result in a compilation error.
+
+Here is an example of DTOs that use polymorphism, note that they follow the DBOs hierarchy:
+
+[!code-csharp[Main](../../../Samples/University/Poly/PolyDTO.cs#PolyDTO)]
+
+Subclasses must have their own To or From methods that override the base class method and provide specific mapping instructions for the subclass. This allows for a DTO to be mapped to the appropriate DBO class based on the type of DTO provided.
+
+Here is an example of `Teacher` class note its `To` and `From` methods:
+
+[!code-csharp[Main](../../../Samples/University/Poly/Teacher.cs#Teacher)]
+
+The `ToDTO` method should not be marked as virtual because automapper generates its own internal virtual methods. To avoid generating a warning from the C# compiler due to the presence of non-virtual ToDTO methodS in both the base class and subclass, the new keyword is used in the subclass's methods to explicitly indicate that they are intended to override the base class's methods. Since these methods only call into internal virtual methods, proper polymorphic behavior is still achieved.
+
 ## Update
 
-## Debugging
+By default `From` method ignores Id field in DTO and always creates a new object. However, the `From` method can have an additional `allowUpdate` boolean parameter that tells it to operate in update mode. In update mode, if the DTO object has an `Id` field, the `From` method will use it to fetch the corresponding object from the database. The object that is fetched will then have its fields updated by overwriting them with the fields provided in the DTO. Any fields that are not defined in the DTO will be skipped. If the object with the given Id does not exist, an ArgumentException will be thrown. If the Id is set to 0, then a new object will be created.
+
+Here is an example of FromDTO method with `allowUpdate` parameter:
+
+```cs
+public static partial Course FromDTO(ObjectModel om, CourseDTO dto, bool allowUpdate);
+```
+
+There are some pitfalls that you should watch out for when using update.
+
+One pitfall to watch out for when using the update feature in VeloxDB automapper is that updates are performed on the entire object, not just individual fields. This means that if two users are updating different fields of the same object simultaneously, one user's changes could potentially overwrite the other user's changes. This can lead to data loss or inconsistencies.
+
+Another pitfall to watch out for is that it will also update any referenced objects if they are modeled as objects in the DTO. This can lead to unintended changes to related objects if the user is not careful.
+
+For example, if a `Course` object has a reference to a `Teacher` object, and the `CourseDTO` contains a `TeacherDTO` object, then the update feature will update both the `Course` object and the `Teacher` object with the data from the DTO. This can be undesirable if the user only wanted to update the Course object and not the Teacher object.
+
+To avoid this pitfall, it is recommended to use DTOs that model references to other objects using only the Id field, rather than using objects. This way, the update feature will only update the object that is being updated, and will not affect any related objects. This can help prevent unintended changes and improve the reliability and predictability of the update feature.
+
+Because of all these pitfalls it is important to use update functionality with great care.
+
 
 [1]: https://automapper.org/
 [2]: https://github.com/MapsterMapper/Mapster

@@ -2,6 +2,7 @@ using Velox.ObjectInterface;
 
 namespace University;
 
+#region Teacher
 [DatabaseClass]
 public abstract partial class Teacher : Person
 {
@@ -15,11 +16,4 @@ public abstract partial class Teacher : Person
 	public static partial Teacher FromDTO(ObjectModel om, TeacherDTO dto);
 }
 
-#region TeacherDTO
-public class TeacherDTO : PersonDTO
-{
-	public long AssistantId { get; set; }
-	public CourseDTO[]? TeachesIds { get; set; }
-}
 #endregion
-
