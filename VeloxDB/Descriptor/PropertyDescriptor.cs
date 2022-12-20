@@ -3,7 +3,7 @@ using System.Xml;
 using System.IO;
 using System.Reflection;
 
-namespace Velox.Descriptor;
+namespace VeloxDB.Descriptor;
 
 internal enum PropertyType : byte
 {

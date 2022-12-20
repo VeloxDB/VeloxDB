@@ -1,10 +1,10 @@
 ﻿using System;
 using System.Xml.Linq;
-using Velox.Client;
-using Velox.Config;
-using Velox.Server;
+using VeloxDB.Client;
+using VeloxDB.Config;
+using VeloxDB.Server;
 
-namespace Velox.ClientApp.Modes;
+namespace VeloxDB.ClientApp.Modes;
 
 internal sealed class InitialMode : Mode
 {

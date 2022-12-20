@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace Velox.Storage.Replication;
+namespace VeloxDB.Storage.Replication;
 
 internal enum ReplicaStateType
 {

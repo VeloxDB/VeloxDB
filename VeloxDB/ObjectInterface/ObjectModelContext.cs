@@ -1,10 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
-using Velox.Common;
-using Velox.Storage;
+using VeloxDB.Common;
+using VeloxDB.Storage;
 
-namespace Velox.ObjectInterface;
+namespace VeloxDB.ObjectInterface;
 
 internal sealed class ObjectModelContext
 {

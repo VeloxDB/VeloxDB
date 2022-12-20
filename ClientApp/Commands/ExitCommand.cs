@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace Velox.ClientApp.Commands;
+namespace VeloxDB.ClientApp.Commands;
 
 [Command("exit", "Exits the current mode, or exits the program if no mode is active.")]
 internal sealed class ExitCommand : Command

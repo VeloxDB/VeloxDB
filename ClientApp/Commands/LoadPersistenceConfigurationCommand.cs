@@ -1,7 +1,7 @@
 ﻿using System;
-using Velox.ClientApp.Modes;
+using VeloxDB.ClientApp.Modes;
 
-namespace Velox.ClientApp.Commands;
+namespace VeloxDB.ClientApp.Commands;
 
 [Command("load", "Loads the persistence configuration for editing.")]
 internal sealed class LoadPersistenceConfigurationCommand : Command

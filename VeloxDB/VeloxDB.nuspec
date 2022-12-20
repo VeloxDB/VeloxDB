@@ -4,19 +4,20 @@
     <id>VeloxDB</id>
     <version>$version$</version>
     <title>VeloxDB</title>
-    <authors>VeloxDB</authors>
+    <authors>$authors$</authors>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
-		<repository type="git" url="https://github.com/VeloxDB/VeloxDB.git" branch="master"/>
-    <!--<license type="expression">MIT</license>-->
-    <!-- <icon>icon.png</icon> -->
-    <!--<projectUrl>http://project_url_here_or_delete_this_line/</projectUrl>-->
-    <description>VeloxDB is fast in memory Object oriented DBMS.</description>
+		<repository type="git" url="https://github.com/VeloxDB/VeloxDB.git" branch="main"/>
+    <license type="expression">$license$</license>
+    <icon>$icon$</icon>
+    <projectUrl>$projectUrl$</projectUrl>
+    <description>$description$</description>
     <releaseNotes></releaseNotes>
     <copyright>VeloxDB 2022</copyright>
-    <tags>Database RDBMS ORM</tags>
+    <tags>Database;RDBMS;ORM</tags>
+		<readme>$readme$</readme>
 		<dependencies>
       <group targetFramework="net6.0">
-				<dependency id="Velox" version="$version$"/>
+				<dependency id="VeloxDB.Protocol" version="$version$"/>
 			</group>
     </dependencies>
 		<contentFiles>
@@ -30,5 +31,8 @@
 		<file src="$vlxrootdir$bin/publish/_vlxdbsrv_temp/*" target="tools"/>
 		<file src="$vlxrootdir$Public/Server/Host/DotnetToolSettings.xml" target="tools"/>
 		<file src="nuget/VeloxDB.targets" target="build"/>
+		<file src="../README.md" target=""/>
+		<file src="../icon.png" target=""/>
+		<file src="../LICENSE.txt" target=""/>
 	</files>
 </package>

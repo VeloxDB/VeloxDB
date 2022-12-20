@@ -2,9 +2,9 @@
 using System.Drawing;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using Velox.Common;
+using VeloxDB.Common;
 
-namespace Velox.Storage;
+namespace VeloxDB.Storage;
 
 [StructLayout(LayoutKind.Sequential, Pack = 1, Size = 1)]
 internal unsafe struct ClassIndexMultiSet

@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Diagnostics;
 using API;
-using Velox.Client;
-using Velox.ObjectInterface;
-using Velox.Protocol;
+using VeloxDB.Client;
+using VeloxDB.ObjectInterface;
+using VeloxDB.Protocol;
 
 namespace Server;
 

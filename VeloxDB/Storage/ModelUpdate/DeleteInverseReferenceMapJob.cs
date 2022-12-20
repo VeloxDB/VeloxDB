@@ -1,7 +1,7 @@
 ﻿using System;
-using Velox.Common;
+using VeloxDB.Common;
 
-namespace Velox.Storage.ModelUpdate;
+namespace VeloxDB.Storage.ModelUpdate;
 
 internal sealed class DeleteInverseReferenceMapJob : ModelUpdateJob
 {

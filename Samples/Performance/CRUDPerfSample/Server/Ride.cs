@@ -1,6 +1,6 @@
 ﻿using API;
-using Velox.Descriptor;
-using Velox.ObjectInterface;
+using VeloxDB.Descriptor;
+using VeloxDB.ObjectInterface;
 
 namespace Server;
 

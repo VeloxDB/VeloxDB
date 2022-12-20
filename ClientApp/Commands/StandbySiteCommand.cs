@@ -1,12 +1,12 @@
 ﻿using System;
-using Velox.Client;
-using Velox.ClientApp.Modes;
-using Velox.Config;
-using Velox.Networking;
-using Velox.Protocol;
-using Velox.Server;
+using VeloxDB.Client;
+using VeloxDB.ClientApp.Modes;
+using VeloxDB.Config;
+using VeloxDB.Networking;
+using VeloxDB.Protocol;
+using VeloxDB.Server;
 
-namespace Velox.ClientApp.Commands;
+namespace VeloxDB.ClientApp.Commands;
 
 [Command("standby", "Instructs a given write HA cluster to become the standby site.", ProgramMode = ProgramMode.Both)]
 internal sealed class StandbySiteCommand : BindableCommand

@@ -1,6 +1,6 @@
 using System;
 
-namespace Velox.ObjectInterface;
+namespace VeloxDB.ObjectInterface;
 
 /// <summary>
 /// Apply this attribute to automapper method to specify that it supports polymorphism

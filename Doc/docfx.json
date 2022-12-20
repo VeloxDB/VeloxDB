@@ -4,11 +4,11 @@
       "src": [
 				{
 					"src":"../../bin",
-					"files":["vlxdb.dll", "vlxl.dll"]
+					"files":["vlxdb.dll", "vlxc.dll"]
 				},
 				{
 					"src":"../bin",
-					"files":["vlxdb.dll", "vlxl.dll"]
+					"files":["vlxdb.dll", "vlxc.dll"]
 				}
 			],
       "dest": "api",

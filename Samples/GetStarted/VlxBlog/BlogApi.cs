@@ -1,6 +1,6 @@
 using System;
-using Velox.ObjectInterface;
-using Velox.Protocol;
+using VeloxDB.ObjectInterface;
+using VeloxDB.Protocol;
 using VlxBlog.DTO;
 
 namespace VlxBlog;

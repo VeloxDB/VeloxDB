@@ -1,6 +1,6 @@
 using System;
 
-namespace Velox.ObjectInterface;
+namespace VeloxDB.ObjectInterface;
 
 /// <summary>
 /// Specifies that the class is Database Class.

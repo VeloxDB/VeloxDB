@@ -31,7 +31,7 @@ using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.Intrinsics.X86;
 
-namespace Velox.Common;
+namespace VeloxDB.Common;
 
 internal unsafe static class LZ4
 {

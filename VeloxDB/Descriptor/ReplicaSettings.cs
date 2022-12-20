@@ -1,7 +1,7 @@
 ﻿using System;
-using Velox.Common;
+using VeloxDB.Common;
 
-namespace Velox.Descriptor;
+namespace VeloxDB.Descriptor;
 
 internal class ReplicaSettings
 {

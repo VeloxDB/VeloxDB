@@ -3,11 +3,11 @@ using System.Collections.Generic;
 using System.Reflection.Emit;
 using System.Reflection;
 using System.Linq;
-using Velox.Common;
-using Velox.Descriptor;
-using Velox.Storage.ModelUpdate;
+using VeloxDB.Common;
+using VeloxDB.Descriptor;
+using VeloxDB.Storage.ModelUpdate;
 
-namespace Velox.Storage;
+namespace VeloxDB.Storage;
 
 internal unsafe sealed class HashReadersCollection
 {

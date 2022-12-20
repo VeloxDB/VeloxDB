@@ -1,13 +1,13 @@
 ﻿using System;
-using Velox.Client;
-using Velox.ClientApp.Modes;
-using Velox.Common;
-using Velox.Config;
-using Velox.Networking;
-using Velox.Protocol;
-using Velox.Server;
+using VeloxDB.Client;
+using VeloxDB.ClientApp.Modes;
+using VeloxDB.Common;
+using VeloxDB.Config;
+using VeloxDB.Networking;
+using VeloxDB.Protocol;
+using VeloxDB.Server;
 
-namespace Velox.ClientApp.Commands;
+namespace VeloxDB.ClientApp.Commands;
 
 internal abstract class BindableCommand : Command
 {

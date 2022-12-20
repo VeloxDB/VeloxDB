@@ -1,7 +1,7 @@
 using System.Text;
-using Velox.Common;
+using VeloxDB.Common;
 
-namespace Velox.Server;
+namespace VeloxDB.Server;
 
 internal sealed class ConsoleCollector : ITraceCollector
 {

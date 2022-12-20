@@ -2,7 +2,7 @@
 using System.Diagnostics;
 using System.Drawing;
 using System.Runtime.InteropServices;
-using Velox.Common;
+using VeloxDB.Common;
 
 namespace Client;
 

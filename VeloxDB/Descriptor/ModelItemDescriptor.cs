@@ -1,7 +1,7 @@
 ﻿using System;
 using System.IO;
 
-namespace Velox.Descriptor;
+namespace VeloxDB.Descriptor;
 
 internal enum ModelItemType : byte
 {

@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Threading;
 
-namespace Velox.Storage.Persistence;
+namespace VeloxDB.Storage.Persistence;
 
 internal sealed class SnapshotSemaphore
 {

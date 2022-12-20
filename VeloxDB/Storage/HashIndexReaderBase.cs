@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Runtime.CompilerServices;
-using Velox.Common;
-using Velox.Descriptor;
+using VeloxDB.Common;
+using VeloxDB.Descriptor;
 
-namespace Velox.Storage;
+namespace VeloxDB.Storage;
 
 internal abstract class HashIndexReaderBase
 {

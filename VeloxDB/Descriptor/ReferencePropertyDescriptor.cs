@@ -3,10 +3,10 @@ using System.Xml;
 using System.Linq;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
-using Velox.Common;
+using VeloxDB.Common;
 using System.IO;
 
-namespace Velox.Descriptor;
+namespace VeloxDB.Descriptor;
 
 internal enum Multiplicity
 {

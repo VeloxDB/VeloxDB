@@ -1,9 +1,9 @@
 ﻿using System;
-using Velox.ClientApp.Modes;
-using Velox.Common;
-using Velox.Config;
+using VeloxDB.ClientApp.Modes;
+using VeloxDB.Common;
+using VeloxDB.Config;
 
-namespace Velox.ClientApp.Commands;
+namespace VeloxDB.ClientApp.Commands;
 
 [Command("create-node", "Creates a new node (either a write or a read node).")]
 internal sealed class InsertNodeCommand : Command

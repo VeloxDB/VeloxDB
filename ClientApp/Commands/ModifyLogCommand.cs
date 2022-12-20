@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Text.RegularExpressions;
-using Velox.ClientApp.Modes;
-using Velox.Server;
+using VeloxDB.ClientApp.Modes;
+using VeloxDB.Server;
 
-namespace Velox.ClientApp.Commands;
+namespace VeloxDB.ClientApp.Commands;
 
 [Command("modify", "Modifies a log in the persistence configuration.", DirectModeName = "modify-log", ProgramMode = ProgramMode.Both)]
 internal sealed class ModifyLogCommand : BindableCommand

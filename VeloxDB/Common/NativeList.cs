@@ -2,7 +2,7 @@
 using System.Runtime.CompilerServices;
 using static System.Math;
 
-namespace Velox.Common;
+namespace VeloxDB.Common;
 
 internal unsafe sealed class NativeList : IDisposable
 {

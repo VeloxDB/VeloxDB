@@ -3,11 +3,11 @@ using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
-using Velox.Common;
-using Velox.Descriptor;
+using VeloxDB.Common;
+using VeloxDB.Descriptor;
 using static System.Math;
 
-namespace Velox.Storage;
+namespace VeloxDB.Storage;
 
 internal unsafe sealed class HashIndex
 {
@@ -46,7 +46,7 @@ internal unsafe sealed class HashIndex
 		Checker.AssertTrue(fixedMemoryManager.BufferSize == HashIndexItem.Size);
 		this.stringStorage = engine.StringStorage;
 
-		// Since we count used buckets, load factor needs to be smaller than that of a clasa for example.
+		// Since we count used buckets, load factor needs to be smaller than that of a class for example.
 		this.loadFactor = Min(0.5f, engine.Settings.HashLoadFactor * 0.7f);
 
 		capacity = HashUtils.CalculatePow2Capacity(Math.Max(64, capacity), loadFactor, out bucketCountLimit);
@@ -587,7 +587,7 @@ internal unsafe sealed class HashIndex
 					throw new InvalidOperationException();
 
 				if (comparer.HasNullStrings(key, stringStorage))
-					throw new InvalidOperationException();     
+					throw new InvalidOperationException();
 
 				ulong hash = comparer.CalculateHashCode(key, seed, stringStorage);
 				long bucketIndex = CalculateBucket(hash);

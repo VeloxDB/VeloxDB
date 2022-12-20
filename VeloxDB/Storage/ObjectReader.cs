@@ -2,12 +2,12 @@
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using Velox.Common;
-using Velox.Descriptor;
-using Velox.Storage;
+using VeloxDB.Common;
+using VeloxDB.Descriptor;
+using VeloxDB.Storage;
 using static System.Math;
 
-namespace Velox.Storage;
+namespace VeloxDB.Storage;
 
 internal unsafe struct ObjectReader
 {

@@ -1,8 +1,8 @@
 ﻿using System;
-using Velox.ClientApp.Modes;
-using Velox.Server;
+using VeloxDB.ClientApp.Modes;
+using VeloxDB.Server;
 
-namespace Velox.ClientApp.Commands;
+namespace VeloxDB.ClientApp.Commands;
 
 [Command("show", "Shows the current persistence configuration.")]
 internal sealed class ShowPersistenceConfigurationCommand : Command

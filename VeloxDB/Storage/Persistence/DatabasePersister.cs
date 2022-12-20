@@ -2,11 +2,11 @@
 using System.Collections.Generic;
 using System.Threading;
 using System.Diagnostics;
-using Velox.Common;
-using Velox.Descriptor;
+using VeloxDB.Common;
+using VeloxDB.Descriptor;
 using System.Linq;
 
-namespace Velox.Storage.Persistence;
+namespace VeloxDB.Storage.Persistence;
 
 internal unsafe sealed class DatabasePersister : IDisposable
 {

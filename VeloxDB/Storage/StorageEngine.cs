@@ -7,14 +7,14 @@ using System.Reflection;
 using System.Reflection.Metadata;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
-using Velox.Common;
-using Velox.Descriptor;
-using Velox.Storage.ModelUpdate;
-using Velox.Storage.Persistence;
-using Velox.Storage.Replication;
-using Velox.Storage.Replication.HighAvailability;
+using VeloxDB.Common;
+using VeloxDB.Descriptor;
+using VeloxDB.Storage.ModelUpdate;
+using VeloxDB.Storage.Persistence;
+using VeloxDB.Storage.Replication;
+using VeloxDB.Storage.Replication.HighAvailability;
 
-namespace Velox.Storage;
+namespace VeloxDB.Storage;
 
 internal unsafe sealed partial class StorageEngine : IDisposable
 {
@@ -1839,7 +1839,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		using (XMLModelSettings ms = new XMLModelSettings(true))
 		{
 			string modelName = databaseId == DatabaseId.SystemLocal ?
-				"Velox.Storage.LocalSystemModel.xml" : "Velox.Storage.GlobalSystemModel.xml";
+				"VeloxDB.Storage.LocalSystemModel.xml" : "VeloxDB.Storage.GlobalSystemModel.xml";
 
 			Stream s = Utils.GetResourceStream(Assembly.GetExecutingAssembly(), modelName);
 			ms.AddStream(s);
@@ -1858,7 +1858,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		using (XMLModelSettings ms = new XMLModelSettings(true))
 		{
 			string modelName = databaseId == DatabaseId.SystemLocal ?
-				"Velox.Storage.LocalSystemModel.xml" : "Velox.Storage.GlobalSystemModel.xml";
+				"VeloxDB.Storage.LocalSystemModel.xml" : "VeloxDB.Storage.GlobalSystemModel.xml";
 
 			Stream s = Utils.GetResourceStream(Assembly.GetExecutingAssembly(), modelName);
 			ms.AddStream(s);

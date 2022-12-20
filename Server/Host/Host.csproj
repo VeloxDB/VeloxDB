@@ -4,13 +4,13 @@
 		<TargetFramework>net6.0</TargetFramework>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Platforms>x64</Platforms>
-		<RootNamespace>Velox.Server</RootNamespace>
+		<RootNamespace>VeloxDB.Server</RootNamespace>
 		<Nullable>enable</Nullable>
 		<Platforms>x64</Platforms>
 		<AssemblyName>vlxdbsrv</AssemblyName>
 		<OutputPath>$(VlxRootDir)\bin</OutputPath>
 		<Product>VeloxDB</Product>
-		<Company>Velox</Company>
+		<Company>VeloxDB</Company>
 		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
 		<UseCommonOutputDirectory>true</UseCommonOutputDirectory>
 		<GenerateRuntimeConfigDevFile>true</GenerateRuntimeConfigDevFile>
@@ -24,7 +24,7 @@
 
 	<ItemGroup>
 		<ProjectReference Include="..\..\VeloxDB\VeloxDB.csproj" />
-		<ProjectReference Include="..\..\Velox\Velox.csproj" />
+		<ProjectReference Include="..\..\VeloxDB.Common\VeloxDB.Common.csproj" />
 		<ProjectReference Include="..\AdminAPI\AdminAPI.csproj" />
 	</ItemGroup>
 	<ItemGroup>

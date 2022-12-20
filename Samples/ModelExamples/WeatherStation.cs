@@ -1,5 +1,5 @@
-using Velox.ObjectInterface;
-using Velox.Protocol;
+using VeloxDB.ObjectInterface;
+using VeloxDB.Protocol;
 
 namespace Weather;
 

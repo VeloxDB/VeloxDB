@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Xml.Linq;
-using Velox.Client;
-using Velox.Protocol;
+using VeloxDB.Client;
+using VeloxDB.Protocol;
 namespace API;
 
 [DbAPI(Name = "MobilityService")]

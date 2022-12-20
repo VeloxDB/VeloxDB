@@ -3,10 +3,10 @@ using System.IO;
 using System.Reflection.PortableExecutable;
 using System.Threading;
 using System.Threading.Tasks;
-using Velox.Common;
-using Velox.Descriptor;
+using VeloxDB.Common;
+using VeloxDB.Descriptor;
 
-namespace Velox.Storage.Persistence;
+namespace VeloxDB.Storage.Persistence;
 
 internal unsafe sealed class LogPersister : IDisposable
 {

@@ -1,10 +1,10 @@
 ﻿using System;
 using System.IO;
 using System.Threading;
-using Velox.Common;
+using VeloxDB.Common;
 using static System.Math;
 
-namespace Velox.Storage.Persistence;
+namespace VeloxDB.Storage.Persistence;
 
 internal unsafe sealed class ReadThroughLogReader : IDisposable
 {

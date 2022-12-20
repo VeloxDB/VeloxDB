@@ -1,7 +1,7 @@
 using System;
-using Velox.Storage.Persistence;
+using VeloxDB.Storage.Persistence;
 
-namespace Velox.Storage;
+namespace VeloxDB.Storage;
 
 internal struct CommonWorkerParam
 {

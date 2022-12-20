@@ -3,10 +3,10 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Reflection.Emit;
-using Velox.Common;
-using Velox.Descriptor;
+using VeloxDB.Common;
+using VeloxDB.Descriptor;
 
-namespace Velox.Storage.ModelUpdate;
+namespace VeloxDB.Storage.ModelUpdate;
 
 internal unsafe delegate void ObjectCopyDelegate(IntPtr src, IntPtr dst, StringStorage stringStorage, BlobStorage blobStorage);
 

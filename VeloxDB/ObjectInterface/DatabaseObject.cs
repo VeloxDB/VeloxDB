@@ -1,11 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
-using Velox.Common;
-using Velox.Descriptor;
-using Velox.Storage;
+using VeloxDB.Common;
+using VeloxDB.Descriptor;
+using VeloxDB.Storage;
 
-namespace Velox.ObjectInterface;
+namespace VeloxDB.ObjectInterface;
 
 [Flags]
 internal enum DatabaseObjectState : byte

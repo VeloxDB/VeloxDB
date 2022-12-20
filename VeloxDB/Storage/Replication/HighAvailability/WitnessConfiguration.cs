@@ -1,7 +1,7 @@
 ﻿using System;
-using Velox.Networking;
+using VeloxDB.Networking;
 
-namespace Velox.Storage.Replication.HighAvailability;
+namespace VeloxDB.Storage.Replication.HighAvailability;
 
 internal abstract class WitnessConfiguration
 {

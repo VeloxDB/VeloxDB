@@ -1,7 +1,7 @@
 ﻿using System;
-using Velox.ClientApp.Modes;
+using VeloxDB.ClientApp.Modes;
 
-namespace Velox.ClientApp.Commands;
+namespace VeloxDB.ClientApp.Commands;
 
 [Command("apply", "Applies the persistence configuration to the database.", DirectModeName = "apply-persistence", ProgramMode = ProgramMode.Both)]
 internal sealed class ApplyPersistenceConfigurationCommand : BindableCommand

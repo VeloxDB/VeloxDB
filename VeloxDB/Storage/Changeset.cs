@@ -1,10 +1,10 @@
 ﻿using System;
 using System.Diagnostics;
 using System.Threading;
-using Velox.Common;
-using Velox.Networking;
+using VeloxDB.Common;
+using VeloxDB.Networking;
 
-namespace Velox.Storage;
+namespace VeloxDB.Storage;
 
 internal sealed unsafe partial class Changeset : IDisposable
 {

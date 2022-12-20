@@ -1,10 +1,10 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using Velox.Descriptor;
-using Velox.Storage;
+using VeloxDB.Descriptor;
+using VeloxDB.Storage;
 
-namespace Velox.ObjectInterface;
+namespace VeloxDB.ObjectInterface;
 
 /// <summary>
 /// Reader for a single property hash index. Use this class to lookup a <see cref="DatabaseObject"/> using hash index.

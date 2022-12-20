@@ -1,9 +1,9 @@
 ﻿using System;
-using Velox.Client;
-using Velox.Common;
-using Velox.Protocol;
+using VeloxDB.Client;
+using VeloxDB.Common;
+using VeloxDB.Protocol;
 
-namespace Velox.Server;
+namespace VeloxDB.Server;
 
 [DbAPI(Name = AdminAPIServiceNames.NodeAdministration)]
 public interface INodeAdministration

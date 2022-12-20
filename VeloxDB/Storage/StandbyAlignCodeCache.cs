@@ -4,11 +4,11 @@ using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
-using Velox.Common;
-using Velox.Descriptor;
-using Velox.Storage.ModelUpdate;
+using VeloxDB.Common;
+using VeloxDB.Descriptor;
+using VeloxDB.Storage.ModelUpdate;
 
-namespace Velox.Storage;
+namespace VeloxDB.Storage;
 
 internal unsafe delegate ulong ApplyAlignDelegate(ClassObject* obj, StringStorage stringStorage,
 	BlobStorage blobStorage, TransactionContext tc, ChangesetReader reader, ClassDescriptor classDesc,

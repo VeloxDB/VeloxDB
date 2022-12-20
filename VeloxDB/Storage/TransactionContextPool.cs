@@ -1,8 +1,8 @@
 ﻿using System;
 using System.Runtime.CompilerServices;
-using Velox.Common;
+using VeloxDB.Common;
 
-namespace Velox.Storage;
+namespace VeloxDB.Storage;
 
 internal unsafe class TransactionContextPool : IDisposable
 {

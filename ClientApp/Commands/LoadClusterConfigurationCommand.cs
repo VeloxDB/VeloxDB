@@ -1,7 +1,7 @@
 ﻿using System;
-using Velox.ClientApp.Modes;
+using VeloxDB.ClientApp.Modes;
 
-namespace Velox.ClientApp.Commands;
+namespace VeloxDB.ClientApp.Commands;
 
 [Command("load", "Loads the cluster configuration for editing. The configuration is either loaded from the file, " +
 	"or from the current bound configuration if no file is provided.")]

@@ -6,9 +6,9 @@ using System.Runtime.CompilerServices;
 using System.Runtime.Serialization;
 using System.Xml;
 using System.Xml.Schema;
-using Velox.Common;
+using VeloxDB.Common;
 
-namespace Velox.Descriptor;
+namespace VeloxDB.Descriptor;
 
 internal sealed class DataModelDescriptor : ModelItemDescriptor
 {
@@ -391,7 +391,7 @@ internal sealed class DataModelDescriptor : ModelItemDescriptor
 	private XmlReaderSettings CreateReaderSettings()
 	{
 		XmlSchema schema;
-		using (Stream s = Utils.GetResourceStream(Assembly.GetExecutingAssembly(), "Velox.Descriptor.DataModelSchema.xsd"))
+		using (Stream s = Utils.GetResourceStream(Assembly.GetExecutingAssembly(), "VeloxDB.Descriptor.DataModelSchema.xsd"))
 			schema = XmlSchema.Read(s, null);
 
 		XmlReaderSettings sett = new XmlReaderSettings();
@@ -448,7 +448,7 @@ internal sealed class DataModelDescriptor : ModelItemDescriptor
 
 	private void CreateSystemNamespace()
 	{
-		using (Stream s = Utils.GetResourceStream(Assembly.GetExecutingAssembly(), "Velox.Descriptor.SystemModel.xml"))
+		using (Stream s = Utils.GetResourceStream(Assembly.GetExecutingAssembly(), "VeloxDB.Descriptor.SystemModel.xml"))
 		{
 			Register(s);
 		}

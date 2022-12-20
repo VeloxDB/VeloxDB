@@ -4,17 +4,17 @@ using System.Net;
 using System.Reflection;
 using System.Runtime;
 using System.Runtime.CompilerServices;
-using Velox.Common;
-using Velox.Config;
-using Velox.Descriptor;
-using Velox.Networking;
-using Velox.ObjectInterface;
-using Velox.Protocol;
-using Velox.Storage;
-using Velox.Storage.Replication;
-using Velox.Storage.Replication.HighAvailability;
+using VeloxDB.Common;
+using VeloxDB.Config;
+using VeloxDB.Descriptor;
+using VeloxDB.Networking;
+using VeloxDB.ObjectInterface;
+using VeloxDB.Protocol;
+using VeloxDB.Storage;
+using VeloxDB.Storage.Replication;
+using VeloxDB.Storage.Replication.HighAvailability;
 
-namespace Velox.Server;
+namespace VeloxDB.Server;
 internal sealed class Server : IDisposable
 {
 	private const int AdminBufferPoolSize = 128 * 1024;

@@ -2,9 +2,9 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using Velox.Common;
+using VeloxDB.Common;
 
-namespace Velox.Storage.Persistence;
+namespace VeloxDB.Storage.Persistence;
 
 internal unsafe struct LogItem
 {

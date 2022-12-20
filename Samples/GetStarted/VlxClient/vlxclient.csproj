@@ -8,11 +8,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="velox" Version="0.1.11" />
+    <ProjectReference Include="..\VlxBlog\vlxblog.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\VlxBlog\vlxblog.csproj" />
+    <PackageReference Include="veloxdb.protocol" Version="0.1.11" />
   </ItemGroup>
 
 </Project>

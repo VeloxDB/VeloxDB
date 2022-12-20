@@ -1,10 +1,10 @@
 ﻿using System;
 using System.Diagnostics.Metrics;
-using Velox.Common;
-using Velox.Config;
-using Velox.Server;
+using VeloxDB.Common;
+using VeloxDB.Config;
+using VeloxDB.Server;
 
-namespace Velox.ClientApp.Commands;
+namespace VeloxDB.ClientApp.Commands;
 
 internal sealed class ClusterStatusLive
 {

@@ -1,7 +1,7 @@
 ﻿using System;
-using Velox.Config;
+using VeloxDB.Config;
 
-namespace Velox.ClientApp.Modes;
+namespace VeloxDB.ClientApp.Modes;
 
 internal sealed class ClusterConfigMode : Mode
 {

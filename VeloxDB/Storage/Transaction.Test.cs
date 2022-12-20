@@ -1,8 +1,8 @@
 ﻿using System;
 using System.Threading;
-using Velox.Common;
+using VeloxDB.Common;
 
-namespace Velox.Storage;
+namespace VeloxDB.Storage;
 
 #if TEST_BUILD
 internal sealed partial class Transaction

@@ -2,9 +2,9 @@
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
-using Velox.Common;
+using VeloxDB.Common;
 
-namespace Velox.Storage;
+namespace VeloxDB.Storage;
 
 unsafe class GroupingReferenceSorter : IDisposable
 {

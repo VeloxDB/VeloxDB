@@ -3,9 +3,9 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
-using Velox.Common;
+using VeloxDB.Common;
 
-namespace Velox.Storage.ModelUpdate;
+namespace VeloxDB.Storage.ModelUpdate;
 
 internal sealed class ModelUpdateContext : IDisposable
 {

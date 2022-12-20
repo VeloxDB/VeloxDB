@@ -1,10 +1,10 @@
 ﻿using System;
 using System.Runtime.CompilerServices;
 using System.Threading;
-using Velox.Common;
-using Velox.Networking;
+using VeloxDB.Common;
+using VeloxDB.Networking;
 
-namespace Velox.Common;
+namespace VeloxDB.Common;
 
 internal unsafe sealed class IdSet
 {

@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
-using Velox.Common;
+using VeloxDB.Common;
 
-namespace Velox.Descriptor;
+namespace VeloxDB.Descriptor;
 
 internal abstract class ModelSettings
 {

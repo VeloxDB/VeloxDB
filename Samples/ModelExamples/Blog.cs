@@ -1,6 +1,6 @@
-using Velox.Descriptor;
-using Velox.ObjectInterface;
-using Velox.Protocol;
+using VeloxDB.Descriptor;
+using VeloxDB.ObjectInterface;
+using VeloxDB.Protocol;
 
 namespace VlxBlog;
 

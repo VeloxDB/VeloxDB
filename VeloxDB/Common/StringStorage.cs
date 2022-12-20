@@ -2,7 +2,7 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
-namespace Velox.Common;
+namespace VeloxDB.Common;
 
 internal unsafe sealed partial class StringStorage : IDisposable
 {

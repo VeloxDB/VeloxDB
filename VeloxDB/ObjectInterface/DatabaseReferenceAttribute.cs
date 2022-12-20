@@ -1,7 +1,7 @@
 using System;
-using Velox.Descriptor;
+using VeloxDB.Descriptor;
 
-namespace Velox.ObjectInterface;
+namespace VeloxDB.ObjectInterface;
 
 /// <summary>
 /// Specifies that the property is a database reference.

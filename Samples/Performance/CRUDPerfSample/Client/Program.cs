@@ -1,7 +1,7 @@
 ﻿using System.Diagnostics;
 using System.Reflection.PortableExecutable;
 using API;
-using Velox.Client;
+using VeloxDB.Client;
 
 namespace Client;
 

@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
-using Velox.Common;
+using VeloxDB.Common;
 
-namespace Velox.Storage;
+namespace VeloxDB.Storage;
 
 internal sealed class ClassScan : IDisposable, IEnumerable<ObjectReader>
 {

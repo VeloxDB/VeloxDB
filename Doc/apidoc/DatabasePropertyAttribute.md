@@ -1,11 +1,11 @@
 ---
-uid: Velox.ObjectInterface.DatabasePropertyAttribute
+uid: VeloxDB.ObjectInterface.DatabasePropertyAttribute
 example:
   - '[!code-csharp[Main](../../Samples/Performance/CRUDPerfSample/Server/Vehicle.cs#Vehicle)]'
 remarks: *content
 ---
 
-Apply the [](xref:Velox.ObjectInterface.DatabasePropertyAttribute) to properties of [](xref:Velox.ObjectInterface.DatabaseObject) that need to be persisted. Database properties must be abstract, with both getter and setter defined. 
+Apply the [](xref:VeloxDB.ObjectInterface.DatabasePropertyAttribute) to properties of [](xref:VeloxDB.ObjectInterface.DatabaseObject) that need to be persisted. Database properties must be abstract, with both getter and setter defined. 
 
 Database properties can be of following types:
 * `byte`
@@ -17,7 +17,7 @@ Database properties can be of following types:
 * `bool`
 * `System.DateTime`
 * `string`
-* [](xref:Velox.ObjectInterface.DatabaseArray`1)
+* [](xref:VeloxDB.ObjectInterface.DatabaseArray`1)
 
 > [!NOTE]
-> Default values are not supported for [](xref:Velox.ObjectInterface.DatabaseArray`1) and string types.
+> Default values are not supported for [](xref:VeloxDB.ObjectInterface.DatabaseArray`1) and string types.

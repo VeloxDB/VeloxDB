@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Threading;
 
-namespace Velox.Common;
+namespace VeloxDB.Common;
 
 internal sealed class CountingGate
 {

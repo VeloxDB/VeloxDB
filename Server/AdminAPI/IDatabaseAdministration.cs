@@ -1,7 +1,7 @@
-﻿using Velox.Client;
-using Velox.Protocol;
+﻿using VeloxDB.Client;
+using VeloxDB.Protocol;
 
-namespace Velox.Server;
+namespace VeloxDB.Server;
 
 [DbAPI(Name = AdminAPIServiceNames.DatabaseAdministration)]
 public interface IDatabaseAdministration

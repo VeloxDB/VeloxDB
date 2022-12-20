@@ -1,10 +1,10 @@
 ﻿using System;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
-using Velox.ClientApp.Modes;
-using Velox.Server;
+using VeloxDB.ClientApp.Modes;
+using VeloxDB.Server;
 
-namespace Velox.ClientApp.Commands;
+namespace VeloxDB.ClientApp.Commands;
 
 [Command("create", "Creates a new log in the persistence configuration. The first created log is considered to be main log.",
 	DirectModeName = "create-log", ProgramMode = ProgramMode.Both)]

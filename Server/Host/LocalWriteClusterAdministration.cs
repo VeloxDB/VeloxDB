@@ -1,8 +1,8 @@
-using Velox.Protocol;
-using Velox.Storage;
-using Velox.Storage.Replication.HighAvailability;
+using VeloxDB.Protocol;
+using VeloxDB.Storage;
+using VeloxDB.Storage.Replication.HighAvailability;
 
-namespace Velox.Server;
+namespace VeloxDB.Server;
 
 [DbAPI(Name = AdminAPIServiceNames.LocalWriteClusterAdministration)]
 public sealed class LocalWriteClusterAdministration

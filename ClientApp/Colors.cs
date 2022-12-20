@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace Velox.ClientApp;
+namespace VeloxDB.ClientApp;
 
 internal static class Colors
 {

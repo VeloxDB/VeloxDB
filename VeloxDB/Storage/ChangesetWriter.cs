@@ -2,11 +2,11 @@
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using Velox.Common;
-using Velox.Descriptor;
+using VeloxDB.Common;
+using VeloxDB.Descriptor;
 using static System.Math;
 
-namespace Velox.Storage;
+namespace VeloxDB.Storage;
 
 internal enum OperationType : byte
 {

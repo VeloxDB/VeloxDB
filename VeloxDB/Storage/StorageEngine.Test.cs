@@ -1,11 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
-using Velox.Common;
-using Velox.Descriptor;
-using Velox.Storage.Replication;
+using VeloxDB.Common;
+using VeloxDB.Descriptor;
+using VeloxDB.Storage.Replication;
 
-namespace Velox.Storage;
+namespace VeloxDB.Storage;
 
 #if TEST_BUILD
 internal unsafe sealed partial class StorageEngine

@@ -1,8 +1,8 @@
 ﻿using System;
 using System.Text;
-using Velox.Common;
+using VeloxDB.Common;
 
-namespace Velox.Storage;
+namespace VeloxDB.Storage;
 
 internal sealed class StorageEngineSettings
 {

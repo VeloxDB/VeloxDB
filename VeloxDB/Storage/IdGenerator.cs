@@ -2,10 +2,10 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
-using Velox.Common;
-using Velox.Descriptor;
+using VeloxDB.Common;
+using VeloxDB.Descriptor;
 
-namespace Velox.Storage;
+namespace VeloxDB.Storage;
 
 internal unsafe sealed class IdGenerator
 {

@@ -2,9 +2,9 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
-using Velox.Common;
+using VeloxDB.Common;
 
-namespace Velox.Descriptor;
+namespace VeloxDB.Descriptor;
 
 internal sealed class XMLModelSettings : ModelSettings, IDisposable
 {

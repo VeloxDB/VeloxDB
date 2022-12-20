@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace Velox.Descriptor;
+namespace VeloxDB.Descriptor;
 
 internal sealed class ReplicationSettings
 {

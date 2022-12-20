@@ -2,9 +2,9 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.CompilerServices;
-using Velox.Descriptor;
+using VeloxDB.Descriptor;
 
-namespace Velox.ObjectInterface;
+namespace VeloxDB.ObjectInterface;
 
 internal sealed class ChangeList
 {

@@ -1,11 +1,11 @@
 ﻿using System;
-using Velox.Client;
-using Velox.ClientApp.Modes;
-using Velox.Common;
-using Velox.Config;
-using Velox.Server;
+using VeloxDB.Client;
+using VeloxDB.ClientApp.Modes;
+using VeloxDB.Common;
+using VeloxDB.Config;
+using VeloxDB.Server;
 
-namespace Velox.ClientApp.Commands;
+namespace VeloxDB.ClientApp.Commands;
 
 [Command("trace-level", "Sets the trace level of a given node.", ProgramMode = ProgramMode.Both)]
 internal sealed class TraceLevelCommand : BindableCommand

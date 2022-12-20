@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace Velox.Server;
+namespace VeloxDB.Server;
 
 public class NodeState : IEquatable<NodeState>
 {

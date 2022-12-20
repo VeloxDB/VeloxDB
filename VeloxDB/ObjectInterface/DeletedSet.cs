@@ -2,9 +2,9 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
-using Velox.Common;
+using VeloxDB.Common;
 
-namespace Velox.ObjectInterface;
+namespace VeloxDB.ObjectInterface;
 
 internal sealed class DeletedSet
 {

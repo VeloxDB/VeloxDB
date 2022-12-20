@@ -1,12 +1,12 @@
 using System;
 using System.Globalization;
 using System.Xml;
-using Velox.Common;
+using VeloxDB.Common;
 using System.IO;
 using System.Reflection;
 using System.Collections.Generic;
 
-namespace Velox.Descriptor;
+namespace VeloxDB.Descriptor;
 
 internal sealed class SimplePropertyDescriptor : PropertyDescriptor
 {

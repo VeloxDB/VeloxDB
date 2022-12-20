@@ -3,9 +3,9 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using Velox.Common;
+using VeloxDB.Common;
 
-namespace Velox.Storage;
+namespace VeloxDB.Storage;
 
 [StructLayout(LayoutKind.Explicit, Pack = 1, Size = ReaderInfo.Size)]
 internal unsafe struct ReaderInfo

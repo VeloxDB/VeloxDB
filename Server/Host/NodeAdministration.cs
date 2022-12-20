@@ -1,10 +1,10 @@
 using System.Text;
-using Velox.Common;
-using Velox.Config;
-using Velox.Protocol;
-using Velox.Storage.Replication;
+using VeloxDB.Common;
+using VeloxDB.Config;
+using VeloxDB.Protocol;
+using VeloxDB.Storage.Replication;
 
-namespace Velox.Server;
+namespace VeloxDB.Server;
 
 [DbAPI(Name = "NodeAdministration")]
 public sealed class NodeAdministration

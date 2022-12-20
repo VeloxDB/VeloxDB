@@ -5,12 +5,12 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
-using Velox.Common;
-using Velox.Descriptor;
-using Velox.Storage.Persistence;
-using Velox.Storage.Replication;
+using VeloxDB.Common;
+using VeloxDB.Descriptor;
+using VeloxDB.Storage.Persistence;
+using VeloxDB.Storage.Replication;
 
-namespace Velox.Storage;
+namespace VeloxDB.Storage;
 
 internal enum TransactionCommitType
 {

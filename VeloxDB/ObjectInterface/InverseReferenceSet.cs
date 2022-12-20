@@ -2,10 +2,10 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
-using Velox.Common;
-using Velox.Descriptor;
+using VeloxDB.Common;
+using VeloxDB.Descriptor;
 
-namespace Velox.ObjectInterface;
+namespace VeloxDB.ObjectInterface;
 
 internal delegate void ModifyDirectReferenceDelegate(DatabaseObject dirRefObj, DatabaseObject invRefObj, bool isArrayInsert);
 

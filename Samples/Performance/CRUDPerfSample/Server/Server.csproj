@@ -12,13 +12,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Reference Include="vlxdb">
-      <HintPath>..\..\..\..\..\bin\vlxdb.dll</HintPath>
-    </Reference>
-    <Reference Include="vlxl">
-      <HintPath>..\..\..\..\..\bin\vlxl.dll</HintPath>
-    </Reference>
+    <PackageReference Include="veloxdb" Version="0.1.11" />
+    <PackageReference Include="veloxdb.protocol" Version="0.1.11" />
   </ItemGroup>
-
 
 </Project>

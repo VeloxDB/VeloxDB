@@ -23,7 +23,7 @@
 using System;
 using System.Text;
 
-namespace Velox.ClientApp;
+namespace VeloxDB.ClientApp;
 
 internal static class ReadLine
 {

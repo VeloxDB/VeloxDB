@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 
-namespace Velox.Common;
+namespace VeloxDB.Common;
 
 internal unsafe sealed class MemoryHeap
 {

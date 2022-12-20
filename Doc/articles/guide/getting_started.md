@@ -7,30 +7,6 @@ Before we take a deeper dive into different aspects of VeloxDB, now is a good ti
 ## Simple Application
 The application consists of two parts, building a server side library and building a client application.
 
-### Set up NuGet source
-While VeloxDB is in private beta, packages will be hosted on GitHub Packages. In order to access packages, you will need to add an additional package source to your NuGet setup. Since these packages are private you will need to authenticate yourself to GitHub using personal access token. For information how to obtain personal access token see [Creating a personal access token][1].
-
-#### [.NET CLI](#tab/net-cli)
-```sh
-dotnet nuget add source -n "velox" https://nuget.pkg.github.com/defufna/index.json --username USERNAME --password TOKEN
-```
-On Linux/Mac platforms you will also need to use ```--store-password-in-clear-text``` since dotnet does not support encryption on non-windows platforms.
-
-#### [Visual Studio](#tab/visual-studio)
-* Open Visual Studio
-* Go to Tools 🡒 Options 🡒 Nuget Package Manager 🡒 Package Sources
-* Click the + sign
-* Enter **Velox** for the name and **https://nuget.pkg.github.com/defufna/index.json** for source
-* Click update
-* Click ok
-* Visual Studio will prompt you for your username and password (use personal access token) when you first try to access package source
----
-&nbsp;
-&nbsp;
-
->[!NOTE]
->Expect these packages to move to public nuget.org library after the release.
-
 ### Building a server
 
 In VeloxDB, data model and business logic are defined by a way of user supplied .NET assemblies. If you have any experience with traditional ORM frameworks (e.g. Entity Framework Core) you will find using VeloxDB familiar.
@@ -74,13 +50,12 @@ VeloxDB supports only x64 platform. In order to avoid build warnings, it is reco
 #### [.NET CLI](#tab/net-cli)
 
 ```sh
-dotnet add package veloxdb
+dotnet add package VeloxDB
 ```
 
 #### [Visual Studio](#tab/visual-studio)
 
 * Open Project 🡒 Manage NuGet Packages
-* Select **Velox** in **Package source** dropdown list
 * Click **Browse** and in Search type in **VeloxDB**
 * Click on the VeloxDB package and click on **Install**
 ---
@@ -93,11 +68,11 @@ Model is defined using regular C# classes. Add a Model.cs file to your project w
 
 Let's take a closer look at the classes defined here. Model classes must be declared as abstract, this is also true for all database properties. This allows VeloxDB to dynamically create implementation of classes at runtime.
 
-Model classes must inherit from the <xref:Velox.ObjectInterface.DatabaseObject> class, which defines common properties and methods for all database classes (for example [Id][4] and [Delete][5]).
+Model classes must inherit from the <xref:VeloxDB.ObjectInterface.DatabaseObject> class, which defines common properties and methods for all database classes (for example [Id][4] and [Delete][5]).
 
-Classes and properties must be marked with attributes <xref:Velox.ObjectInterface.DatabaseClassAttribute> and <xref:Velox.ObjectInterface.DatabasePropertyAttribute> respectively. Also note <xref:Velox.ObjectInterface.InverseReferencesAttribute> attribute. You use this attribute to define inverse reference properties. In this case post has a reference to blog, using <xref:Velox.ObjectInterface.InverseReferencesAttribute> we declare a property that allows us to easily get all posts of a single blog.
+Classes and properties must be marked with attributes <xref:VeloxDB.ObjectInterface.DatabaseClassAttribute> and <xref:VeloxDB.ObjectInterface.DatabasePropertyAttribute> respectively. Also note <xref:VeloxDB.ObjectInterface.InverseReferencesAttribute> attribute. You use this attribute to define inverse reference properties. In this case post has a reference to blog, using <xref:VeloxDB.ObjectInterface.InverseReferencesAttribute> we declare a property that allows us to easily get all posts of a single blog.
 
-Post.Blog property is marked with <xref:Velox.ObjectInterface.DatabaseReferenceAttribute>, which we use to specify additional information about the reference. The first argument specifies whether the reference can be null. In this case it doesn't make sense to have a post without a blog. The second argument specifies what should a database do when the target object is deleted. In case a blog is deleted, we want all of its posts to be deleted as well, so we set it to cascade delete. The last argument specifies whether the database will track inverse references for this reference. Since we plan to navigate this reference in reverse direction (from blog to post) we set this to true.
+Post.Blog property is marked with <xref:VeloxDB.ObjectInterface.DatabaseReferenceAttribute>, which we use to specify additional information about the reference. The first argument specifies whether the reference can be null. In this case it doesn't make sense to have a post without a blog. The second argument specifies what should a database do when the target object is deleted. In case a blog is deleted, we want all of its posts to be deleted as well, so we set it to cascade delete. The last argument specifies whether the database will track inverse references for this reference. Since we plan to navigate this reference in reverse direction (from blog to post) we set this to true.
 
 #### Create DTOs
 We will now define DTO classes, which will be used to transfer data between the client and the server. Create DTO.cs file with the following content:
@@ -124,13 +99,13 @@ For more detailed information see [Automapper](automapper.md) section of the gui
 All business logic is defined in server side methods, we call these methods database operations. By keeping the business logic and the data in the same process, VeloxDB avoids multiple round trips to the Database. Create BlogApi.cs file with the following content:
 [!code-csharp[Main](../../../Samples/GetStarted/VlxBlog/BlogApi.cs)]
 
-The methods described in this file can be called from the client using Velox protocol library. This will be covered in the next chapter. To define a database API operation you need to create a class marked with the <xref:Velox.Protocol.DbAPIAttribute>. Each method should be decorated with the <xref:Velox.Protocol.DbAPIOperationAttribute>.
+The methods described in this file can be called from the client using VeloxDB.Protocol library. This will be covered in the next chapter. To define a database API operation you need to create a class marked with the <xref:VeloxDB.Protocol.DbAPIAttribute>. Each method should be decorated with the <xref:VeloxDB.Protocol.DbAPIOperationAttribute>.
 
 <!-- For more information see [VeloxDB Protocol](../tech.md#veloxdb-protocol).-->
 
-The first argument of all Database operations must be of type <xref:Velox.ObjectInterface.ObjectModel>. <xref:Velox.ObjectInterface.ObjectModel> is used to access the data in the database. In this example we use the [GetObject][2] method to read objects, by Id, from the database and [CreateObject][3] to create new objects.
+The first argument of all Database operations must be of type <xref:VeloxDB.ObjectInterface.ObjectModel>. <xref:VeloxDB.ObjectInterface.ObjectModel> is used to access the data in the database. In this example we use the [GetObject][2] method to read objects, by Id, from the database and [CreateObject][3] to create new objects.
 
-Each operation corresponds to a single transaction inside the database. While an operation is running, changes it makes to the model are not visible to other operations. After an operation completes successfully its changes are committed to the database automatically. If an operation throws an exception all changes are rolled back. If your operation only reads data from the database, you can set <xref:Velox.Protocol.DbAPIOperationAttribute.OperationType> to <xref:Velox.Protocol.DbAPIOperationType.Read>. For more information about transactions see [Transactions](architecture.md#transactions).
+Each operation corresponds to a single transaction inside the database. While an operation is running, changes it makes to the model are not visible to other operations. After an operation completes successfully its changes are committed to the database automatically. If an operation throws an exception all changes are rolled back. If your operation only reads data from the database, you can set <xref:VeloxDB.Protocol.DbAPIOperationAttribute.OperationType> to <xref:VeloxDB.Protocol.DbAPIOperationType.Read>. For more information about transactions see [Transactions](architecture.md#transactions).
 
 #### Running the server
 
@@ -198,18 +173,17 @@ cd vlxclient
 #### [.NET CLI](#tab/net-cli)
 
 ```sh
-dotnet add package velox
+dotnet add package VeloxDB.Protocol
 ```
 
 #### [Visual Studio](#tab/visual-studio)
 
 * Open Project 🡒 Manage NuGet Packages
-* Select **Velox** in **Package source** dropdown list
-* Click **Browse** and in Search type in **Velox**
-* Click on the Velox package and click on **Install**
+* Click **Browse** and in Search type in **VeloxDB.Protocol**
+* Click on the VeloxDB.Protocol package and click on **Install**
 ---
 
-Velox package is used for calling public database APIs.
+VeloxDB.Protocol package is used for calling public database APIs.
 
 #### Reference the vlxblog project
 
@@ -241,7 +215,7 @@ Add an IBlogApi.cs file to your project with the following content:
 
 [!code-csharp[Main](../../../Samples/GetStarted/VlxClient/IBlogApi.cs)]
 
-The interface must be marked with the <xref:Velox.Protocol.DbAPIAttribute>. Note the name parameter, as it specifies the name of the database API we target with this interface. Default name for a database API is the full .NET name of the API class. Then we specify all operations we have defined on the server. Note that operations omit ObjectModel argument here. ObjectModel is injected server side and is not needed (or available) client side. Each operation is marked with the <xref:Velox.Protocol.DbAPIOperationAttribute>.
+The interface must be marked with the <xref:VeloxDB.Protocol.DbAPIAttribute>. Note the name parameter, as it specifies the name of the database API we target with this interface. Default name for a database API is the full .NET name of the API class. Then we specify all operations we have defined on the server. Note that operations omit ObjectModel argument here. ObjectModel is injected server side and is not needed (or available) client side. Each operation is marked with the <xref:VeloxDB.Protocol.DbAPIOperationAttribute>.
 
 #### Create main method
 
@@ -249,7 +223,7 @@ Replace the content of Program.cs with the following:
 
 [!code-csharp[Main](../../../Samples/GetStarted/VlxClient/Program.cs)]
 
-We first create an instance of <xref:Velox.Client.ConnectionStringParams>. This is a helper class that will help us create the connection string. We add our server's address to it (VeloxDB's default port is 7568). Then we use <xref:Velox.Client.ConnectionFactory> to get the connection to the server. Once we have the connection, calling database operations is trivial, we just call appropriate methods.
+We first create an instance of <xref:VeloxDB.Client.ConnectionStringParams>. This is a helper class that will help us create the connection string. We add our server's address to it (VeloxDB's default port is 7568). Then we use <xref:VeloxDB.Client.ConnectionFactory> to get the connection to the server. Once we have the connection, calling database operations is trivial, we just call appropriate methods.
 
 #### Run the app
 
@@ -477,7 +451,7 @@ Do you want to proceed (Y/N)?Y
 ## Tracing and Debugging
 Given that VeloxDB executes application logic inside the database server process, there needs to be a way for developers to debug their APIs. For this, VeloxDB offers couple of options. First, as demonstrated with the sample application, you can use development deployment of the VeloxDB server that comes bundled with the VeloxDB package. When running your APIs this way, debug information (PDB files) also get loaded allowing you to easily debug your code with the debugger. When deploying the APIs to a standalone database server, PDB files are not deployed to the database. However, VeloxDB provides an option to load the PDB files by using the command line option. TODO
 
-Besides debugging your APIs with the debugger, VeloxDB provides a tracing library which allows you to trace the execution of your APIs. VeloxDB internally uses the same mechanism to trace its own execution. You can access the tracing library through a static class <xref:Velox.Common.APITrace>. This class has many overloaded methods that allow you to write formatted trace messages of different trace levels. Available trace levels include Error, Warning, Info, Debug and Verbose. Following example demonstrates an API operation from the sample application modified to use tracing:
+Besides debugging your APIs with the debugger, VeloxDB provides a tracing library which allows you to trace the execution of your APIs. VeloxDB internally uses the same mechanism to trace its own execution. You can access the tracing library through a static class <xref:VeloxDB.Common.APITrace>. This class has many overloaded methods that allow you to write formatted trace messages of different trace levels. Available trace levels include Error, Warning, Info, Debug and Verbose. Following example demonstrates an API operation from the sample application modified to use tracing:
 
 ```cs
 [DbAPIOperation]
@@ -542,8 +516,8 @@ trace-level --node Node --level Verbose
 &nbsp;
 
 [1]: https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token
-[2]: xref:Velox.ObjectInterface.ObjectModel#Velox_ObjectInterface_ObjectModel_GetObject__1_System_Int64_
-[3]: xref:Velox.ObjectInterface.ObjectModel#Velox_ObjectInterface_ObjectModel_CreateObject__1
-[4]: xref:Velox.ObjectInterface.DatabaseObject#Velox_ObjectInterface_DatabaseObject_Id
-[5]: xref:Velox.ObjectInterface.DatabaseObject#Velox_ObjectInterface_DatabaseObject_Delete
+[2]: xref:VeloxDB.ObjectInterface.ObjectModel#VeloxDB_ObjectInterface_ObjectModel_GetObject__1_System_Int64_
+[3]: xref:VeloxDB.ObjectInterface.ObjectModel#VeloxDB_ObjectInterface_ObjectModel_CreateObject__1
+[4]: xref:VeloxDB.ObjectInterface.DatabaseObject#VeloxDB_ObjectInterface_DatabaseObject_Id
+[5]: xref:VeloxDB.ObjectInterface.DatabaseObject#VeloxDB_ObjectInterface_DatabaseObject_Delete
 [6]: https://learn.microsoft.com/en-us/dotnet/csharp/roslyn-sdk/source-generators-overview

@@ -1,8 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
-using Velox.Common;
+using VeloxDB.Common;
 
-namespace Velox.ObjectInterface;
+namespace VeloxDB.ObjectInterface;
 
 internal sealed class InverseReferenceChanges
 {

@@ -1,8 +1,8 @@
 using System.Reflection;
 using System.Runtime.Loader;
-using Engine = Velox.Storage.ModelUpdate;
+using Engine = VeloxDB.Storage.ModelUpdate;
 
-namespace Velox.Server;
+namespace VeloxDB.Server;
 
 internal sealed class LoadedAssemblies : AssemblyLoadContext
 {

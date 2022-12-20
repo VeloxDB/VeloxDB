@@ -3,11 +3,11 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Diagnostics;
-using Velox.Common;
-using Velox.Descriptor;
+using VeloxDB.Common;
+using VeloxDB.Descriptor;
 using System.Collections.Generic;
 
-namespace Velox.Storage;
+namespace VeloxDB.Storage;
 
 internal unsafe sealed partial class InverseReferenceMap
 {

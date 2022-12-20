@@ -2,15 +2,15 @@
 using System.Text.Json.Serialization;
 using System.Text.Json;
 using System.Xml.Linq;
-using Velox.Client;
-using Velox.Config;
-using Velox.Networking;
-using Velox.Protocol;
-using Velox.Server;
+using VeloxDB.Client;
+using VeloxDB.Config;
+using VeloxDB.Networking;
+using VeloxDB.Protocol;
+using VeloxDB.Server;
 using System.IO;
-using Velox.Common;
+using VeloxDB.Common;
 
-namespace Velox.ClientApp.Modes;
+namespace VeloxDB.ClientApp.Modes;
 
 internal sealed class PersistenceConfigMode : Mode
 {

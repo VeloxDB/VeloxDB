@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace Velox.Storage;
+namespace VeloxDB.Storage;
 
 internal enum TransactionSource : byte
 {

@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
-using Velox.Common;
-using Velox.Descriptor;
-using Velox.Storage.ModelUpdate;
+using VeloxDB.Common;
+using VeloxDB.Descriptor;
+using VeloxDB.Storage.ModelUpdate;
 
-namespace Velox.Storage.Replication;
+namespace VeloxDB.Storage.Replication;
 
 internal sealed class ReplicationInfoPublisher
 {

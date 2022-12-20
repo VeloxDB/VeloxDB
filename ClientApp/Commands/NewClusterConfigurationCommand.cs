@@ -1,7 +1,7 @@
 ﻿using System;
-using Velox.ClientApp.Modes;
+using VeloxDB.ClientApp.Modes;
 
-namespace Velox.ClientApp.Commands;
+namespace VeloxDB.ClientApp.Commands;
 
 [Command("new", "Creates new cluster configuration.")]
 internal sealed class NewClusterConfigurationCommand : Command

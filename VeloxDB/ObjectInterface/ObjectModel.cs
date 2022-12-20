@@ -4,11 +4,11 @@ using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
-using Velox.Common;
-using Velox.Descriptor;
-using Velox.Storage;
+using VeloxDB.Common;
+using VeloxDB.Descriptor;
+using VeloxDB.Storage;
 
-namespace Velox.ObjectInterface;
+namespace VeloxDB.ObjectInterface;
 
 /// <summary>
 /// <see cref="ObjectModel"/> provides methods for querying the database and creating new objects.

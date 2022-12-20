@@ -1,11 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using Velox.Common;
-using Velox.Descriptor;
-using Velox.Storage.ModelUpdate;
+using VeloxDB.Common;
+using VeloxDB.Descriptor;
+using VeloxDB.Storage.ModelUpdate;
 
-namespace Velox.Storage.Persistence;
+namespace VeloxDB.Storage.Persistence;
 
 internal sealed class PersistenceUpdate
 {

@@ -1,8 +1,8 @@
 ﻿using System.Reflection;
 using System.Text;
-using Velox.ClientApp.Modes;
+using VeloxDB.ClientApp.Modes;
 
-namespace Velox.ClientApp;
+namespace VeloxDB.ClientApp;
 
 internal class Program
 {

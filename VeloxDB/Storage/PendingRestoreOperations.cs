@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using Velox.Common;
+using VeloxDB.Common;
 
-namespace Velox.Storage;
+namespace VeloxDB.Storage;
 
 internal delegate void PendingRestoreDelegate(IntPtr ph, IntPtr prevObjPtr, bool hasMore);
 

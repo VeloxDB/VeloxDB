@@ -1,10 +1,10 @@
 ﻿using System;
 
-namespace Velox.Server;
+namespace VeloxDB.Server;
 
 public sealed class AssemblyUpdate
 {
-    private static readonly HashSet<string> dllIgnore = new HashSet<string>() { "vlxdb.dll", "vlxl.dll" };
+    private static readonly HashSet<string> dllIgnore = new HashSet<string>() { "vlxdb.dll", "vlxc.dll" };
 
 
     public List<UserAssembly> Inserted { get; set; }

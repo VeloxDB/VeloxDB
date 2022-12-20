@@ -1,4 +1,4 @@
-using Velox.ObjectInterface;
+using VeloxDB.ObjectInterface;
 
 namespace University;
 

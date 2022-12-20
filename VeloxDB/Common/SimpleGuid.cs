@@ -1,7 +1,7 @@
 using System;
 using System.Runtime.CompilerServices;
 
-namespace Velox.Common;
+namespace VeloxDB.Common;
 
 internal struct SimpleGuid : IEquatable<SimpleGuid>
 {

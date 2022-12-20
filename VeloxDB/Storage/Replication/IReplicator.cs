@@ -3,11 +3,11 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using Velox.Common;
-using Velox.Descriptor;
-using Velox.Storage.Replication.HighAvailability;
+using VeloxDB.Common;
+using VeloxDB.Descriptor;
+using VeloxDB.Storage.Replication.HighAvailability;
 
-namespace Velox.Storage.Replication;
+namespace VeloxDB.Storage.Replication;
 
 internal enum ReplicatedDatabases
 {

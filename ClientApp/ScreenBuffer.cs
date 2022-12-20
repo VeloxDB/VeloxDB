@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Runtime.CompilerServices;
 
-namespace Velox.ClientApp;
+namespace VeloxDB.ClientApp;
 
 internal sealed class ScreenBuffer
 {

@@ -1,8 +1,8 @@
 ﻿using System;
 using System.Runtime.CompilerServices;
-using Velox.Descriptor;
+using VeloxDB.Descriptor;
 
-namespace Velox.Storage;
+namespace VeloxDB.Storage;
 
 internal static class IdHelper
 {

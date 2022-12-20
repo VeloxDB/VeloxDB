@@ -1,8 +1,8 @@
 ﻿using System;
-using Velox.Common;
-using Velox.Descriptor;
+using VeloxDB.Common;
+using VeloxDB.Descriptor;
 
-namespace Velox.Storage;
+namespace VeloxDB.Storage;
 
 internal unsafe abstract partial class ClassBase
 {

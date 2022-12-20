@@ -2,11 +2,11 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using Velox.Common;
-using Velox.Descriptor;
-using Velox.Storage.Persistence;
+using VeloxDB.Common;
+using VeloxDB.Descriptor;
+using VeloxDB.Storage.Persistence;
 
-namespace Velox.Storage;
+namespace VeloxDB.Storage;
 
 internal unsafe sealed partial class Database
 {

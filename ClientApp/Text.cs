@@ -1,8 +1,8 @@
 ﻿using System;
 using System.Text;
-using Velox.Common;
+using VeloxDB.Common;
 
-namespace Velox.ClientApp;
+namespace VeloxDB.ClientApp;
 
 internal static class Text
 {

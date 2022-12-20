@@ -1,11 +1,11 @@
 ﻿using System;
 using System.Runtime.CompilerServices;
 using System.Threading;
-using Velox.Common;
-using Velox.Descriptor;
-using Velox.Storage.Replication;
+using VeloxDB.Common;
+using VeloxDB.Descriptor;
+using VeloxDB.Storage.Replication;
 
-namespace Velox.Storage;
+namespace VeloxDB.Storage;
 
 internal enum TransactionType
 {

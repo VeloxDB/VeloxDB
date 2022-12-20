@@ -1,8 +1,8 @@
 using System;
-using Velox.Common;
-using Velox.Networking;
+using VeloxDB.Common;
+using VeloxDB.Networking;
 
-namespace Velox.Storage;
+namespace VeloxDB.Storage;
 
 internal enum AlignmentTransactionType : byte
 {

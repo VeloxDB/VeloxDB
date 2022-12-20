@@ -1,8 +1,8 @@
 ﻿using System;
 using System.Diagnostics.CodeAnalysis;
-using Velox.Common;
+using VeloxDB.Common;
 
-namespace Velox.Server;
+namespace VeloxDB.Server;
 
 internal sealed class Program
 {

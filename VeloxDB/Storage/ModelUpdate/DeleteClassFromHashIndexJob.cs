@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
-using Velox.Common;
-using Velox.Descriptor;
+using VeloxDB.Common;
+using VeloxDB.Descriptor;
 
-namespace Velox.Storage.ModelUpdate;
+namespace VeloxDB.Storage.ModelUpdate;
 
 internal sealed class DeleteClassFromHashIndexJob : ModelUpdateJob
 {

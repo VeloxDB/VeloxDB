@@ -1,10 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using Velox.Common;
+using VeloxDB.Common;
 using static System.Math;
 
-namespace Velox.Descriptor;
+namespace VeloxDB.Descriptor;
 
 internal sealed class ReplicationDescriptor
 {

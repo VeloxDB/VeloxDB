@@ -1,11 +1,11 @@
 ﻿using System;
 using System.Linq;
 using System.Diagnostics;
-using Velox.Descriptor;
-using Velox.Common;
+using VeloxDB.Descriptor;
+using VeloxDB.Common;
 using System.Collections.Generic;
 
-namespace Velox.Storage;
+namespace VeloxDB.Storage;
 
 internal unsafe sealed class HashComparer
 {

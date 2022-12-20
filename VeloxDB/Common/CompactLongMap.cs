@@ -2,7 +2,7 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
-namespace Velox.Common;
+namespace VeloxDB.Common;
 
 [StructLayout(LayoutKind.Sequential, Pack = 1, Size = 1)]
 internal unsafe struct CompactLongMap

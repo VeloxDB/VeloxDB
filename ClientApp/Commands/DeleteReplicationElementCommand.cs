@@ -1,8 +1,8 @@
 ﻿using System;
-using Velox.ClientApp.Modes;
-using Velox.Config;
+using VeloxDB.ClientApp.Modes;
+using VeloxDB.Config;
 
-namespace Velox.ClientApp.Commands;
+namespace VeloxDB.ClientApp.Commands;
 
 [Command("delete", "Deletes an HA cluster or a node.")]
 internal sealed class DeleteReplicationElementCommand : Command

@@ -5,7 +5,7 @@
     </PropertyGroup>
 
 		<ItemGroup>
-    	<ProjectReference Include="../Velox/Velox.csproj" />
+    	<ProjectReference Include="../VeloxDB.Common/VeloxDB.Common.csproj" />
 			<ProjectReference Include="../VeloxDB/VeloxDB.csproj" />
 			<ProjectReference Include="../Samples/GetStarted/VlxBlog/vlxblog.csproj"/>
 			<ProjectReference Include="../Samples/GetStarted/VlxClient/vlxclient.csproj"/>

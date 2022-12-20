@@ -1,11 +1,11 @@
 ﻿using System;
-using Velox.Client;
-using Velox.ClientApp.Modes;
-using Velox.Networking;
-using Velox.Protocol;
-using Velox.Server;
+using VeloxDB.Client;
+using VeloxDB.ClientApp.Modes;
+using VeloxDB.Networking;
+using VeloxDB.Protocol;
+using VeloxDB.Server;
 
-namespace Velox.ClientApp.Commands;
+namespace VeloxDB.ClientApp.Commands;
 
 [Command("update-assemblies", "Updates user assemblies from the given directory.", ProgramMode = ProgramMode.Both)]
 internal sealed class UpdateUserAssembliesCommand : BindableCommand

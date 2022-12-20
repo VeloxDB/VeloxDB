@@ -1,7 +1,7 @@
 ﻿using System;
-using Velox.ClientApp.Modes;
+using VeloxDB.ClientApp.Modes;
 
-namespace Velox.ClientApp.Commands;
+namespace VeloxDB.ClientApp.Commands;
 
 [Command("cluster-config", "Enters the cluster configuration editor mode. This mode is used to create or modify cluster configuration.")]
 internal sealed class EnterClusterConfigModeCommand : Command

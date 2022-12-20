@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Text;
-using Velox.ClientApp.Modes;
-using Velox.Config;
+using VeloxDB.ClientApp.Modes;
+using VeloxDB.Config;
 
-namespace Velox.ClientApp.Commands;
+namespace VeloxDB.ClientApp.Commands;
 
 [Command("show", "Shows the currently edited cluster configuration or details of a specific node configuration.", ProgramMode = ProgramMode.Both)]
 internal sealed class ShowClusterConfigurationCommand : BindableCommand

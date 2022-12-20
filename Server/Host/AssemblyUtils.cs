@@ -1,9 +1,9 @@
 using System.Reflection;
 using System.Runtime.Loader;
-using Velox.Protocol;
-using Engine = Velox.Storage.ModelUpdate;
+using VeloxDB.Protocol;
+using Engine = VeloxDB.Storage.ModelUpdate;
 
-namespace Velox.Server;
+namespace VeloxDB.Server;
 
 internal static class AssemblyUtils
 {

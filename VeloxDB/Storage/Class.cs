@@ -6,12 +6,12 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
-using Velox.Common;
-using Velox.Descriptor;
-using Velox.Storage.ModelUpdate;
-using Velox.Storage.Replication;
+using VeloxDB.Common;
+using VeloxDB.Descriptor;
+using VeloxDB.Storage.ModelUpdate;
+using VeloxDB.Storage.Replication;
 
-namespace Velox.Storage;
+namespace VeloxDB.Storage;
 
 internal unsafe sealed partial class Class : ClassBase
 {

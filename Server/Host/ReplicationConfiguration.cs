@@ -1,9 +1,9 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Serialization;
-using Velox.Common;
-using Velox.Descriptor;
-using Velox.Config;
-namespace Velox.Server;
+using VeloxDB.Common;
+using VeloxDB.Descriptor;
+using VeloxDB.Config;
+namespace VeloxDB.Server;
 
 internal sealed class ReplicationConfiguration
 {

@@ -2,10 +2,10 @@
 using System.ComponentModel;
 using System.IO;
 using System.Runtime.InteropServices;
-using Velox.Common;
+using VeloxDB.Common;
 using static System.Math;
 
-namespace Velox.Storage.Persistence;
+namespace VeloxDB.Storage.Persistence;
 
 internal unsafe sealed class WriteThroughLogWriter : IDisposable
 {

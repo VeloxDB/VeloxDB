@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>adminapi</AssemblyName>
-    <RootNamespace>Velox.Server</RootNamespace>
+    <RootNamespace>VeloxDB.Server</RootNamespace>
     <OutputPath>$(VlxRootDir)\bin</OutputPath>
     <Platforms>x64</Platforms>
     <UseCommonOutputDirectory>true</UseCommonOutputDirectory>
@@ -14,7 +14,7 @@
   </PropertyGroup>
  
   <ItemGroup>
-    <ProjectReference Include="..\..\Velox\Velox.csproj" />
+    <ProjectReference Include="..\..\VeloxDB.Common\VeloxDB.Common.csproj" />
   </ItemGroup>
 
 </Project>

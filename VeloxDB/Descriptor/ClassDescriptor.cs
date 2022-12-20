@@ -2,12 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.Xml;
 using System.Runtime.CompilerServices;
-using Velox.Common;
+using VeloxDB.Common;
 using System.IO;
-using Velox.ObjectInterface;
+using VeloxDB.ObjectInterface;
 using System.Linq;
 
-namespace Velox.Descriptor;
+namespace VeloxDB.Descriptor;
 
 internal class ClassDescriptor : TypeDescriptor
 {

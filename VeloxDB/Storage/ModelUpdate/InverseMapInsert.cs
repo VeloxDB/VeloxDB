@@ -1,7 +1,7 @@
 using System;
-using Velox.Descriptor;
+using VeloxDB.Descriptor;
 
-namespace Velox.Storage.ModelUpdate;
+namespace VeloxDB.Storage.ModelUpdate;
 
 internal sealed class InverseMapInsert
 {

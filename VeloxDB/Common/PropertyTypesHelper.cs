@@ -1,8 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
-using Velox.Descriptor;
+using VeloxDB.Descriptor;
 
-namespace Velox.Common;
+namespace VeloxDB.Common;
 
 internal unsafe static class PropertyTypesHelper
 {

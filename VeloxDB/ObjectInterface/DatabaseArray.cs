@@ -2,11 +2,11 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
-using Velox.Common;
-using Velox.Descriptor;
-using Velox.Storage;
+using VeloxDB.Common;
+using VeloxDB.Descriptor;
+using VeloxDB.Storage;
 
-namespace Velox.ObjectInterface;
+namespace VeloxDB.ObjectInterface;
 
 /// <summary>
 /// Base database array class, you should always use generic version <see cref="DatabaseArray{T}"/>

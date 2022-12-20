@@ -6,12 +6,12 @@
 		<Platforms>x64</Platforms>
 		<AssemblyName>vlx</AssemblyName>
 		<Product>VeloxDB</Product>
-		<Company>Velox</Company>
+		<Company>VeloxDB</Company>
 		<OutputPath>$(VlxRootDir)\bin</OutputPath>
 		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>disable</Nullable>
-		<RootNamespace>Velox.ClientApp</RootNamespace>
+		<RootNamespace>VeloxDB.ClientApp</RootNamespace>
 		<UseCommonOutputDirectory>true</UseCommonOutputDirectory>
 	</PropertyGroup>
 
@@ -29,6 +29,6 @@
 
 	<ItemGroup>
 	  <ProjectReference Include="..\Server\AdminAPI\AdminAPI.csproj" />
-	  <ProjectReference Include="..\Velox\Velox.csproj" />
+	  <ProjectReference Include="..\VeloxDB.Common\VeloxDB.Common.csproj" />
 	</ItemGroup>
 </Project>

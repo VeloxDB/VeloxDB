@@ -3,14 +3,14 @@ using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
-using Velox.Common;
-using Velox.Descriptor;
-using Velox.ObjectInterface;
-using Velox.Protocol;
-using Velox.Storage;
-using Engine = Velox.Storage.ModelUpdate;
+using VeloxDB.Common;
+using VeloxDB.Descriptor;
+using VeloxDB.ObjectInterface;
+using VeloxDB.Protocol;
+using VeloxDB.Storage;
+using Engine = VeloxDB.Storage.ModelUpdate;
 
-namespace Velox.Server;
+namespace VeloxDB.Server;
 [DbAPI(Name = AdminAPIServiceNames.DatabaseAdministration)]
 public sealed class DatabaseAdministration
 {

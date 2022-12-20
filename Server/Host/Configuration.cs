@@ -2,9 +2,9 @@
 using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Velox.Common;
-using Velox.Config;
-namespace Velox.Server;
+using VeloxDB.Common;
+using VeloxDB.Config;
+namespace VeloxDB.Server;
 internal sealed class Configuration
 {
 	private const string ConfigFileName = "vlxdbcfg.json";

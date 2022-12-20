@@ -1,8 +1,8 @@
 using System;
 using System.Threading;
-using Velox.Storage;
+using VeloxDB.Storage;
 
-namespace Velox.Common;
+namespace VeloxDB.Common;
 
 internal unsafe sealed class InverseRefCollector
 {

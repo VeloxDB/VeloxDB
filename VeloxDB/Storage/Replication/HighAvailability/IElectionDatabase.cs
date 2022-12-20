@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace Velox.Storage.Replication.HighAvailability;
+namespace VeloxDB.Storage.Replication.HighAvailability;
 
 internal interface IElectionDatabase
 {

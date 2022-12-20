@@ -1,8 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
-using Velox.Common;
+using VeloxDB.Common;
 
-namespace Velox.Storage.ModelUpdate;
+namespace VeloxDB.Storage.ModelUpdate;
 
 internal sealed class ValidateUniqueHashIndexJob : ModelUpdateValidationJob
 {

@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Reflection;
 
-namespace Velox.Storage.Replication;
+namespace VeloxDB.Storage.Replication;
 
 internal enum ReplicaType
 {

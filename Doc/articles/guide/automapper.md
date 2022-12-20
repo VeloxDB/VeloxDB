@@ -39,11 +39,11 @@ To create a method that creates database object from DTO, create a static partia
 public static partial Course FromDTO(ObjectModel om, CourseDTO dto);
 ```
 
-Note that the method takes <xref:Velox.ObjectInterface.ObjectModel> as an argument. This is because it needs ObjectModel in order to create a new object in the database. In this case the id property is ignored and a new object is always created, if you need update functionality see[update](#update) part of this guide.
+Note that the method takes <xref:VeloxDB.ObjectInterface.ObjectModel> as an argument. This is because it needs ObjectModel in order to create a new object in the database. In this case the id property is ignored and a new object is always created, if you need update functionality see[update](#update) part of this guide.
 
 ## Mapping arrays
 
-Automapper supports mapping arrays. It has full support for both arrays of simple types and reference arrays. VeloxDB represents arrays with either <xref:Velox.ObjectInterface.DatabaseArray> or <xref:Velox.ObjectInterface.ReferenceArray>. These classes are not available on client side and should be mapped to either an array or [List][4]. Here is an example of `StudentDTO` DTO class that includes arrays:
+Automapper supports mapping arrays. It has full support for both arrays of simple types and reference arrays. VeloxDB represents arrays with either <xref:VeloxDB.ObjectInterface.DatabaseArray> or <xref:VeloxDB.ObjectInterface.ReferenceArray>. These classes are not available on client side and should be mapped to either an array or [List][4]. Here is an example of `StudentDTO` DTO class that includes arrays:
 [!code-csharp[Main](../../../Samples/University/NoPoly/Student.cs#StudentDTO)]
 
 If the value of array in database object is null, automapper will also produce null in the mapped object.
@@ -66,7 +66,7 @@ In order for this mapping to work `Course` database class must also have mapping
 
 [!code-csharp[Main](../../../Samples/University/NoPoly/Course.cs)]
 
-Mapping object graphs introduces some problems. For example if you have graph like, deeply connected model, you could easily end up mapping the whole database and sending it to the client. Since this behavior is not desired, VeloxDB automapper provides a method for selecting which objects should be mapped. By default, only the object you called To method on will be mapped, objects it references will not be mapped. In order to map referenced objects to DTOs you need to call <xref:Velox.ObjectInterface.DatabaseObject.Select> method on them first.
+Mapping object graphs introduces some problems. For example if you have graph like, deeply connected model, you could easily end up mapping the whole database and sending it to the client. Since this behavior is not desired, VeloxDB automapper provides a method for selecting which objects should be mapped. By default, only the object you called To method on will be mapped, objects it references will not be mapped. In order to map referenced objects to DTOs you need to call <xref:VeloxDB.ObjectInterface.DatabaseObject.Select> method on them first.
 Here is an example of database operation that maps `Teacher` and all referenced courses to DTO:
 
 [!code-csharp[Main](../../../Samples/University/NoPoly/UniApi.cs#GetTeacher)]
@@ -84,7 +84,7 @@ VeloxDB automapper is aware of object identity, if two objects point to the same
 
 Polymorphism is a key feature of object-oriented programming languages, and it is supported by VeloxDB's automapper. Polymorphism allows for objects of different types to be treated as if they were of a common base type. This can be useful in many situations, such as when working with collections of objects or when creating methods that operate on objects of multiple types.
 
-VeloxDB automapper supports polymorphism through the use of the <xref:Velox.ObjectInterface.SupportPolymorphismAttribute> attribute. This attribute is applied to methods in base classes to signal that they support polymorphism. When the <xref:Velox.ObjectInterface.SupportPolymorphismAttribute> attribute is used, the automapper will generate polymorphism-aware `To` and `From` methods for the class. These methods will automatically return or create objects of the most specific type that matches the input data. Without using this attribute, attempting to add an automapper method to a subclass will result in a compilation error.
+VeloxDB automapper supports polymorphism through the use of the <xref:VeloxDB.ObjectInterface.SupportPolymorphismAttribute> attribute. This attribute is applied to methods in base classes to signal that they support polymorphism. When the <xref:VeloxDB.ObjectInterface.SupportPolymorphismAttribute> attribute is used, the automapper will generate polymorphism-aware `To` and `From` methods for the class. These methods will automatically return or create objects of the most specific type that matches the input data. Without using this attribute, attempting to add an automapper method to a subclass will result in a compilation error.
 
 Here is an example of DTOs that use polymorphism, note that they follow the DBOs hierarchy:
 

@@ -1,13 +1,13 @@
 ﻿using System;
 using System.Xml.Linq;
-using Velox.Client;
-using Velox.ClientApp.Modes;
-using Velox.Config;
-using Velox.Networking;
-using Velox.Protocol;
-using Velox.Server;
+using VeloxDB.Client;
+using VeloxDB.ClientApp.Modes;
+using VeloxDB.Config;
+using VeloxDB.Networking;
+using VeloxDB.Protocol;
+using VeloxDB.Server;
 
-namespace Velox.ClientApp.Commands;
+namespace VeloxDB.ClientApp.Commands;
 
 [Command("primary", "Instructs a given write HA cluster to become the primary site.", ProgramMode = ProgramMode.Both)]
 internal sealed class PrimarySiteCommand : BindableCommand

@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace Velox.ClientApp.Commands;
+namespace VeloxDB.ClientApp.Commands;
 
 [Command("help", "Displays the help section.", ProgramMode = ProgramMode.Both)]
 internal sealed class HelpCommand : Command

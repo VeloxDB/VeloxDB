@@ -4,7 +4,7 @@ using System.Reflection.Metadata;
 using System.Runtime.CompilerServices;
 using System.Threading;
 
-namespace Velox.Common;
+namespace VeloxDB.Common;
 
 internal unsafe sealed class ParallelResizeCounter : IDisposable
 {

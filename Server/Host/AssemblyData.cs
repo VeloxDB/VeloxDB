@@ -1,6 +1,6 @@
-using Velox.Protocol;
+using VeloxDB.Protocol;
 
-namespace Velox.Server;
+namespace VeloxDB.Server;
 
 internal record AssemblyData(LoadedAssemblies Loaded, SerializerManager SerializerManager,
 	DeserializerManager DeserializerManager, ProtocolDiscoveryContext DiscoveryContext);

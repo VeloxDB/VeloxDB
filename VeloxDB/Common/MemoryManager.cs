@@ -4,7 +4,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 
-namespace Velox.Common;
+namespace VeloxDB.Common;
 
 internal unsafe sealed partial class MemoryManager : IDisposable
 {

@@ -1,9 +1,9 @@
 ﻿using System;
-using Velox.ClientApp.Modes;
-using Velox.Common;
-using Velox.Config;
+using VeloxDB.ClientApp.Modes;
+using VeloxDB.Common;
+using VeloxDB.Config;
 
-namespace Velox.ClientApp.Commands;
+namespace VeloxDB.ClientApp.Commands;
 
 [Command("create-ha", "Creates a new HA cluster (either a write or a read cluster), together with two additional " +
 	"nodes and a witness. Optionally, an existing node can be used as one of the nodes, in which case a single " +

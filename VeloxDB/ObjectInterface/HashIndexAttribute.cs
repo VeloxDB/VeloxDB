@@ -1,7 +1,7 @@
 using System;
-using Velox.Common;
+using VeloxDB.Common;
 
-namespace Velox.ObjectInterface;
+namespace VeloxDB.ObjectInterface;
 
 /// <summary>
 /// Apply this attribute to a <see cref="DatabaseObject"/> class to define a hash index.

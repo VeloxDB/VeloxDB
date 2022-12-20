@@ -3,15 +3,15 @@ using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using static System.Math;
-using Velox.Common;
-using Velox.Storage.Persistence;
-using Velox.Storage.Replication;
-using Velox.Descriptor;
-using Velox.Storage.ModelUpdate;
-using static Velox.Storage.Persistence.DatabaseRestorer;
+using VeloxDB.Common;
+using VeloxDB.Storage.Persistence;
+using VeloxDB.Storage.Replication;
+using VeloxDB.Descriptor;
+using VeloxDB.Storage.ModelUpdate;
+using static VeloxDB.Storage.Persistence.DatabaseRestorer;
 using System.IO;
 
-namespace Velox.Storage;
+namespace VeloxDB.Storage;
 
 internal static class DatabaseId
 {

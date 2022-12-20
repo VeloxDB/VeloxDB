@@ -1,11 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using Velox.Common;
-using Velox.Descriptor;
-using static Velox.Storage.Database;
+using VeloxDB.Common;
+using VeloxDB.Descriptor;
+using static VeloxDB.Storage.Database;
 
-namespace Velox.Storage;
+namespace VeloxDB.Storage;
 
 internal unsafe sealed partial class InheritedClass : ClassBase
 {

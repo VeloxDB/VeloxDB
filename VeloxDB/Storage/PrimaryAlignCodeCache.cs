@@ -4,11 +4,11 @@ using System.Linq;
 using System.Reflection;
 using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
-using Velox.Common;
-using Velox.Descriptor;
-using Velox.Storage.ModelUpdate;
+using VeloxDB.Common;
+using VeloxDB.Descriptor;
+using VeloxDB.Storage.ModelUpdate;
 
-namespace Velox.Storage;
+namespace VeloxDB.Storage;
 
 internal unsafe delegate void GenerateAlignDelegate(ClassObject* obj, StringStorage stringStorage,
 	BlobStorage blobStorage, ChangesetWriter writer, ulong commonVersion);

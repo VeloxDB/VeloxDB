@@ -1,10 +1,10 @@
 ﻿using System;
 using System.IO;
 using System.Runtime.InteropServices;
-using Velox.Common;
-using Velox.Descriptor;
+using VeloxDB.Common;
+using VeloxDB.Descriptor;
 
-namespace Velox.Storage.Persistence;
+namespace VeloxDB.Storage.Persistence;
 
 internal unsafe sealed class SnapshotFileWriter
 {

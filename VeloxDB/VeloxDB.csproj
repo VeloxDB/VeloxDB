@@ -4,16 +4,31 @@
 		<TargetFramework>net6.0</TargetFramework>
 		<Platforms>x64</Platforms>
 		<AssemblyName>vlxdb</AssemblyName>
-		<RootNamespace>Velox</RootNamespace>
-		<Authors></Authors>
-		<PackageId>VeloxDB</PackageId>
+		<RootNamespace>VeloxDB</RootNamespace>
 		<PackageOutputPath>$(VlxRootDir)\bin\nuget</PackageOutputPath>
-		<Company>Velox</Company>
+		<Company>VeloxDB</Company>
 		<Product>VeloxDB</Product>
-		<NuspecFile>VeloxDB.nuspec</NuspecFile>
-		<NuspecProperties>version=$(Version);vlxrootdir=$(VlxRootDir)</NuspecProperties>
 		<GenerateDocumentationFile>true</GenerateDocumentationFile>
 		<UseCommonOutputDirectory>true</UseCommonOutputDirectory>
+		<NuspecFile>VeloxDB.nuspec</NuspecFile>		
+		<Authors>VeloxDB</Authors>
+		<PackageId>VeloxDB</PackageId>
+		<PackageIcon>icon.png</PackageIcon>
+		<RepositoryUrl>https://github.com/VeloxDB/VeloxDB.git</RepositoryUrl>
+		<PackageProjectUrl>https://www.vlxdb.com</PackageProjectUrl>
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+		<Description>An object oriented database for building next generation solutions with .NET and C#.</Description>
+		<NuspecProperties>
+			version=$(Version);
+			vlxrootdir=$(VlxRootDir);
+			authors=$(Authors);
+			projectUrl=$(PackageProjectUrl);
+			license=$(PackageLicenseExpression);
+			icon=$(PackageIcon);
+			description=$(Description);
+			readme=$(PackageReadmeFile);
+		</NuspecProperties>
 	</PropertyGroup>
 
 	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -78,6 +93,6 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<ProjectReference Include="..\Velox\Velox.csproj" />
+		<ProjectReference Include="..\VeloxDB.Common\VeloxDB.Common.csproj" />
 	</ItemGroup>
 </Project>

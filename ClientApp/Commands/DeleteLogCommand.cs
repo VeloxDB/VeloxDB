@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Linq;
-using Velox.ClientApp.Modes;
-using Velox.Server;
+using VeloxDB.ClientApp.Modes;
+using VeloxDB.Server;
 
-namespace Velox.ClientApp.Commands;
+namespace VeloxDB.ClientApp.Commands;
 
 [Command("delete", "Deletes a log from the persistence configuration. Main log cannot be deleted.",
 	DirectModeName = "delete-log", ProgramMode = ProgramMode.Both)]

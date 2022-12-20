@@ -1,7 +1,7 @@
 ﻿using System;
-using Velox.ClientApp.Modes;
+using VeloxDB.ClientApp.Modes;
 
-namespace Velox.ClientApp.Commands;
+namespace VeloxDB.ClientApp.Commands;
 
 [Command("persist-config", "Enters the persistence configuration editor mode. This mode is used to create or modify persistence configuration.")]
 internal sealed class EnterPersistenceConfigMode : Command

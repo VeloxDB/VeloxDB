@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 
-namespace Velox.Common;
+namespace VeloxDB.Common;
 
 #pragma warning disable 1591
 [EditorBrowsableAttribute(EditorBrowsableState.Never)]

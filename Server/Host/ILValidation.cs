@@ -6,10 +6,10 @@ using System.Reflection;
 using System.Reflection.PortableExecutable;
 using System.Runtime.InteropServices;
 using ILVerify;
-using Velox.Common;
-using Engine = Velox.Storage.ModelUpdate;
+using VeloxDB.Common;
+using Engine = VeloxDB.Storage.ModelUpdate;
 
-namespace Velox.Server;
+namespace VeloxDB.Server;
 
 internal static class ILValidation
 {

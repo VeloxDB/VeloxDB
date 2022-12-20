@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Net.Sockets;
 
-namespace Velox.ClientApp;
+namespace VeloxDB.ClientApp;
 
 internal static class ConsoleHelper
 {

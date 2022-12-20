@@ -2,9 +2,9 @@
 using System.Linq;
 using System.Reflection;
 using System.Text;
-using Velox.ClientApp.Modes;
+using VeloxDB.ClientApp.Modes;
 
-namespace Velox.ClientApp;
+namespace VeloxDB.ClientApp;
 
 [AttributeUsage(AttributeTargets.Class, Inherited = false, AllowMultiple = false)]
 internal sealed class CommandAttribute : Attribute

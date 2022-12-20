@@ -1,5 +1,5 @@
 using VlxClient;
-using Velox.Client;
+using VeloxDB.Client;
 using VlxBlog.DTO;
 
 ConnectionStringParams csp = new ConnectionStringParams();
@@ -23,7 +23,7 @@ else
 }
 
 // Add post
-bool result = blogApi.AddPost(new PostDTO { BlogId = blog.Id, Title = "Hello world", Content = "My first Velox App" });
+bool result = blogApi.AddPost(new PostDTO { BlogId = blog.Id, Title = "Hello world", Content = "My first VeloxDB App" });
 Console.WriteLine($"Adding post success: {result}");
 
 // Delete

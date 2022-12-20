@@ -2,10 +2,10 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using Velox.Common;
-using Velox.Networking;
+using VeloxDB.Common;
+using VeloxDB.Networking;
 
-namespace Velox.Storage.Replication.HighAvailability;
+namespace VeloxDB.Storage.Replication.HighAvailability;
 
 internal struct DatabaseElectionState
 {

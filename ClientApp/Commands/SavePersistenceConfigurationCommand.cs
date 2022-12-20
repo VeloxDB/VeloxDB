@@ -1,7 +1,7 @@
 ﻿using System;
-using Velox.ClientApp.Modes;
+using VeloxDB.ClientApp.Modes;
 
-namespace Velox.ClientApp.Commands;
+namespace VeloxDB.ClientApp.Commands;
 
 [Command("save", "Saves the persistence configuration to a file.", DirectModeName = "save-persistence", ProgramMode = ProgramMode.Both)]
 internal class SavePersistenceConfigurationCommand : BindableCommand

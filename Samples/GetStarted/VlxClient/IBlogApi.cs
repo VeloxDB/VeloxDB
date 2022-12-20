@@ -1,5 +1,5 @@
 using System;
-using Velox.Protocol;
+using VeloxDB.Protocol;
 using VlxBlog.DTO;
 
 namespace VlxClient;

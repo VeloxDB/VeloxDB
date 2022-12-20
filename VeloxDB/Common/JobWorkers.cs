@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 
-namespace Velox.Common;
+namespace VeloxDB.Common;
 
 internal sealed class JobWorkers<TItem>
 {

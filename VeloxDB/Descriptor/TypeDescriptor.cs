@@ -2,7 +2,7 @@
 using System.IO;
 using System.Xml;
 
-namespace Velox.Descriptor;
+namespace VeloxDB.Descriptor;
 
 internal abstract class TypeDescriptor : ModelItemDescriptor
 {

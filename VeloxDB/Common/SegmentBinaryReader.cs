@@ -2,7 +2,7 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
-namespace Velox.Common;
+namespace VeloxDB.Common;
 
 internal unsafe sealed class SegmentBinaryReader
 {

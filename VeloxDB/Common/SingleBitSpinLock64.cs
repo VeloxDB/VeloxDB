@@ -3,7 +3,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 
-namespace Velox.Common;
+namespace VeloxDB.Common;
 
 [StructLayout(LayoutKind.Sequential, Pack = 1, Size = 1)]
 internal struct SingleBitSpinLock64

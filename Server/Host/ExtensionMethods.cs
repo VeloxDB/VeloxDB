@@ -1,7 +1,7 @@
-﻿using Velox.Config;
-using Velox.Storage.Replication.HighAvailability;
+﻿using VeloxDB.Config;
+using VeloxDB.Storage.Replication.HighAvailability;
 
-namespace Velox.Server;
+namespace VeloxDB.Server;
 
 internal static class ExtensionMethods
 {
