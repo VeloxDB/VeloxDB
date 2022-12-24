@@ -102,12 +102,6 @@ public sealed class MobilityService
 	}
 
 	[DbAPIOperation(ObjectGraphSupport = DbAPIObjectGraphSupportType.None, OperationType = DbAPIOperationType.Read)]
-	public int GetVehicleYear(ObjectModel om, long id)
-	{
-		return om.GetObject<Vehicle>(id)!.Year;
-	}
-
-	[DbAPIOperation(ObjectGraphSupport = DbAPIObjectGraphSupportType.None, OperationType = DbAPIOperationType.Read)]
 	public VehicleDTO[] GetRideVehicle(ObjectModel om, long[] rideIds)
 	{
 		VehicleDTO[] vehiclesDTOs = new VehicleDTO[rideIds.Length];

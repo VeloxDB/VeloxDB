@@ -53,6 +53,7 @@ internal unsafe class ModifiedList
 
 		headBuffer = 0;
 		currBuffer = null;
+		count = 0;
 
 		bufferSize = startBufferSize;
 		offset = startBufferSize;
@@ -66,6 +67,7 @@ internal unsafe class ModifiedList
 	{
 		headBuffer = 0;
 		currBuffer = null;
+		count = 0;
 
 		bufferSize = startBufferSize;
 		offset = startBufferSize;

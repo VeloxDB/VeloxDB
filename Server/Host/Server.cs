@@ -1,4 +1,5 @@
-﻿using System.Diagnostics;
+﻿using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using System.Reflection;
@@ -87,9 +88,10 @@ internal sealed class Server : IDisposable
 
 		if (blocking)
 		{
-			Console.CancelKeyPress += (sender, events) => Terminate();
+			Console.TreatControlCAsInput = false;
+			Console.CancelKeyPress += (sender, events) => Terminate(events);
 			terminateEvent.WaitOne();
-			Tracing.Info("Server shutting down.");
+			Tracing.Info("Server shutting down...");
 		}
 	}
 
@@ -147,8 +149,9 @@ internal sealed class Server : IDisposable
 		}
 	}
 
-	public void Terminate()
+	public void Terminate(ConsoleCancelEventArgs e)
 	{
+		e.Cancel = true;
 		terminateEvent.Set();
 	}
 
@@ -443,6 +446,7 @@ internal sealed class Server : IDisposable
 
 	public void Dispose()
 	{
+		Tracing.Info("Disposing server.");
 		adminHost?.Stop();
 		execHost?.Stop();
 		engine?.Dispose();
@@ -454,6 +458,7 @@ internal sealed class Server : IDisposable
 		StorageEngine engine;
 		ObjectModelContextPool ctxPool;
 		ObjectModelData objectModelData;
+		Action<object, DatabaseException> asyncCallback;
 
 		public LoadedAssemblies Assemblies { get; private set; }
 		public SimpleGuid ModelVersionGuid { get; private set; }
@@ -468,6 +473,8 @@ internal sealed class Server : IDisposable
 			this.AssemblyVersionGuid = assemblyVersionGuid;
 			objectModelData = new ObjectModelData(modelDesc, assemblies.Loaded);
 			this.Assemblies = assemblies;
+
+			asyncCallback = (s, e) => ((IPendingRequest)s).SendResponse(e);
 		}
 
 		public void ExecutionRequestCallback(ParametrizedAPIRequest request)
@@ -484,13 +491,7 @@ internal sealed class Server : IDisposable
 				}
 				else
 				{
-					objectModel.CommitAsyncAndDispose(e =>
-					{
-						Task.Run(() =>
-						{
-							pendingRequest.SendResponse(e);
-						});
-					});
+					objectModel.CommitAsyncAndDispose(asyncCallback, pendingRequest);
 				}
 
 				if (objectModel.StoredException != null)

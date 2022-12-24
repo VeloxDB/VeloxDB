@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Xml.Linq;
 using VeloxDB.Client;
 using VeloxDB.Protocol;
 namespace API;
@@ -36,7 +35,4 @@ public interface IMobilityService
 
 	[DbAPIOperation(ObjectGraphSupport = DbAPIObjectGraphSupportType.None, OperationType = DbAPIOperationType.Read)]
 	DatabaseTask<RideDTO[][]> GetVehicleRides(long[] vehicleIds);
-
-	[DbAPIOperation(ObjectGraphSupport = DbAPIObjectGraphSupportType.None, OperationType = DbAPIOperationType.Read)]
-	DatabaseTask<int> GetVehicleYear(long id);
 }

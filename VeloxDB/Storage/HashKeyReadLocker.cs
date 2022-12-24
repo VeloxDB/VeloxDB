@@ -126,6 +126,24 @@ internal unsafe sealed partial class HashKeyReadLocker : IDisposable
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public void RemapLockSlot(ulong itemHandle, ulong hash, ushort prevSlot, ushort newSlot)
+	{
+		int lockHandle = resizeCounter.EnterReadLock();
+
+		HashLockerItem* item = (HashLockerItem*)memoryManager.GetBuffer(itemHandle);
+
+		TTTrace.Write(engine.TraceId, prevSlot, newSlot, item->readerInfo.CommReadLockVer, item->readerInfo.LockCount);
+
+		Bucket* bucket = buckets + CalculateBucket(hash);
+		Bucket.LockAccess(bucket);
+
+		ReaderInfo.RemapSlot(&item->readerInfo, prevSlot, newSlot);
+
+		Bucket.UnlockAccess(bucket);
+		resizeCounter.ExitReadLock(lockHandle);
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public void GarbageCollect(ulong itemHandle, ulong hash, ulong oldestReadVersion)
 	{
 		int lockHandle = resizeCounter.EnterReadLock();
@@ -140,7 +158,7 @@ internal unsafe sealed partial class HashKeyReadLocker : IDisposable
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public void Rollback(ulong itemHandle, ulong hash, Transaction tran)
 	{
-		Checker.AssertTrue(tran.Context.MergedWith.Count == 0);
+		Checker.AssertTrue(tran.NextMerged == null);
 
 		int lockHandle = resizeCounter.EnterReadLock();
 

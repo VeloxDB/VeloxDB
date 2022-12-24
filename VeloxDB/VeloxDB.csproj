@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<TargetFramework>net6.0</TargetFramework>
+		<TargetFramework>net7.0</TargetFramework>
 		<Platforms>x64</Platforms>
 		<AssemblyName>vlxdb</AssemblyName>
 		<RootNamespace>VeloxDB</RootNamespace>
@@ -36,7 +36,7 @@
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 		<OutputPath>$(VlxRootDir)\bin</OutputPath>
 		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-		<DefineConstants>TRACE;X86_64;TEST_BUILD;HUNT_CHG_LEAKS; TTTRACE</DefineConstants>
+		<DefineConstants>TRACE;X86_64;TEST_BUILD; TTTRACE;HUNT_CHG_LEAKS</DefineConstants>
 		<NoWarn>$(NoWarn);1701;1702;CA1063;CA1416</NoWarn>
 	</PropertyGroup>
 
@@ -45,7 +45,7 @@
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 		<OutputPath>$(VlxRootDir)\bin</OutputPath>
 		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-		<DefineConstants>TRACE;ARM_64;TEST_BUILD;HUNT_CHG_LEAKS;HUNT_CORRUPT</DefineConstants>
+		<DefineConstants>TRACE;ARM_64;TEST_BUILD;HUNT_CHG_LEAKS</DefineConstants>
 		<NoWarn>$(NoWarn);1701;1702;CA1063;</NoWarn>
 	</PropertyGroup>
 

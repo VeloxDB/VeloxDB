@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Runtime.Intrinsics.X86;
 using System.Threading;
 using VeloxDB.Common;
 using VeloxDB.Descriptor;
@@ -11,13 +11,6 @@ using VeloxDB.Storage.Persistence;
 using VeloxDB.Storage.Replication;
 
 namespace VeloxDB.Storage;
-
-internal enum TransactionCommitType
-{
-	Normal = 0,
-	Merged = 1,
-	MergedAsync = 2
-}
 
 internal unsafe sealed class TransactionContext : IDisposable
 {
@@ -31,8 +24,8 @@ internal unsafe sealed class TransactionContext : IDisposable
 	const int inverseReferenceReadLockCapacity = 1024 * 24;     // 384KB
 	const int objectReadLockMapCapacity = 512;                  // Roughly 18KB
 
-	const int defLockedClassesCap = 32;
-	const int defWrittenClassesCap = 32;
+	const int defLockedClassesCapacity = 32;
+	const int defWrittenClassesCapacity = 32;
 
 	StorageEngine engine;
 	Database database;
@@ -43,6 +36,8 @@ internal unsafe sealed class TransactionContext : IDisposable
 	ChangesetBlock changesetBlock;
 
 	// These fields need to be merged when merging transactions
+	int totalMergedCount;
+	long totalAffectedCount;
 	ModifiedList affectedObjects;
 	ModifiedList affectedInvRefs;
 	ModifiedList objectReadLocks;
@@ -53,11 +48,7 @@ internal unsafe sealed class TransactionContext : IDisposable
 	ClassIndexMultiSet* writtenClasses;
 
 	byte affectedLogGroups;
-	List<Changeset> persistedChangesets;
-	List<LogChangeset>[] logChangesets;
-
-	List<Transaction> mergedWith;
-	ReplicaData[] replicaData;
+	Changeset changeset;
 	////////////////////////////////////////////////////////////
 
 	int* invRefGroupCounts;
@@ -82,8 +73,6 @@ internal unsafe sealed class TransactionContext : IDisposable
 
 	WriteTransactionFlags writeFlags;
 
-	int sourceReplicaIndex;
-
 	ulong rewindVersion;
 
 	AlignmentData alignment;
@@ -97,20 +86,18 @@ internal unsafe sealed class TransactionContext : IDisposable
 
 	IReplica originReplica;
 
-	AutoResetEvent mergedCommitWaitEvent;
+	AutoResetEvent asyncCommitWaitEvent;
 	DatabaseErrorDetail asyncError;
-	TransactionCommitType commitType;
-	Action<DatabaseException> asyncCallback;
 
 	AutoResetEvent commitWaitEvent;
 	int asyncCommiterCount;
-	int regAsyncCommiterCount;
 	bool asyncCommitResult;
-	RWSpinLock asyncCommitLock;
 
 	ulong standbyOrderNum;
 
 	List<ClassScan> classScans;
+
+	Transaction[] nextPersisted;
 
 	bool isAlignmentMode;
 
@@ -151,8 +138,8 @@ internal unsafe sealed class TransactionContext : IDisposable
 		invRefReadLocks = new NativeList(inverseReferenceReadLockCapacity, ReadLock.Size);
 		hashReadLocks = new ModifiedList(engine.MemoryManager);
 
-		lockedClasses = ClassIndexMultiSet.Create(defLockedClassesCap, engine.MemoryManager);
-		writtenClasses = ClassIndexMultiSet.Create(defWrittenClassesCap, engine.MemoryManager);
+		lockedClasses = ClassIndexMultiSet.Create(defLockedClassesCapacity, engine.MemoryManager);
+		writtenClasses = ClassIndexMultiSet.Create(defWrittenClassesCapacity, engine.MemoryManager);
 
 		origTempInvRefs = tempInvRefs = (long*)AlignedAllocator.Allocate(TempInvRefSize * sizeof(long));
 		tempInvRefCounts = (int*)AlignedAllocator.Allocate(ClassDescriptor.MaxInverseReferencesPerClass * sizeof(int), false);
@@ -160,34 +147,18 @@ internal unsafe sealed class TransactionContext : IDisposable
 		tempRecReaders = new ObjectReader[classScanChunkSize];
 
 		commitWaitEvent = new AutoResetEvent(false);
-		mergedCommitWaitEvent = new AutoResetEvent(false);
 		asyncCommitResult = true;
 
 		changesetReader = new ChangesetReader();
 		changesetBlock = new ChangesetBlock();
 
-		mergedWith = new List<Transaction>(16);
-
-		persistedChangesets = new List<Changeset>(2);
-		logChangesets = new List<LogChangeset>[PersistenceDescriptor.MaxLogGroups];
-		for (int i = 0; i < PersistenceDescriptor.MaxLogGroups; i++)
-		{
-			logChangesets[i] = new List<LogChangeset>(4);
-		}
+		nextPersisted = new Transaction[PersistenceDescriptor.MaxLogGroups];
 
 		classScans = new List<ClassScan>(2);
 
 		ReplicationDescriptor replicationDesc = engine.ReplicationDesc;
-		sourceReplicaIndex = replicationDesc.GetSourceReplicaIndex();
 
-		int c = 0;
-		replicaData = new ReplicaData[replicationDesc.AllReplicas.Count()];
-		foreach (ReplicaDescriptor replicaDesc in replicationDesc.AllReplicas)
-		{
-			replicaData[c] = new ReplicaData(this, replicaDesc, c);
-			c++;
-		}
-
+		totalMergedCount = 1;
 		rewindVersion = IReplicator.NoRewindVersion;
 	}
 
@@ -208,12 +179,10 @@ internal unsafe sealed class TransactionContext : IDisposable
 	public long* TempInvRefs { get => tempInvRefs; set => tempInvRefs = value; }
 	public int* TempInvRefCounts => tempInvRefCounts;
 	public ObjectReader[] TempRecReaders => tempRecReaders;
-	public List<LogChangeset>[] LogChangesets => logChangesets;
-	public List<Changeset> Changesets => persistedChangesets;
-	public bool IsTransactionEmpty => persistedChangesets.Count == 0;
+	public Changeset Changeset => changeset;
+	public bool IsTransactionEmpty => changeset == null;
 	public byte AffectedLogGroups { get => affectedLogGroups; set => affectedLogGroups = value; }
 	public WriteTransactionFlags WriteFlags { get => writeFlags; set => writeFlags = value; }
-	public ReplicaData[] ReplicaData => replicaData;
 	public ulong RewindVersion => rewindVersion;
 	public AlignmentData Alignment { get => alignment; set => alignment = value; }
 	public uint LocalTerm { get => localTerm; set => localTerm = value; }
@@ -221,22 +190,20 @@ internal unsafe sealed class TransactionContext : IDisposable
 	public ulong LogSeqNum { get => logSeqNum; set => logSeqNum = value; }
 	public IReplica OriginReplica { get => originReplica; set => originReplica = value; }
 	public AutoResetEvent CommitWaitEvent => commitWaitEvent;
-	public AutoResetEvent MergedCommitWaitEvent => mergedCommitWaitEvent;
-	public int AsyncCommitCount { get => asyncCommiterCount; set => asyncCommiterCount = value; }
-	public int RegAsyncCommitCount { get => regAsyncCommiterCount; set => regAsyncCommiterCount = value; }
+	public AutoResetEvent AsyncCommitWaitEvent => asyncCommitWaitEvent;
 	public bool AsyncCommitResult { get => asyncCommitResult; set => asyncCommitResult = value; }
 	public ulong StandbyOrderNum { get => standbyOrderNum; set => standbyOrderNum = value; }
 	public ChangesetReader ChangesetReader => changesetReader;
 	public ChangesetBlock ChangesetBlock => changesetBlock;
-	public List<Transaction> MergedWith => mergedWith;
 	public DatabaseErrorDetail AsyncError { get => asyncError; set => asyncError = value; }
-	public TransactionCommitType CommitType { get => commitType; set => commitType = value; }
 	public List<ClassScan> ClassScans => classScans;
-	public Action<DatabaseException> AsyncCallback { get => asyncCallback; set => asyncCallback = value; }
 	public unsafe int* InvRefGroupCounts => invRefGroupCounts;
 	public byte[] NewModelDescBinary { get => newModelDescBinary; set => newModelDescBinary = value; }
 	public byte[] NewPersistenceDescBinary { get => newPersistenceDescBinary; set => newPersistenceDescBinary = value; }
 	public bool UserAssembliesModified { get => userAssembliesModified; set => userAssembliesModified = value; }
+	public long TotalAffectedCount => totalAffectedCount;
+	public int TotalMergedCount => totalMergedCount;
+	public Transaction[] NextPersisted => nextPersisted;
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public void Init(Database database, ulong tranId)
@@ -264,17 +231,85 @@ internal unsafe sealed class TransactionContext : IDisposable
 		ClearInvRefChanges();
 	}
 
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public void AddChangeset(Changeset ch, IReplica source)
+	public void PrepareForAsyncCommit()
 	{
-		int sourceIndex = source == null ? -1 : source.Index;
-		for (int i = 0; i < replicaData.Length; i++)
-		{
-			if (i == sourceReplicaIndex)
-				continue;
+		if (asyncCommitWaitEvent == null)
+			asyncCommitWaitEvent = new AutoResetEvent(false);
+	}
 
-			replicaData[i].AddChangeset(sourceIndex, ch);
+	public void AddChangeset(Changeset changeset)
+	{
+		changeset.TakeRef();
+
+		if (this.changeset == null)
+		{
+			this.changeset = changeset;
 		}
+		else
+		{
+			Changeset last = this.changeset;
+			while (last.Next != null)
+			{
+				last = last.Next;
+			}
+
+			last.Next = changeset;
+		}
+	}
+
+	public void CollapseChangesets()
+	{
+		if (changeset == null)
+			return;
+
+		Changeset curr = changeset.Next;
+		changeset.Next = null;
+		while (curr != null)
+		{
+			changeset.Merge(curr);
+			curr.ReleaseRef();
+			curr = curr.Next;
+		}
+
+		for (int i = 0; i < changeset.LogChangesets.Length; i++)
+		{
+			var lch = changeset.LogChangesets[i];
+			affectedLogGroups = (byte)(affectedLogGroups | (1 << lch.LogIndex));
+		}
+	}
+
+	private void MergeChangeset(TransactionContext tc)
+	{
+		if (tc.changeset == null)
+			return;
+
+		if (changeset == null)
+		{
+			changeset = tc.changeset;
+			tc.changeset = null;
+		}
+		else
+		{
+			changeset.Merge(tc.changeset);
+		}
+
+		for (int i = 0; i < tc.changeset.LogChangesets.Length; i++)
+		{
+			var lch = tc.changeset.LogChangesets[i];
+			affectedLogGroups = (byte)(affectedLogGroups | (1 << lch.LogIndex));
+		}
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public void IncAsyncCommitterCount()
+	{
+		Interlocked.Increment(ref asyncCommiterCount);
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public int DecAsyncCommiterCount()
+	{
+		return Interlocked.Decrement(ref asyncCommiterCount);
 	}
 
 	public void ClearInvRefGroupCounts()
@@ -282,15 +317,22 @@ internal unsafe sealed class TransactionContext : IDisposable
 		Utils.ZeroMemory((byte*)invRefGroupCounts, GroupingReferenceSorter.GroupCount * sizeof(int));
 	}
 
-	public void Merge(Transaction tran)
+	public void Merge(Transaction owner, Transaction tran)
 	{
 		TransactionContext tc = tran.Context;
 
 		Checker.AssertTrue(originReplica == null);
 		Checker.AssertTrue(writeFlags == WriteTransactionFlags.None);
 
-		mergedWith.Add(tran);
+		Transaction lastInChain = tran;
+		while (lastInChain.NextMerged != null)
+			lastInChain = lastInChain.NextMerged;
 
+		lastInChain.NextMerged = owner.NextMerged;
+		owner.NextMerged = tran;
+		totalMergedCount += tc.totalMergedCount;
+
+		totalAffectedCount += tc.totalAffectedCount;
 		affectedObjects.MergeChanges(tc.affectedObjects);
 		affectedInvRefs.MergeChanges(tc.affectedInvRefs);
 		objectReadLocks.MergeChanges(tc.objectReadLocks);
@@ -304,21 +346,7 @@ internal unsafe sealed class TransactionContext : IDisposable
 		ClassIndexMultiSet.Merge(engine.MemoryManager, ref writtenClasses, tc.writtenClasses);
 		ClassIndexMultiSet.Clear(tc.writtenClasses);
 
-		persistedChangesets.AddRange(tc.persistedChangesets);
-		tc.persistedChangesets.Clear();
-
-		for (int i = 0; i < logChangesets.Length; i++)
-		{
-			logChangesets[i].AddRange(tc.logChangesets[i]);
-			tc.logChangesets[i].Clear();
-		}
-
-		affectedLogGroups |= tc.affectedLogGroups;
-
-		for (int i = 0; i < replicaData.Length; i++)
-		{
-			replicaData[i].Merge(tc.replicaData[i]);
-		}
+		MergeChangeset(tc);
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -334,18 +362,6 @@ internal unsafe sealed class TransactionContext : IDisposable
 
 			readLock++;
 		}
-	}
-
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public void EnterAsyncCommitStateLock()
-	{
-		asyncCommitLock.EnterWriteLock();
-	}
-
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public void ExitAsyncCommitStateLock()
-	{
-		asyncCommitLock.ExitWriteLock();
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -374,6 +390,7 @@ internal unsafe sealed class TransactionContext : IDisposable
 		TTTrace.Write(database.TraceId, tranId, classIndex, objectHandle);
 
 		AffectedObject* p = (AffectedObject*)affectedObjects.AddItem(ModifiedType.Class, (int)AffectedObject.Size);
+		totalAffectedCount++;
 		p->objectHandle = objectHandle;
 		p->classIndex = classIndex;
 	}
@@ -386,6 +403,7 @@ internal unsafe sealed class TransactionContext : IDisposable
 		AffectedInverseReferences* p = (AffectedInverseReferences*)affectedInvRefs.
 			AddItem(ModifiedType.InverseReference, Storage.AffectedInverseReferences.Size);
 
+		totalAffectedCount++;
 		p->classIndex = classIndex;
 		p->id = id;
 		p->propertyId = propId;
@@ -401,6 +419,7 @@ internal unsafe sealed class TransactionContext : IDisposable
 		ReadLock* p = isObject ? (ReadLock*)objectReadLocks.AddItem(ModifiedType.ObjectReadLock, ReadLock.Size) :
 			(ReadLock*)invRefReadLocks.Add();
 
+		totalAffectedCount++;
 		p->handle = handle;
 		p->classIndex = classIndex;
 		p->SetEligibleForGC_TranSlot(eligibleForGC, tranSlot);
@@ -425,6 +444,7 @@ internal unsafe sealed class TransactionContext : IDisposable
 		TTTrace.Write(database.TraceId, tranId, itemHandle, index, hash);
 
 		HashReadLock* p = (HashReadLock*)hashReadLocks.AddItem(ModifiedType.HashReadLock, HashReadLock.Size);
+		totalAffectedCount++;
 		p->itemHandle = itemHandle;
 		p->hashIndex = (ushort)index;
 		p->hash = hash;
@@ -530,20 +550,20 @@ internal unsafe sealed class TransactionContext : IDisposable
 		deleted.Reset(deletedObjectsCapacity);
 		ClearInvRefChanges();
 
-		if (lockedClasses->Capacity > defLockedClassesCap)
+		if (lockedClasses->Capacity > defLockedClassesCapacity)
 		{
 			ClassIndexMultiSet.Destroy(database.Engine.MemoryManager, lockedClasses);
-			lockedClasses = ClassIndexMultiSet.Create(defLockedClassesCap, database.Engine.MemoryManager);
+			lockedClasses = ClassIndexMultiSet.Create(defLockedClassesCapacity, database.Engine.MemoryManager);
 		}
 		else
 		{
 			ClassIndexMultiSet.Clear(lockedClasses);
 		}
 
-		if (writtenClasses->Capacity > defWrittenClassesCap)
+		if (writtenClasses->Capacity > defWrittenClassesCapacity)
 		{
 			ClassIndexMultiSet.Destroy(database.Engine.MemoryManager, writtenClasses);
-			writtenClasses = ClassIndexMultiSet.Create(defWrittenClassesCap, database.Engine.MemoryManager);
+			writtenClasses = ClassIndexMultiSet.Create(defWrittenClassesCapacity, database.Engine.MemoryManager);
 		}
 		else
 		{
@@ -582,6 +602,8 @@ internal unsafe sealed class TransactionContext : IDisposable
 
 		changesetReader.Clear();
 
+		totalAffectedCount = 0;
+		totalMergedCount = 1;
 		asyncCommiterCount = 0;
 		asyncCommitResult = true;
 		writeFlags = WriteTransactionFlags.None;
@@ -590,8 +612,6 @@ internal unsafe sealed class TransactionContext : IDisposable
 		originReplica = null;
 		alignment = null;
 		standbyOrderNum = ulong.MaxValue;
-		commitType = TransactionCommitType.Normal;
-		asyncCallback = null;
 		newModelDescBinary = null;
 		newPersistenceDescBinary = null;
 		userAssembliesModified = false;
@@ -599,23 +619,14 @@ internal unsafe sealed class TransactionContext : IDisposable
 		globalTerm.Low = 0;
 		globalTerm.Hight = 0;
 
-		for (int i = 0; i < replicaData.Length; i++)
-		{
-			replicaData[i].Clear();
-		}
+		Checker.AssertTrue(changeset == null || changeset.Next == null);
+		changeset?.ReleaseRef();
+		changeset = null;
 
-		for (int i = 0; i < logChangesets.Length; i++)
+		for (int i = 0; i < nextPersisted.Length; i++)
 		{
-			logChangesets[i].Clear();
+			nextPersisted[i] = null;
 		}
-
-		for (int i = 0; i < persistedChangesets.Count; i++)
-		{
-			persistedChangesets[i].ReleaseRef();
-		}
-
-		persistedChangesets.Clear();
-		mergedWith.Clear();
 
 		database = null;
 	}

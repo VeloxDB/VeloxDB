@@ -284,6 +284,7 @@ public abstract class DatabaseTask : INotifyCompletion
 					{
 						ConnectionPoolCollection.GetPool(connString).GetConnection(true, GetConnectionContinuation, this);
 					});
+
 					return;
 				}
 				else

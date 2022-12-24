@@ -38,6 +38,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 	Database[] databases;
 	IReplicator replicator;
 
+	readonly object commitSync = new object();
 	CommitWorkers commitWorkers;
 
 	ConfigArtifactVersions configVersions;
@@ -123,8 +124,6 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		replicator = CreateReplicator(replicationSettings, localElector, globalElector);
 		contextPool = new TransactionContextPool(this);
 		changesetWriterPool = new ChangesetWriterPool(memoryManager);
-
-		commitWorkers = new CommitWorkers(this, 1024, CommitWorker);
 	}
 
 	public void SubscribeToStateChanges(Action<DatabaseInfo> handler)
@@ -200,7 +199,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 				throw new DatabaseException(DatabaseErrorDetail.Create(DatabaseErrorType.ConcurrentConfigUpdate));
 			}
 
-			using (Transaction tran = CreateTransaction(DatabaseId.User, TransactionType.Read, 0, TransactionSource.Client, null, true))
+			using (Transaction tran = CreateTransaction(DatabaseId.User, TransactionType.Read, TransactionSource.Client, null, true))
 			{
 				ValidateAssemblyUpdate(tran, assemblyUpdate);
 			}
@@ -209,7 +208,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 			if (hasModelChanges)
 				UserDatabase.ApplyModelUpdate(modelUpdate, commitVersion).Dispose();
 
-			using (Transaction tran = CreateTransaction(DatabaseId.User, TransactionType.ReadWrite, 0, TransactionSource.Client, null, true))
+			using (Transaction tran = CreateTransaction(DatabaseId.User, TransactionType.ReadWrite, TransactionSource.Client, null, true))
 			{
 				if (modelUpdate.RequiresDefaultValueWrites)
 					ApplyDefaultValues(tran, modelUpdate);
@@ -225,14 +224,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 
 				UserAssembly[] assemblies = ReadUserAssemblies(tran).ToArray();
 
-				try
-				{
-					CommitTransactionInternal(tran, out _);
-				}
-				finally
-				{
-					tran.ClearContext();
-				}
+				CommitTransactionDirect(tran);
 
 				configVersions.AssembliesVersionGuid = asmVersionGuid;
 				assemblyVersionGuid = asmVersionGuid;
@@ -329,19 +321,10 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 				UserDatabase.UpdatePersistenceConfiguration(update);
 			}
 
-			using (Transaction tran = CreateTransaction(DatabaseId.User, TransactionType.ReadWrite, 0, TransactionSource.Client, null, true))
+			using (Transaction tran = CreateTransaction(DatabaseId.User, TransactionType.ReadWrite, TransactionSource.Client, null, true))
 			{
 				ApplyPersistenceChanges(tran, update.PersistenceDescriptor, persistenceVersionGuid);
-
-				try
-				{
-					CommitTransactionInternal(tran, out _);
-				}
-				finally
-				{
-					tran.ClearContext();
-				}
-
+				CommitTransactionDirect(tran);
 				configVersions.PersistenceVersionGuid = persistenceVersionGuid;
 			}
 
@@ -537,22 +520,22 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 
 	public Transaction CreateTransaction(TransactionType type)
 	{
-		return CreateTransaction(type, 0, TransactionSource.Client, null, true);
+		return CreateTransaction(type, TransactionSource.Client, null, true);
 	}
 
 	public Transaction CreateTransaction(TransactionType type, bool allowOtherTrans)
 	{
-		return CreateTransaction(type, 0, TransactionSource.Client, null, allowOtherTrans);
+		return CreateTransaction(type, TransactionSource.Client, null, allowOtherTrans);
 	}
 
-	public Transaction CreateTransaction(TransactionType type, ulong readVersion, TransactionSource source,
+	public Transaction CreateTransaction(TransactionType type, TransactionSource source,
 		IReplica originReplica, bool allowOtherWriteTransactions = true)
 	{
-		return CreateTransaction(DatabaseId.User, type, readVersion, source, originReplica, allowOtherWriteTransactions);
+		return CreateTransaction(DatabaseId.User, type, source, originReplica, allowOtherWriteTransactions);
 	}
 
-	public Transaction CreateTransaction(long databaseId, TransactionType type, ulong readVersion,
-		TransactionSource source, IReplica originReplica, bool allowOtherWriteTransactions = true, SimpleGuid? requiredUserModelVersion = null)
+	public Transaction CreateTransaction(long databaseId, TransactionType type, TransactionSource source,
+		IReplica originReplica, bool allowOtherWriteTransactions = true, SimpleGuid? requiredUserModelVersion = null)
 	{
 		if (databaseId == DatabaseId.User && requiredUserModelVersion.HasValue && !UserDatabase.PersistenceDesc.HasNonMasterLogs)
 			throw new DatabaseException(DatabaseErrorDetail.Create(DatabaseErrorType.MissingPersistanceDescriptor));
@@ -575,7 +558,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 			if (requiredUserModelVersion.HasValue && !requiredUserModelVersion.Value.Equals(configVersions.ModelVersionGuid))
 				throw new DatabaseException(DatabaseErrorDetail.Create(DatabaseErrorType.InvalidModelDescVersion));
 
-			return databases[databaseId].CreateTransaction(type, readVersion, source, originReplica, allowOtherWriteTransactions);
+			return databases[databaseId].CreateTransaction(type, source, originReplica, allowOtherWriteTransactions);
 		}
 		finally
 		{
@@ -592,13 +575,15 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 
 		tran.ValidateThread();
 
+		tran.Database.TransactionCompleted(tran);
+
 		if (tran.Type != TransactionType.Read)
 		{
 			Checker.AssertFalse(tran.IsAlignment);
 			RollbackModifications(tran);
 		}
 
-		tran.Complete();
+		tran.Complete(false);
 		tran.ClearContext();
 
 		trace.Verbose("Transaction rolled back, tranId={0}.", tran.Id);
@@ -620,10 +605,11 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		if (tran.Closed)
 			throw new DatabaseException(DatabaseErrorDetail.Create(DatabaseErrorType.CommitClosedTransaction));
 
-		if (tran.Type == TransactionType.Read || tran.Source != TransactionSource.Client)
+		if (tran.Type == TransactionType.Read || tran.Source != TransactionSource.Client || tran.Database.Id != DatabaseId.User)
 		{
 			try
 			{
+				tran.Database.TransactionCompleted(tran);
 				return CommitTransactionInternal(tran, out logSeqNum);
 			}
 			finally
@@ -633,10 +619,11 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		}
 
 		TransactionContext tc = tran.Context;
-		tc.CommitType = TransactionCommitType.Merged;
+		tc.CollapseChangesets();
 
-		commitWorkers.Enqueue(tran);
-		tc.MergedCommitWaitEvent.WaitOne();
+		tc.PrepareForAsyncCommit();
+		commitWorkers.Commit(tran);
+		tc.AsyncCommitWaitEvent.WaitOne();
 
 		DatabaseErrorDetail err = tc.AsyncError;
 		logSeqNum = tc.LogSeqNum;
@@ -648,8 +635,25 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		return tran.CommitVersion;
 	}
 
-	public void CommitTransactionAsync(Transaction tran, Action<DatabaseException> callback)
+	private void CommitTransactionDirect(Transaction tran)
 	{
+		Checker.AssertTrue(tran.Source == TransactionSource.Client);
+		try
+		{
+			tran.Database.TransactionCompleted(tran);
+			CommitTransactionInternal(tran, out _);
+		}
+		finally
+		{
+			tran.ClearContext();
+		}
+	}
+
+	public void CommitTransactionAsync(Transaction tran, Action<object, DatabaseException> callback, object state)
+	{
+		Checker.AssertTrue(tran.Database.Id == DatabaseId.User &&
+			tran.Type == TransactionType.ReadWrite && tran.Source == TransactionSource.Client);
+
 		tran.ValidateThread();
 		if (tran.HasActiveClassScans)
 			CheckErrorAndRollback(DatabaseErrorDetail.Create(DatabaseErrorType.ClassScansActive), tran);
@@ -657,85 +661,21 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		if (tran.Closed)
 			throw new DatabaseException(DatabaseErrorDetail.Create(DatabaseErrorType.CommitClosedTransaction));
 
-		if (tran.Type == TransactionType.Read || tran.Source != TransactionSource.Client)
-		{
-			try
-			{
-				CommitTransactionInternal(tran, out ulong logSeqNum);
-				return;
-			}
-			finally
-			{
-				tran.ClearContext();
-			}
-		}
-
 		TransactionContext tc = tran.Context;
-		tc.CommitType = TransactionCommitType.MergedAsync;
-		tc.AsyncCallback = callback;
-		tran.IsAsyncCommitScheduled = true;
+		tc.CollapseChangesets();
+		tran.AsyncCallback = callback;
+		tran.AsyncCallbackState = state;
 
-		commitWorkers.Enqueue(tran);
+		commitWorkers.Commit(tran);
 	}
 
-	private void CommitWorker(List<Transaction> l)
+	public ulong CommitTransactionInternal(Transaction tran, out ulong logSeqNum)
 	{
-		Transaction tran = l[0];
-		TTTrace.Write(traceId, tran.Id, l.Count);
-
-		for (int i = 1; i < l.Count; i++)
-		{
-			TTTrace.Write(traceId, tran.Id, l[i].Id);
-			tran.MergeWith(l[i]);
-		}
-
-		DatabaseErrorDetail err = null;
-		ulong logSeqNum = 0;
-
-		try
-		{
-			CommitTransactionInternal(tran, out logSeqNum);
-			Checker.AssertTrue(l[0].Closed);
-		}
-		catch (DatabaseException e)
-		{
-			err = e.Detail;
-		}
-
-		TTTrace.Write(traceId, tran.Id, tran.CommitVersion, logSeqNum);
-
-		if (l[0].Context.CommitType == TransactionCommitType.MergedAsync)
-		{
-			for (int i = 0; i < l.Count; i++)
-			{
-				l[i].Closed = true;
-				l[i].SetCommitAndLogSeqNum(tran.CommitVersion, logSeqNum);
-				Action<DatabaseException> callback = l[i].Context.AsyncCallback;
-				l[i].ClearContext();
-				callback(err != null ? new DatabaseException(err.Clone()) : null);
-			}
-		}
-		else
-		{
-			l[0].Context.AsyncError = err?.Clone();
-			l[0].Context.MergedCommitWaitEvent.Set();
-			for (int i = 1; i < l.Count; i++)
-			{
-				l[i].SetCommitAndLogSeqNum(tran.CommitVersion, logSeqNum);
-				l[i].Context.AsyncError = err?.Clone();
-				l[i].Closed = true;
-				l[i].Context.MergedCommitWaitEvent.Set();
-			}
-		}
-	}
-
-	private ulong CommitTransactionInternal(Transaction tran, out ulong logSeqNum)
-	{
-		TTTrace.Write(traceId, tran.Id, tran.CommitVersion, (byte)tran.Type);
+		TTTrace.Write(traceId, tran.Id, tran.CommitVersion, (byte)tran.Type, disposed);
 
 		if (tran.Type == TransactionType.Read)
 		{
-			tran.Complete();
+			tran.Complete(true);
 			logSeqNum = ulong.MaxValue;
 			return 0;
 		}
@@ -744,35 +684,34 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		TransactionContext tc = tran.Context;
 		bool isSuccess = false;
 
-		replicator.PreTransactionCommit(tran, out int handle);
+		replicator.PreTransactionCommit(tran);
+		int commitHandle = engineLock.EnterReadLock();
 
 		try
 		{
-			database.AssignCommitAndLogSeqNum(tran);
-			logSeqNum = tran.LogSeqNum;
-
 #if TEST_BUILD
 			tran.DelayCommit();
 #endif
-			// Prepare all async commiters
-			tran.StartAsyncCommit();
-			tran.RegisterAsyncCommiter();
-			replicator.CommittingTransaction(tran);
-			database.BeginPersistCommit(tran);
-			tran.EndPrepareAsyncCommit();
-			// Done!
+
+			lock (commitSync)
+			{
+				database.AssignCommitAndLogSeqNum(tran);
+				replicator.CommitTransaction(tran);
+				database.PersistCommit(tran);
+			}
 
 			CommitModifications(tran);
-			tran.AsyncCommiterFinished();
 
-			tran.WaitAsyncCommit();
+			tran.WaitAsyncCommitters();
 
 #if TEST_BUILD
 			tran.DelayInvRefMerge();
 #endif
+
+			logSeqNum = tran.LogSeqNum;
 			MergeInverseReferences(tran);
 
-			tran.Complete();
+			tran.Complete(true);
 
 			isSuccess = tc.AsyncCommitResult;
 			if (!isSuccess)
@@ -786,21 +725,22 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		}
 		finally
 		{
-			replicator.PostTransactionCommit(tran, isSuccess, handle);
+			replicator.PostTransactionCommit(tran, isSuccess);
+			engineLock.ExitReadLock(commitHandle);
 		}
 	}
 
-	public void FinalizeTransaction(Transaction tran)
+	public void NodeWriteStateUpdated(bool isMainWriteNode)
 	{
-		TransactionContext tc = tran.Context;
-
-		if (tran.IsCommitVersionPreAssigned)
+		if (isMainWriteNode)
 		{
-			tran.Database.FinalizeTransactionCommitPreAssigned(tran, tc.Alignment?.GlobalVersions);
+			if (commitWorkers == null)
+				commitWorkers = new CommitWorkers(this);
 		}
 		else
 		{
-			tran.Database.FinalizeTransactionCommit(tran);
+			commitWorkers?.Stop();
+			commitWorkers = null;
 		}
 	}
 
@@ -877,7 +817,6 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		TTTrace.Write(traceId, databaseId);
 		Database database = databases[databaseId];
 		database.DrainGC();
-		database.PreventPersistanceSnapshot();
 	}
 
 	public void EndDatabaseAlignment(Database database, ModelUpdateContext modelUpdateContext)
@@ -886,7 +825,6 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		database.RefillPendingIndexes(modelUpdateContext?.Workers);
 
 		contextPool.ResetAlignmentMode();
-		database.AllowPersistanceSnapshot();
 
 		trace.Debug("Database {0} alignment finished.", database.Id);
 	}
@@ -966,6 +904,10 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 				return true;
 		}
 
+		CommitWorkers w = commitWorkers;
+		if (w != null && w.HasTransactions)
+			return true;
+
 		return false;
 	}
 
@@ -1026,9 +968,6 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 
 		Database database = tran.Database;
 
-		if (database.Persister != null)
-			database.Persister.ProcessChangeset(tran, changeset);
-
 		TransactionContext tc = tran.Context;
 		ChangesetReader reader = tc.ChangesetReader;
 		reader.Init(database.ModelDesc, changeset);
@@ -1038,7 +977,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 			ApplyAlignmentChangesetBlock(tran, reader);
 		}
 
-		tc.AddChangeset(changeset, tran.OriginReplica);
+		tc.AddChangeset(changeset);
 	}
 
 	private Changeset ApplyChangesetIter(Transaction tran, Changeset changeset, bool cascadeGenerated, bool onlyPropagateSetToNull)
@@ -1046,9 +985,6 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		TTTrace.Write(traceId, tran.Id, cascadeGenerated);
 
 		Database database = tran.Database;
-
-		if (database.Persister != null)
-			database.Persister.ProcessChangeset(tran, changeset);
 
 		TransactionContext tc = tran.Context;
 		ChangesetReader reader = tc.ChangesetReader;
@@ -1063,7 +999,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 			CheckErrorAndRollback(err, tran);
 		}
 
-		tc.AddChangeset(changeset, tran.OriginReplica);
+		tc.AddChangeset(changeset);
 
 		if (cascadeGenerated)
 			changeset.Dispose();
@@ -1424,7 +1360,10 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		TTTrace.Write(traceId, tran.Id, tran.CommitVersion);
 
 		if (tran.IsAlignment)
+		{
+			tran.AsyncCommitterFinished();
 			return;
+		}
 
 		Database database = tran.Database;
 		TransactionContext tc = tran.Context;
@@ -1495,6 +1434,47 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 			InverseReferenceMap invRefMap = database.GetInvRefs(readLock->classIndex);
 			readLock->id = invRefMap.CommitReadLock(tran, readLock->handle, readLock->TranSlot, out int propId);
 			readLock->propertyId = propId;
+			readLock++;
+		}
+
+		tran.AsyncCommitterFinished();
+	}
+
+	public void RemapTransactionSlot(Transaction tran, ushort slot)
+	{
+		TTTrace.Write(traceId, tran.Id, slot);
+
+		Database database = tran.Database;
+		TransactionContext tc = tran.Context;
+
+		ModifiedList l1 = tc.ObjectReadLocks;
+		ReadLock* readLock = (ReadLock*)l1.StartIteration(out ModifiedBufferHeader* phead);
+		while (phead != null)
+		{
+			Class @class = database.GetClass(readLock->classIndex).MainClass;
+			readLock->id = @class.RemapReadLockSlot(readLock->handle, readLock->TranSlot, slot);
+			readLock->SetEligibleForGC_TranSlot(readLock->EligibleForGC, slot);
+			readLock = (ReadLock*)l1.MoveToNext(ref phead, (byte*)readLock, ReadLock.Size);
+		}
+
+		l1 = tc.HashReadLocks;
+		HashReadLock* hashReadLock = (HashReadLock*)l1.StartIteration(out phead);
+		while (phead != null)
+		{
+			HashKeyReadLocker locker = database.GetHashIndexLocker(hashReadLock->hashIndex);
+			locker.RemapLockSlot(hashReadLock->itemHandle, hashReadLock->hash, hashReadLock->tranSlot, slot);
+			hashReadLock->tranSlot = slot;
+			hashReadLock = (HashReadLock*)l1.MoveToNext(ref phead, (byte*)hashReadLock, HashReadLock.Size);
+		}
+
+		NativeList l2 = tc.InvRefReadLocks;
+		long count = l2.Count;
+		readLock = (ReadLock*)l2.Buffer;
+		for (long i = 0; i < count; i++)
+		{
+			InverseReferenceMap invRefMap = database.GetInvRefs(readLock->classIndex);
+			readLock->id = invRefMap.RemapReadLockSlot(readLock->handle, readLock->TranSlot, slot);
+			readLock->SetEligibleForGC_TranSlot(readLock->EligibleForGC, slot);
 			readLock++;
 		}
 	}
@@ -1878,7 +1858,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 
 	private ConfigArtifactVersions ReadConfigArtifactVersions()
 	{
-		using (Transaction tran = CreateTransaction(DatabaseId.User, TransactionType.Read, 0, TransactionSource.Internal, null))
+		using (Transaction tran = CreateTransaction(DatabaseId.User, TransactionType.Read, TransactionSource.Internal, null))
 		{
 			return new ConfigArtifactVersions()
 			{
@@ -1891,7 +1871,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 
 	public void ReadUserConfiguration(out DataModelDescriptor modelDesc, out PersistenceDescriptor persistenceDesc)
 	{
-		using (Transaction tran = CreateTransaction(DatabaseId.User, TransactionType.Read, 0, TransactionSource.Internal, null))
+		using (Transaction tran = CreateTransaction(DatabaseId.User, TransactionType.Read, TransactionSource.Internal, null))
 		{
 			ObjectReader r = GetObject(tran, IdGenerator.ModelDescId);
 			if (r.IsEmpty())
@@ -1925,7 +1905,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 	private UserAssembly[] ReadUserAssemblies(out SimpleGuid modelVersionGuid,
 		out SimpleGuid assemblyVersionGuid, out DataModelDescriptor modelDescriptor)
 	{
-		using (Transaction tran = CreateTransaction(DatabaseId.User, TransactionType.Read, 0, TransactionSource.Internal, null))
+		using (Transaction tran = CreateTransaction(DatabaseId.User, TransactionType.Read, TransactionSource.Internal, null))
 		{
 			var assemblies = ReadUserAssemblies(tran);
 
@@ -2058,7 +2038,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 			return replicator;
 		}
 
-		return new UnreplicatedReplicator(replicationSettings);
+		return new UnreplicatedReplicator(this, replicationSettings);
 	}
 
 	public void Dispose()
@@ -2081,14 +2061,13 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 
 			disposed = true;
 
+			commitWorkers?.Stop();
 			replicatorCleanup = replicator.Dispose();
 
 			for (int i = 0; i < databases.Length; i++)
 			{
 				databases[i].Dispose();
 			}
-
-			commitWorkers.Stop();
 		}
 		finally
 		{

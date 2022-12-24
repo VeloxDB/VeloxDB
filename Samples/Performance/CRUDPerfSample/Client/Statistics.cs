@@ -8,17 +8,16 @@ namespace Client;
 
 internal class Statistics
 {
-	string title, format;
-	Timer timer;
-	Stopwatch stopwatch;
+	string title;
+	Thread timer;
 	long prevCount;
 	Stopwatch totalTime;
+	volatile bool disposed;
 
 	ParallelCounter counter;
 
 	public Statistics(string title)
 	{
-		this.format = title + ": {0} T/s";
 		this.title = title;
 
 		counter = new ParallelCounter();
@@ -26,28 +25,54 @@ internal class Statistics
 
 	public void Start()
 	{
-		stopwatch = Stopwatch.StartNew();
 		totalTime = Stopwatch.StartNew();
-		timer = new Timer(p =>
+		timer = new Thread(() =>
 		{
-			double time = stopwatch.Elapsed.TotalSeconds;
-			stopwatch.Restart();
-			long t = prevCount;
-			prevCount = counter.Count;
-			long rate = (long)((prevCount - t) / time);
-			Console.WriteLine(format, rate);
-		}, null, 1000, 1000);
+			Stopwatch stopwatch = Stopwatch.StartNew();
+			List<long> hist = new List<long>();
+			int interval = 1;
+			int longMult = 10;
+
+			while (true)
+			{
+				if (disposed)
+					break;
+
+				Thread.Sleep(interval * 1000);
+				double time = stopwatch.Elapsed.TotalSeconds;
+				stopwatch.Restart();
+				long t = prevCount;
+				prevCount = counter.Count;
+				long rate = (long)((prevCount - t) / time);
+
+				if (hist.Count == longMult)
+					hist.RemoveAt(0);
+
+				hist.Add(rate);
+
+				Console.WriteLine("{0}: {1} T/s [{2}s], {3} T/s [{4}s]", title, rate, interval, hist.Average(), interval * longMult);
+			}
+		});
+		timer.Priority = ThreadPriority.Highest;
+		timer.Start();
 	}
 
 	public void Inc()
 	{
+		if (disposed)
+			return;
+
 		counter.Inc();
 	}
 
 	public void Stop()
 	{
+		if (disposed)
+			return;
+
 		totalTime.Stop();
-		timer.Dispose();
+		disposed = true;
+		timer.Join();
 	}
 
 	public void Write()

@@ -8,9 +8,9 @@ namespace VeloxDB.ObjectInterface;
 
 internal sealed class IdRange
 {
-	const long idRangeSize = 1002173;
-	const int reqIdRangeSize = 331;
-	const long nextIdRangeLimit = (long)(idRangeSize * 0.2);
+	const long idRangeSize = 5003231;
+	const int reqIdRangeSize = 1223;
+	const long nextIdRangeLimit = (long)(idRangeSize * 0.4);
 
 	readonly object sync = new object();
 	readonly object querySync = new object();
@@ -48,6 +48,7 @@ internal sealed class IdRange
 					Checker.AssertTrue(nextRange == 0);
 					DatabaseException e = rangeError;
 					rangeError = null;
+					count = 0;
 					throw e;
 				}
 

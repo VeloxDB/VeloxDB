@@ -12,6 +12,9 @@ namespace VeloxDB.Client;
 
 internal class ConnectionPool
 {
+	const int reuseSameConnCountPerCPU = 8; // Must be pow of 2
+	const int reuseSameConnCountPerCPULog = 3; // Log2 of reuseSameConnCountPerCPU
+
 	MultiSpinRWLock fastSync;
 	TaskCompletionSource connAvailableEvent;
 
@@ -40,6 +43,12 @@ internal class ConnectionPool
 
 		connParams = new ConnectionStringParams(connectionString);
 		currIndexes = (IntPtr)CacheLineMemoryManager.Allocate(sizeof(long), out currIndexesHandle);
+		for (int i = 0; i < ProcessorNumber.CoreCount; i++)
+		{
+			long* lp = (long*)CacheLineMemoryManager.GetBuffer((void*)currIndexes, i);
+			*lp = i * reuseSameConnCountPerCPU;
+		}
+
 		connections = new ConnectionEntry[connParams.PoolSize];
 		timer = Stopwatch.StartNew();
 	}
@@ -165,7 +174,7 @@ internal class ConnectionPool
 		}
 
 		NativeInterlocked64* p = (NativeInterlocked64*)CacheLineMemoryManager.GetBuffer((void*)currIndexes, ProcessorNumber.GetCore());
-		long n = p->Increment();
+		long n = p->Increment() >> reuseSameConnCountPerCPULog;
 		ConnectionEntry res = connections[n % connectionCount];
 		return res;
 	}

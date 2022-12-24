@@ -1,84 +1,188 @@
 ﻿using System;
-using System.Collections;
-using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using VeloxDB.Common;
 
 namespace VeloxDB.Storage;
 
-internal sealed class ActiveTransations : IEnumerable<Transaction>
+internal sealed class ActiveTransations
 {
-	long traceId;
-	Transaction queueHead;
+	MultiSpinLock sync;
+	Queue[] perCPUQueues;
 
-	public ActiveTransations(long traceId)
+	public ActiveTransations()
 	{
-		this.traceId = traceId;
+		sync = new MultiSpinLock();
+		perCPUQueues = new Queue[ProcessorNumber.CoreCount];
 	}
-
-	public bool IsEmpty => queueHead == null;
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public void AddTran(Transaction tran)
 	{
-		TTTrace.Write(traceId, tran.Id, tran.ReadVersion);
-
-		tran.NextActiveTran = queueHead;
-		if (queueHead != null)
-			queueHead.PrevActiveTran = tran;
-
-		queueHead = tran;
+		tran.ActiveListIndex = sync.Enter();
+		try
+		{
+			// Creating the queue here (lazy) will likely create it in the GC heap of the current CPU (away from other queues)
+			perCPUQueues[tran.ActiveListIndex] ??= new Queue();
+			perCPUQueues[tran.ActiveListIndex].AddTran(tran);
+		}
+		finally
+		{
+			sync.Exit(tran.ActiveListIndex);
+		}
 	}
 
-	public Transaction TransactionCompleted(Transaction tran)
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public void Remove(Transaction tran)
 	{
-		TTTrace.Write(traceId, tran.Id, tran.ReadVersion, tran.CommitVersion);
-
-		Transaction res;
-		if (tran.NextActiveTran == null)
+		sync.Enter(tran.ActiveListIndex);
+		try
 		{
-			res = tran.PrevActiveTran;
+			perCPUQueues[tran.ActiveListIndex].Remove(tran);
 		}
-		else
+		finally
 		{
-			res = null;
-			tran.NextActiveTran.PrevActiveTran = tran.PrevActiveTran;
+			sync.Exit(tran.ActiveListIndex);
 		}
 
-		if (tran.PrevActiveTran != null)
+		tran.ActiveListIndex = -1;
+	}
+
+	public bool IsEmpty
+	{
+		get
 		{
-			tran.PrevActiveTran.NextActiveTran = tran.NextActiveTran;
+			for (int i = 0; i < perCPUQueues.Length; i++)
+			{
+				if (perCPUQueues[i] != null && !perCPUQueues[i].isEmpty)
+					return false;
+			}
+
+			return true;
 		}
-		else
+	}
+
+	public Transaction CancelTransactions()
+	{
+		Transaction res = null;
+		for (int i = 0; i < perCPUQueues.Length; i++)
 		{
-			queueHead = tran.NextActiveTran;
+			sync.Enter(i);
+			try
+			{
+				if (perCPUQueues[i] != null)
+					perCPUQueues[i].CancelTransactions();
+
+			}
+			finally
+			{
+				sync.Exit(i);
+			}
 		}
 
 		return res;
 	}
 
-	public IEnumerator<Transaction> GetEnumerator()
+	public Transaction GetOldestReader()
 	{
-		Transaction curr = queueHead;
-		while (curr != null)
+		Transaction res = null;
+		for (int i = 0; i < perCPUQueues.Length; i++)
 		{
-			yield return curr;
-			curr = curr.NextActiveTran;
+			if (perCPUQueues[i] != null)
+			{
+				Transaction curr = perCPUQueues[i].Oldest;
+				if (curr != null && (res == null || res.ReadVersion > curr.ReadVersion))
+					res = curr;
+			}
+		}
+
+		return res;
+	}
+
+	public void Dispose()
+	{
+		sync.Dispose();
+	}
+
+	private sealed class Queue
+	{
+		Transaction head;
+		Transaction tail;
+
+		public bool isEmpty => head == null;
+		public Transaction Oldest => tail;
+		public int Count
+		{
+			get
+			{
+				int c = 0;
+				Transaction t = head;
+				while (t != null)
+				{
+					c++;
+					t = t.NextActiveTran;
+				}
+
+				return c;
+			}
+		}
+
+		public Queue()
+		{
+		}
+
+		public void AddTran(Transaction tran)
+		{
+			TTTrace.Write(tran.Engine.TraceId, tran.Id, tran.ReadVersion);
+
+			tran.NextActiveTran = head;
+			if (head != null)
+			{
+				head.PrevActiveTran = tran;
+			}
+			else
+			{
+				tail = tran;
+			}
+
+			head = tran;
+		}
+
+		public void Remove(Transaction tran)
+		{
+			TTTrace.Write(tran.Engine.TraceId, tran.Id, tran.ReadVersion, tran.CommitVersion);
+
+			if (tran.NextActiveTran == null)
+			{
+				tail = tran.PrevActiveTran;
+			}
+			else
+			{
+				tran.NextActiveTran.PrevActiveTran = tran.PrevActiveTran;
+			}
+
+			if (tran.PrevActiveTran == null)
+			{
+				head = tran.NextActiveTran;
+			}
+			else
+			{
+				tran.PrevActiveTran.NextActiveTran = tran.NextActiveTran;
+			}
+		}
+
+		public void CancelTransactions()
+		{
+			Transaction t = head;
+			while (t != null)
+			{
+				t.CancelRequested = true;
+				t = t.NextActiveTran;
+			}
 		}
 	}
 
-	IEnumerator IEnumerable.GetEnumerator()
-	{
-		return GetEnumerator();
-	}
-
 #if TEST_BUILD
-	public int Count => this.Count();
-
-	public Transaction GetOldestReader()
-	{
-		return this.LastOrDefault();
-	}
+	public int Count => perCPUQueues.Where(x => x != null).Select(x => x.Count).Sum();
 #endif
 }

@@ -60,8 +60,12 @@ internal sealed class Program
 			return;
 		}
 
-		using Server host = new Server(configuration, updateAssembliesDir: parsed.UpdateAsmDir, persistenceDir: parsed.PersistanceDir);
-		host.Run();
+		using (Server host = new Server(configuration, updateAssembliesDir: parsed.UpdateAsmDir, persistenceDir: parsed.PersistanceDir))
+		{
+			host.Run();
+		}
+
+		Tracing.Info("Server shut down.");
 	}
 
 	private static void InitPersistence(Configuration configuration, string persistanceDir)

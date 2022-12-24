@@ -17,7 +17,7 @@ internal unsafe static class CacheLineMemoryManager
 		return (byte*)firstBuffer + (index << AlignedAllocator.CacheLineSizeLog);
 	}
 
-	public static unsafe byte* Allocate(int size, out object handle)
+	public static unsafe byte* Allocate(int size, out object handle, bool zeroOut = true)
 	{
 		Checker.AssertTrue(size > 0);
 
@@ -33,6 +33,15 @@ internal unsafe static class CacheLineMemoryManager
 			handle = lineMan;
 			if (lineMan.IsUsedUp)
 				perSizeMap.Remove(size);
+
+			if (zeroOut)
+			{
+				for (int i = 0; i < ProcessorNumber.CoreCount; i++)
+				{
+					byte* bp = GetBuffer(buffers, i);
+					Utils.ZeroMemory(bp, size);
+				}
+			}
 
 			return buffers;
 		}

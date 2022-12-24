@@ -15,6 +15,7 @@ internal unsafe sealed class LogFileWriter : IDisposable
 	uint timestamp;
 
 	string fileName;
+	int logIndex;
 
 	WriteThroughLogWriter writer;
 	SimpleGuid marker;
@@ -27,13 +28,13 @@ internal unsafe sealed class LogFileWriter : IDisposable
 	long maxWrittenCount;
 	long writtenCount;
 
-	public LogFileWriter(string fileName, uint timestamp,
+	public LogFileWriter(string fileName, int logIndex, uint timestamp,
 		uint sectorSize, bool isPackedFormat, long limitSize) :
-		this(fileName, timestamp, GenerateNewMarker(), sectorSize, isPackedFormat, LogFileHeader.SkipSize, limitSize)
+		this(fileName, logIndex, timestamp, GenerateNewMarker(), sectorSize, isPackedFormat, LogFileHeader.SkipSize, limitSize)
 	{
 	}
 
-	public LogFileWriter(string fileName, uint timestamp, SimpleGuid marker,
+	public LogFileWriter(string fileName, int logIndex, uint timestamp, SimpleGuid marker,
 		uint sectorSize, bool isPackedFormat, long initPosition, long limitSize)
 	{
 		writer = new WriteThroughLogWriter(fileName, initPosition, sectorSize, isPackedFormat);
@@ -45,6 +46,7 @@ internal unsafe sealed class LogFileWriter : IDisposable
 			throw new NotSupportedException("Unsupported disk sector size. Sector size must be smaller than 16K.");
 
 		this.fileName = fileName;
+		this.logIndex = logIndex;
 		this.maxWrittenCount = limitSize;
 		this.timestamp = timestamp;
 		this.isPackedFormat = isPackedFormat;
@@ -52,7 +54,7 @@ internal unsafe sealed class LogFileWriter : IDisposable
 
 		writtenCount = 0;
 
-		additionalCapacity = LogBlockFileHeader.Size + writer.SectorSize;
+		additionalCapacity = LogBlockFileHeader.Size + SimpleGuid.Size + writer.SectorSize;
 		buffer = AlignedAllocator.Allocate(capacity + additionalCapacity, (int)writer.SectorSize);
 	}
 
@@ -97,13 +99,13 @@ internal unsafe sealed class LogFileWriter : IDisposable
 		this.maxWrittenCount = limitSize;
 	}
 
-	public void WriteItems(LogItem[] items, int count, long totalByteSize)
+	public void WriteItems(Transaction[] transactions, int count)
 	{
-		ValidateSize(items, count, totalByteSize);
+		long totalByteSize = CalculateSize(transactions, count);
 
 		if (capacity >= totalByteSize + additionalCapacity)
 		{
-			WriteItemsInternal(items, 0, count, totalByteSize);
+			WriteItemsInternal(transactions, 0, count, totalByteSize);
 			return;
 		}
 		else if (capacity < maxBufferSize)
@@ -116,38 +118,44 @@ internal unsafe sealed class LogFileWriter : IDisposable
 		int i = 0;
 		while (i < count)
 		{
-			totalByteSize = items[i].SerializedSize;
+			totalByteSize = LogItem.CalculateSerializedSize(transactions[i], logIndex);
 			int c = 1;
 
 			long t;
-			while (i + c < count && totalByteSize + (t = items[i + c].SerializedSize) < capacity)
+			while (i + c < count && totalByteSize + (t = LogItem.CalculateSerializedSize(transactions[i + c], logIndex)) < capacity)
 			{
 				totalByteSize += t;
 				c++;
 			}
 
-			WriteItemsInternal(items, i, c, totalByteSize);
+			WriteItemsInternal(transactions, i, c, totalByteSize);
 			i += c;
 		}
 	}
 
-	private void WriteItemsInternal(LogItem[] items, int offset, int count, long totalByteSize)
+	private void WriteItemsInternal(Transaction[] transactions, int offset, int count, long totalByteSize)
 	{
-		ValidateSize(items, count, totalByteSize);
-
-		if (capacity < totalByteSize + additionalCapacity + SimpleGuid.Size)
+		if (capacity < totalByteSize + additionalCapacity)
 		{
 			Checker.AssertTrue(count == 1);
 			AlignedAllocator.Free(buffer);
-			capacity = Math.Max(capacity * 2, capacity + additionalCapacity);
-			buffer = AlignedAllocator.Allocate(capacity + additionalCapacity, (int)writer.SectorSize);
+			capacity = Math.Max(capacity * 2, totalByteSize + additionalCapacity);
+			buffer = AlignedAllocator.Allocate(capacity, (int)writer.SectorSize);
 		}
 
 		LogBlockFileHeader* lp = (LogBlockFileHeader*)new IntPtr((long)buffer + writer.LastSectorWritten);
-		long size = SerializeItems((byte*)lp, items, offset, count);
+		long size = SerializeItems((byte*)lp, transactions, offset, count);
 		Checker.AssertTrue(size == totalByteSize + LogBlockFileHeader.Size + SimpleGuid.Size);
 		writer.Write(buffer, size);
 		writtenCount += size;
+
+		if (capacity > maxBufferSize)
+		{
+			AlignedAllocator.Free(buffer);
+			capacity = maxBufferSize;
+			buffer = AlignedAllocator.Allocate(capacity, (int)writer.SectorSize);
+		}
+
 		return;
 	}
 
@@ -161,16 +169,15 @@ internal unsafe sealed class LogFileWriter : IDisposable
 		OverwriteHeader(timestamp, false, marker);
 	}
 
-	[Conditional("DEBUG")]
-	private static void ValidateSize(LogItem[] items, int count, long expectedSize)
+	private long CalculateSize(Transaction[] transactions, int count)
 	{
 		long size = 0;
 		for (int i = 0; i < count; i++)
 		{
-			size += items[i].SerializedSize;
+			size += LogItem.CalculateSerializedSize(transactions[i], logIndex);
 		}
 
-		Checker.AssertTrue(size == expectedSize);
+		return size;
 	}
 
 	private void OverwriteHeader(uint timestamp, bool hasSnapshot, SimpleGuid marker)
@@ -215,18 +222,24 @@ internal unsafe sealed class LogFileWriter : IDisposable
 		}
 	}
 
-	private unsafe long SerializeItems(byte* dst, LogItem[] items, int offset, int count)
+	private unsafe long SerializeItems(byte* dst, Transaction[] transactions, int offset, int count)
 	{
 		LogBlockFileHeader* phead = (LogBlockFileHeader*)dst;
 		phead->version = DatabasePersister.FormatVersion;
 		phead->marker = marker;
+		phead->type = LogBlockType.Standard;
 
 		dst += LogBlockFileHeader.Size;
 
 		long totalSize = 0;
 		for (int i = offset; i < offset + count; i++)
 		{
-			long itemSize = items[i].Serialize((byte*)dst);
+			TransactionContext tc = transactions[i].Context;
+			LogChangeset lc = tc.Changeset?.GetLogChangeset(logIndex);
+			if (tc.Alignment != null || !LogItem.CanLogRunParallel(lc))
+				phead->type = LogBlockType.NonParallel;
+
+			long itemSize = LogItem.Serialize(dst, transactions[i], lc);
 			totalSize += itemSize;
 			dst += itemSize;
 		}
@@ -266,14 +279,21 @@ internal unsafe sealed class LogFileWriter : IDisposable
 	}
 }
 
+internal enum LogBlockType : int
+{
+	Standard = 0,
+	NonParallel = 1
+}
+
 [StructLayout(LayoutKind.Sequential, Pack = 1, Size = LogBlockFileHeader.Size)]
 internal unsafe struct LogBlockFileHeader
 {
 	public const int Size = 32;
 
-	public long version;
+	public int version;
 	public long size;
 	public SimpleGuid marker;
+	public LogBlockType type;
 }
 
 

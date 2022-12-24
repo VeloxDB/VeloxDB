@@ -32,15 +32,19 @@ internal sealed class Host
 
 	int maxOpenConnCount;
 
+	JobWorkers<Action> priorityWorkers;
+
 	public Host(int backlogSize, int maxOpenConnCount, IPEndPoint endpoint, MessageChunkPool chunkPool, TimeSpan inactivityInterval,
-		TimeSpan inactivityTimeout, int maxQueuedChunkCount, bool groupSmallMessages, HandleMessageDelegate messageHandler) :
+		TimeSpan inactivityTimeout, int maxQueuedChunkCount, bool groupSmallMessages, HandleMessageDelegate messageHandler,
+		JobWorkers<Action> priorityWorkers = null) :
 		this(backlogSize, maxOpenConnCount, new IPEndPoint[] { endpoint }, chunkPool, inactivityInterval, inactivityTimeout,
-			maxQueuedChunkCount, groupSmallMessages, messageHandler)
+			maxQueuedChunkCount, groupSmallMessages, messageHandler, priorityWorkers)
 	{
 	}
 
 	public Host(int backlogSize, int maxOpenConnCount, IPEndPoint[] endpoints, MessageChunkPool chunkPool, TimeSpan inactivityInterval,
-		TimeSpan inactivityTimeout, int maxQueuedChunkCount, bool groupSmallMessages, HandleMessageDelegate messageHandler)
+		TimeSpan inactivityTimeout, int maxQueuedChunkCount, bool groupSmallMessages, HandleMessageDelegate messageHandler,
+		JobWorkers<Action> priorityWorkers = null)
 	{
 		this.endpoints = endpoints;
 		this.inactivityInterval = inactivityInterval;
@@ -50,6 +54,7 @@ internal sealed class Host
 		this.maxQueuedChunkCount = maxQueuedChunkCount;
 		this.groupSmallMessages = groupSmallMessages;
 		this.chunkPool = chunkPool;
+		this.priorityWorkers = priorityWorkers;
 
 		acceptArgs = new SocketAsyncEventArgs[endpoints.Length][];
 		for (int i = 0; i < endpoints.Length; i++)
@@ -143,7 +148,7 @@ internal sealed class Host
 			else
 			{
 				ServerConnection conn = new ServerConnection(this, socket, chunkPool,
-					inactivityInterval, inactivityTimeout, maxQueuedChunkCount, groupSmallMessages, messageHandler);
+					inactivityInterval, inactivityTimeout, maxQueuedChunkCount, groupSmallMessages, messageHandler, priorityWorkers);
 				connections.Add(conn);
 			}
 		}

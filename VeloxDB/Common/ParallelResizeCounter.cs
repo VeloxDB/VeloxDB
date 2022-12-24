@@ -1,6 +1,4 @@
 ﻿using System;
-using System.Diagnostics;
-using System.Reflection.Metadata;
 using System.Runtime.CompilerServices;
 using System.Threading;
 
@@ -8,7 +6,7 @@ namespace VeloxDB.Common;
 
 internal unsafe sealed class ParallelResizeCounter : IDisposable
 {
-	const int singleThreadedLimit = 1024 * 32;
+	public const int SingleThreadedLimit = 1024 * 2;
 
 	object bufferHandle;
 	long* deltaCounts;
@@ -214,10 +212,10 @@ internal unsafe sealed class ParallelResizeCounter : IDisposable
 
 	private void Prepare()
 	{
-		if (countLimit > singleThreadedLimit)
+		if (countLimit > SingleThreadedLimit)
 		{
 			singleThreaded = false;
-			triggerLimit = Math.Max(8, countLimit / (64 * ProcessorNumber.CoreCount));
+			triggerLimit = Math.Max(ProcessorNumber.CoreCount, countLimit / (64 * ProcessorNumber.CoreCount));
 		}
 		else
 		{

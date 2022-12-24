@@ -16,6 +16,18 @@ internal enum ChunkFlags : byte
 	TheOnlyOne = First | Last
 }
 
+[StructLayout(LayoutKind.Sequential, Pack = 1, Size = Size)]
+internal struct MessageChunkHeader
+{
+	internal const short HeaderVersion = 1;
+	internal const int Size = sizeof(int) + sizeof(int) + sizeof(ulong) + sizeof(byte);
+
+	public int size;
+	public int version;
+	public ulong messageId;
+	public ChunkFlags flags;
+}
+
 internal unsafe sealed class MessageChunk : IDisposable
 {
 	public const int SmallBufferSize = 1024 * 4;
@@ -26,7 +38,6 @@ internal unsafe sealed class MessageChunk : IDisposable
 
 	MessageWriter writer;
 	MessageReader reader;
-	ulong messageId;
 	ChunkAwaiter awaiter;
 	int headerSize;
 	int poolIndex;
@@ -45,26 +56,26 @@ internal unsafe sealed class MessageChunk : IDisposable
 	public byte* PBuffer => pbuffer;
 	public MessageWriter Writer => writer;
 	public MessageReader Reader => reader;
-	public ulong MessageId => messageId;
-	public int ChunkSize => *((int*)pbuffer);
+	public ulong MessageId => ((MessageChunkHeader*)pbuffer)->messageId;
+	public int ChunkSize => ((MessageChunkHeader*)pbuffer)->size;
 	public int HeaderSize => headerSize;
-	public ChunkAwaiter Awaiter { get => awaiter; set => awaiter = value; }
-	public bool IsFirst => (*PFlags & ChunkFlags.First) != ChunkFlags.None;
-	public bool IsLast => (*PFlags & ChunkFlags.Last) != ChunkFlags.None;
-	public bool IsTheOnlyOne => *PFlags == ChunkFlags.TheOnlyOne;
+	public ChunkAwaiter NextChunkAwaiter { get => awaiter; set => awaiter = value; }
+	public bool IsFirst => (Flags & ChunkFlags.First) != ChunkFlags.None;
+	public bool IsLast => (Flags & ChunkFlags.Last) != ChunkFlags.None;
+	public bool IsTheOnlyOne => Flags == ChunkFlags.TheOnlyOne;
 	public int PoolIndex { get => poolIndex; set => poolIndex = value; }
 
-	private ChunkFlags* PFlags => (ChunkFlags*)(&pbuffer[sizeof(int) + sizeof(int) + sizeof(long)]);
+	private ChunkFlags Flags => ((MessageChunkHeader*)pbuffer)->flags;
 
 	~MessageChunk()
 	{
-		CleanUp(false);
+		throw new CriticalDatabaseException();
 	}
 
 	public unsafe void ReadHeader()
 	{
 		int headerVersion = ((int*)pbuffer)[1];
-		if (headerVersion > MessageWriter.HeaderVersion)
+		if (headerVersion > MessageChunkHeader.HeaderVersion)
 			throw new UnsupportedHeaderException();
 
 		ReaderHeader1();
@@ -72,8 +83,7 @@ internal unsafe sealed class MessageChunk : IDisposable
 
 	private void ReaderHeader1()
 	{
-		messageId = *((ulong*)(pbuffer + sizeof(int) + sizeof(int)));
-		headerSize = MessageWriter.Header1Size;
+		headerSize = MessageChunkHeader.Size;
 	}
 
 	public void Reset()
@@ -81,7 +91,6 @@ internal unsafe sealed class MessageChunk : IDisposable
 		reader.Reset();
 		writer.Reset();
 		awaiter = null;
-		messageId = 0;
 		refCount = 0;
 	}
 
@@ -119,8 +128,8 @@ internal unsafe sealed class MessageChunk : IDisposable
 
 	public void Dispose()
 	{
-		CleanUp(true);
 		GC.SuppressFinalize(this);
+		CleanUp(true);
 	}
 
 	private void CleanUp(bool disposing)

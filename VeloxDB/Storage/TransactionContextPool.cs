@@ -10,6 +10,7 @@ internal unsafe class TransactionContextPool : IDisposable
 
 	object allocHandle;
 	MultiSpinLock poolLocks;
+
 	int* poolCounts;
 	TransactionContext[][] pools;
 

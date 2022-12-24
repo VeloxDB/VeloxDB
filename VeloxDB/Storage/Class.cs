@@ -1,6 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
+using System.Diagnostics.SymbolStore;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -29,6 +29,7 @@ internal unsafe sealed partial class Class : ClassBase
 	long capacity;
 	long countLimit;
 	ulong capacityMask;
+	long minCapacity;
 	Bucket* buckets;
 
 	ushort classIndex;
@@ -70,6 +71,9 @@ internal unsafe sealed partial class Class : ClassBase
 		pendingRestorer = (p, t, b) => RestorePendingChange((PendingRestoreObjectHeader*)p, (ulong*)t, b);
 		hashIndexDeleteDelegate = (o, h, i) => DeleteFromAffectedHashIndex(h, o, i);
 
+		minCapacity = database.Id == DatabaseId.User ? ParallelResizeCounter.SingleThreadedLimit * 2 : 64;
+
+		capacity = Math.Max(minCapacity, capacity);
 		this.capacity = capacity = HashUtils.CalculatePow2Capacity(capacity, hashLoadFactor, out countLimit);
 		capacityMask = (ulong)capacity - 1;
 		seed = Engine.HashSeed;
@@ -655,6 +659,7 @@ internal unsafe sealed partial class Class : ClassBase
 	public DatabaseErrorDetail Insert(Transaction tran, ChangesetReader reader)
 	{
 		TTTrace.Write(TraceId, ClassDesc.Id);
+		Checker.AssertFalse(tran.IsAlignment);
 
 		TransactionContext tc = tran.Context;
 		int c = 0;
@@ -691,7 +696,7 @@ internal unsafe sealed partial class Class : ClassBase
 				obj->id = reader.ReadLong();
 				obj->version = tran.Id;
 				ReaderInfo.InitWithUnusedBit(&obj->readerInfo);
-				obj->LastOperationHeaderPointer = opHead.Pointer;
+				obj->FlagLocation = opHead.NotLastInTransactionPointer;
 
 				Checker.AssertFalse(ObjectStorage.IsBufferUsed(objHandle));
 
@@ -787,9 +792,11 @@ internal unsafe sealed partial class Class : ClassBase
 			Resize();
 	}
 
+	[SkipLocalsInit]
 	public DatabaseErrorDetail Update(Transaction tran, ChangesetReader reader)
 	{
 		TTTrace.Write(TraceId, ClassDesc.Id, tran.Id);
+		Checker.AssertFalse(tran.IsAlignment);
 
 		TransactionContext tc = tran.Context;
 		DatabaseErrorDetail error = null;
@@ -831,16 +838,7 @@ internal unsafe sealed partial class Class : ClassBase
 					break;
 				}
 
-				if (tran.IsAlignment)
-				{
-					if (!tran.IsPropagated)
-						finalObject->nextVersionHandle = ClassObject.AlignedFlag;
-				}
-				else
-				{
-					finalObject->LastOperationHeaderPointer = opHead.Pointer;
-				}
-
+				finalObject->FlagLocation = opHead.NotLastInTransactionPointer;
 				TTTrace.Write(TraceId, ClassDesc.Id, finalObject->id, (byte)updateResult, finalObject != null);
 
 				if (updateResult == UpdateObjectResult.Merged)
@@ -852,9 +850,7 @@ internal unsafe sealed partial class Class : ClassBase
 					if (updateResult == UpdateObjectResult.InsertedObject)
 						c++;
 
-					if (!tran.IsAlignment)
-						tc.AddAffectedObject(classIndex, objHandle);
-
+					tc.AddAffectedObject(classIndex, objHandle);
 					ObjectStorage.MarkBufferAsUsed(objHandle);
 				}
 
@@ -961,6 +957,7 @@ internal unsafe sealed partial class Class : ClassBase
 		resizeCounter.Add(c);
 	}
 
+	[SkipLocalsInit]
 	public DatabaseErrorDetail Delete(Transaction tran, ChangesetReader reader)
 	{
 		TTTrace.Write(TraceId, ClassDesc.Id, tran.Id);
@@ -1072,7 +1069,7 @@ internal unsafe sealed partial class Class : ClassBase
 			}
 		}
 
-		if (!firstDone)	// There were no objects
+		if (!firstDone) // There were no objects
 			ChangesetReader.SkipBlock(reader, block);
 
 		resizeCounter.ExitReadLock(lockHandle);
@@ -1162,7 +1159,7 @@ internal unsafe sealed partial class Class : ClassBase
 
 	public long RollbackReadLock(Transaction tran, ulong objectHandle)
 	{
-		Checker.AssertTrue(tran.Context.MergedWith.Count == 0);
+		Checker.AssertTrue(tran.NextMerged == null);
 
 		int lockHandle = resizeCounter.EnterReadLock();
 
@@ -1286,6 +1283,30 @@ internal unsafe sealed partial class Class : ClassBase
 		return obj->id;
 	}
 
+	public long RemapReadLockSlot(ulong objectHandle, ushort prevSlot, ushort newSlot)
+	{
+		int lockHandle = resizeCounter.EnterReadLock();
+
+		ClassObject* obj = (ClassObject*)ObjectStorage.GetBuffer(objectHandle);
+
+		Bucket* bucket = buckets + CalculateBucket(obj->id);
+		Bucket.LockAccess(bucket);
+
+		ReaderInfo* r = &obj->readerInfo;
+		TTTrace.Write(TraceId, ClassDesc.Id, prevSlot, newSlot, objectHandle, obj->id, r->CommReadLockVer);
+
+		// Check if we modified the object after reading it (in this transaction),
+		// in which case we do not have a read lock (since NewerVersion is set).
+		if (obj->NewerVersion == 0)
+			ReaderInfo.RemapSlot(r, prevSlot, newSlot);
+
+		Bucket.UnlockAccess(bucket);
+
+		resizeCounter.ExitReadLock(lockHandle);
+
+		return obj->id;
+	}
+
 	public void Rewind(ulong version)
 	{
 		TTTrace.Write(TraceId, ClassDesc.Id, version);
@@ -1293,10 +1314,10 @@ internal unsafe sealed partial class Class : ClassBase
 		int lockHandle = resizeCounter.EnterReadLock();
 
 		ClassScan[] scans = GetClassScans(null, false, out _);
-		Task[] tasks = new Task[scans.Length];
+		Task[] tasks = new Task[scans.Length - 1];
 		for (int i = 0; i < scans.Length; i++)
 		{
-			tasks[i] = new Task(p =>
+			Action<object> a = p =>
 			{
 				ClassScan scan = (ClassScan)p;
 				using (scan)
@@ -1308,9 +1329,17 @@ internal unsafe sealed partial class Class : ClassBase
 						obj->readerInfo.CommReadLockVer = 0;
 					}
 				}
-			}, scans[i]);
+			};
 
-			tasks[i].Start();
+			if (i < scans.Length - 1)
+			{
+				tasks[i] = new Task(a, scans[i], default, TaskCreationOptions.LongRunning);
+				tasks[i].Start();
+			}
+			else
+			{
+				a(scans[i]);
+			}
 		}
 
 		Task.WaitAll(tasks);
@@ -1549,41 +1578,37 @@ internal unsafe sealed partial class Class : ClassBase
 
 		TransactionContext tc = tran.Context;
 
-		if (!tran.IsAlignment)
+		if (existingObj == null)
+			return DatabaseErrorDetail.CreateUpdateNonExistent(id, ClassDesc.FullName);
+
+		TTTrace.Write(existingObj->IsDeleted, existingObj->version);
+
+		if (Database.IsUncommited(existingObj->version))
 		{
-			if (existingObj == null)
-				return DatabaseErrorDetail.CreateUpdateNonExistent(id, ClassDesc.FullName);
-
-			TTTrace.Write(existingObj->IsDeleted, existingObj->version);
-
-			if (Database.IsUncommited(existingObj->version))
+			if (existingObj->version != tran.Id)
 			{
-				Checker.AssertFalse(tran.IsAlignment);
-				if (existingObj->version != tran.Id)
-				{
-					if (FindVersion(existingObj, tran.ReadVersion, tran.Id) == null)
-						return DatabaseErrorDetail.CreateUpdateNonExistent(id, ClassDesc.FullName);
+				if (FindVersion(existingObj, tran.ReadVersion, tran.Id) == null)
+					return DatabaseErrorDetail.CreateUpdateNonExistent(id, ClassDesc.FullName);
 
-					return DatabaseErrorDetail.CreateConflict(id, ClassDesc.FullName);
-				}
+				return DatabaseErrorDetail.CreateConflict(id, ClassDesc.FullName);
 			}
-			else
-			{
-				if (existingObj->version > tran.ReadVersion && !tran.IsAlignment)
-					return DatabaseErrorDetail.CreateConflict(id, ClassDesc.FullName);
-
-				if (ReaderInfo.IsObjectInConflict(tran, existingObj->id, &existingObj->readerInfo))
-					return DatabaseErrorDetail.CreateConflict(id, ClassDesc.FullName);
-			}
-
-			if (existingObj->IsDeleted)
-				return DatabaseErrorDetail.CreateUpdateNonExistent(id, ClassDesc.FullName);
 		}
+		else
+		{
+			if (existingObj->version > tran.ReadVersion)
+				return DatabaseErrorDetail.CreateConflict(id, ClassDesc.FullName);
+
+			if (ReaderInfo.IsObjectInConflict(tran, existingObj->id, &existingObj->readerInfo))
+				return DatabaseErrorDetail.CreateConflict(id, ClassDesc.FullName);
+		}
+
+		if (existingObj->IsDeleted)
+			return DatabaseErrorDetail.CreateUpdateNonExistent(id, ClassDesc.FullName);
 
 		DatabaseErrorDetail err;
 		if (existingObj != null)
 		{
-			if ((existingObj->version == tran.Id || tran.IsAlignment))
+			if ((existingObj->version == tran.Id))
 			{
 				TTTrace.Write();
 
@@ -1596,11 +1621,8 @@ internal unsafe sealed partial class Class : ClassBase
 					return err;
 
 				opHead.WritePreviousVersion(0);
-				if (!tran.IsAlignment && isPersistanceActive)
-				{
-					OperationHeader prevOpHead = new OperationHeader(existingObj->LastOperationHeaderPointer);
-					prevOpHead.SetNotLastInTransaction();
-				}
+				if (isPersistanceActive)
+					OperationHeader.SetNotLastInTransaction(existingObj->FlagLocation);
 
 				result = UpdateObjectResult.Merged;
 				finalObjectHandle = *existingObjPointer;
@@ -1827,10 +1849,7 @@ internal unsafe sealed partial class Class : ClassBase
 
 			opHead.WritePreviousVersion(0);
 			if (!tran.IsAlignment && isPersistanceActive)
-			{
-				OperationHeader prevOpHead = new OperationHeader(existingObj->LastOperationHeaderPointer);
-				prevOpHead.SetNotLastInTransaction();
-			}
+				OperationHeader.SetNotLastInTransaction(existingObj->FlagLocation);
 
 			existingObj->IsDeleted = true;
 			mergedWithHandle = *pObjPointer;
@@ -2831,6 +2850,7 @@ internal unsafe sealed partial class Class : ClassBase
 		ulong* handlePointer = Bucket.LockAccess(bucket);
 
 		ClassObject* obj = FindObject(handlePointer, id, out ulong* pObjPointer);
+
 		if (obj != null)
 			obj = GetObjectWithReadLock(tran, obj, id, *pObjPointer, out err);
 
@@ -2888,6 +2908,7 @@ internal unsafe sealed partial class Class : ClassBase
 
 		AlignedAllocator.Free((IntPtr)buckets);
 
+		capacity = Math.Max(minCapacity, capacity);
 		capacity = capacity = HashUtils.CalculatePow2Capacity(count, hashLoadFactor, out countLimit);
 		capacityMask = (ulong)capacity - 1;
 
@@ -2896,6 +2917,8 @@ internal unsafe sealed partial class Class : ClassBase
 		{
 			buckets[i].Init();
 		}
+
+		resizeCounter.Resized(countLimit);
 	}
 
 	public void Resize(long count)
@@ -2932,8 +2955,8 @@ internal unsafe sealed partial class Class : ClassBase
 	{
 		try
 		{
-			long newCountLimit;
-			long newCapacity = HashUtils.CalculatePow2Capacity(count, hashLoadFactor, out newCountLimit);
+			count = Math.Max(minCapacity, count);
+			long newCapacity = HashUtils.CalculatePow2Capacity(count, hashLoadFactor, out long newCountLimit);
 			ulong newCapacityMask = (ulong)newCapacity - 1;
 
 			Bucket* newBuckets = (Bucket*)AlignedAllocator.Allocate(newCapacity * Marshal.SizeOf(typeof(Bucket)), false);
@@ -3179,7 +3202,7 @@ internal unsafe struct ClassTempData
 	// Used for newly created versions (uncommitted) that still do not require read locking.
 	// Represents address (inside the changeset) of the "previous version slot" of the operation that created this version.
 	[FieldOffset(8)]
-	public ulong* previousVersionLocation;
+	public byte* FlagLocation;
 
 	public ulong NextVersion
 	{
@@ -3235,7 +3258,7 @@ internal unsafe struct ClassObject
 
 	// This property uses the tempData (which overlappes readLockData) as the storage but is only used when the object
 	// version is first created in a transaction and until it is committed, during which time read lock data is not used.
-	public ulong* LastOperationHeaderPointer { get => tempData.previousVersionLocation; set => tempData.previousVersionLocation = value; }
+	public byte* FlagLocation { get => tempData.FlagLocation; set => tempData.FlagLocation = value; }
 
 	public static byte* ToDataPointer(ClassObject* obj)
 	{

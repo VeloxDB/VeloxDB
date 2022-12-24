@@ -7,14 +7,12 @@ using VeloxDB.Common;
 
 namespace VeloxDB.Storage;
 
-internal sealed class DatabaseVersions
+internal unsafe sealed class DatabaseVersions
 {
 	RWSpinLock sync;
-	RWSpinLock writeSync;
 
 	Database database;
 
-	ulong tranId;
 	ulong commitVersion;
 	ulong readVersion;
 	ulong baseStandbyLogSeqNum;
@@ -24,7 +22,7 @@ internal sealed class DatabaseVersions
 	SimpleGuid globalTerm;
 	List<GlobalVersion> globalVersions;
 
-	TransactionOrderedCallback finalizedCallback;
+	TransactionOrderedCallback publishCallback;
 
 	public DatabaseVersions(Database database)
 	{
@@ -34,7 +32,6 @@ internal sealed class DatabaseVersions
 		this.localTerm = 0;
 		this.readVersion = 1;
 		this.commitVersion = 1;
-		this.tranId = Database.MaxCommitedVersion + 1;
 		this.baseStandbyLogSeqNum = 0;
 		this.logSeqNum = 0;
 
@@ -42,20 +39,13 @@ internal sealed class DatabaseVersions
 		globalVersions = new List<GlobalVersion>(256);
 		globalVersions.Add(new GlobalVersion(globalTerm, readVersion));
 
-		finalizedCallback = OnTransactionFinalized;
+		publishCallback = OnTransactionPublished;
 	}
 
 	public DatabaseVersions(Database database, ulong readVersion, ulong commitVersion,
-		ulong logSeqNum, uint localTerm, List<GlobalVersion> globalVersions) :
-		this(database, Database.MinTranId, readVersion, commitVersion, logSeqNum, localTerm, globalVersions)
-	{
-	}
-
-	public DatabaseVersions(Database database, ulong tranId, ulong readVersion,
-		ulong commitVersion, ulong logSeqNum, uint localTerm, List<GlobalVersion> globalVersions)
+		ulong logSeqNum, uint localTerm, List<GlobalVersion> globalVersions)
 	{
 		this.database = database;
-		this.tranId = tranId;
 		this.readVersion = readVersion;
 		this.commitVersion = commitVersion;
 		this.baseStandbyLogSeqNum = logSeqNum;
@@ -64,7 +54,7 @@ internal sealed class DatabaseVersions
 		this.globalVersions = globalVersions;
 		globalTerm = globalVersions[globalVersions.Count - 1].GlobalTerm;
 
-		finalizedCallback = OnTransactionFinalized;
+		publishCallback = OnTransactionPublished;
 
 		TTTraceState();
 	}
@@ -77,55 +67,51 @@ internal sealed class DatabaseVersions
 	public SimpleGuid GlobalTerm => globalTerm;
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public ulong GetNextTranId()
-	{
-		return Interlocked.Increment(ref tranId);
-	}
-
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public void AssignCommitAndLogSeqNum(Transaction tran)
 	{
-		if (!tran.IsCommitVersionPreAssigned)
+		TTTrace.Write(database.TraceId, database.Id, tran.Id, tran.CommitVersion, tran.StandbyOrderNum,
+			logSeqNum, baseStandbyLogSeqNum, commitVersion, tran.IsCommitVersionPreAssigned);
+
+		tran.RegisterAsyncCommitter();
+
+		if (tran.IsCommitVersionPreAssigned)
 		{
-			writeSync.EnterWriteLock();
+			AssignLogSeqNum(tran);
+			return;
+		}
+
+		tran.SetCommitAndLogSeqNum(++commitVersion, ++logSeqNum);
+	}
+
+	[MethodImpl(MethodImplOptions.NoInlining)]
+	private void AssignLogSeqNum(Transaction tran)
+	{
+		if (tran.StandbyOrderNum == 0)
+		{
 			TTTrace.Write(database.TraceId, database.Id, tran.Id, tran.CommitVersion, tran.StandbyOrderNum, logSeqNum, baseStandbyLogSeqNum, commitVersion);
 			baseStandbyLogSeqNum = logSeqNum = logSeqNum + 1;
-			tran.SetCommitAndLogSeqNum(++commitVersion, logSeqNum);
-			writeSync.ExitWriteLock();
+			tran.SetLogSeqNum(logSeqNum);
 		}
 		else
 		{
-			if (tran.StandbyOrderNum == 0)
-			{
-				writeSync.EnterWriteLock();
-				TTTrace.Write(database.TraceId, database.Id, tran.Id, tran.CommitVersion, tran.StandbyOrderNum, logSeqNum, baseStandbyLogSeqNum, commitVersion);
-				baseStandbyLogSeqNum = logSeqNum = logSeqNum + 1;
-				tran.SetCommitAndLogSeqNum(tran.CommitVersion, logSeqNum);
-				writeSync.ExitWriteLock();
-			}
-			else
-			{
-				writeSync.EnterWriteLock();
-				TTTrace.Write(database.TraceId, database.Id, tran.Id, tran.CommitVersion, tran.StandbyOrderNum, logSeqNum, baseStandbyLogSeqNum, commitVersion);
-				ulong currLogSeqNum = baseStandbyLogSeqNum + tran.StandbyOrderNum;
-				if (currLogSeqNum > logSeqNum)
-					logSeqNum = currLogSeqNum;
+			ulong currLogSeqNum = baseStandbyLogSeqNum + tran.StandbyOrderNum;
+			if (currLogSeqNum > logSeqNum)
+				logSeqNum = currLogSeqNum;
 
-				tran.SetCommitAndLogSeqNum(tran.CommitVersion, currLogSeqNum);
-				writeSync.ExitWriteLock();
-			}
+			tran.SetLogSeqNum(currLogSeqNum);
 		}
 	}
 
 	public void SetCommitAndLogSeqNum(ulong commitVersion, ulong logSeqNum)
 	{
 		TTTrace.Write(database.TraceId, database.Id, commitVersion, logSeqNum);
+
 		this.commitVersion = commitVersion;
 		this.baseStandbyLogSeqNum = logSeqNum;
 		this.logSeqNum = logSeqNum;
 	}
 
-	private void OnTransactionFinalized(Transaction tran)
+	private void OnTransactionPublished(Transaction tran)
 	{
 		TTTrace.Write(database.TraceId, database.Id, tran.GlobalTerm.Low, tran.GlobalTerm.Hight, tran.LocalTerm, tran.CommitVersion,
 			this.globalTerm.Low, this.globalTerm.Hight, this.localTerm, this.commitVersion, this.readVersion);
@@ -153,7 +139,7 @@ internal sealed class DatabaseVersions
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public void FinalizeTransactionCommit(Transaction tran, TransactionCommitOrderer orderer, GlobalVersion[] alignmentGlobalVersions = null)
+	public void PublishTransactionCommit(Transaction tran, TransactionCommitOrderer orderer)
 	{
 		TTTrace.Write(database.TraceId, database.Id, tran.GlobalTerm.Low, tran.GlobalTerm.Hight, tran.LocalTerm, tran.Id, tran.CommitVersion,
 			globalTerm.Low, globalTerm.Hight, localTerm, commitVersion, readVersion);
@@ -165,16 +151,16 @@ internal sealed class DatabaseVersions
 		{
 			if (tran.IsAlignment || tran.CommitVersion == readVersion + 1)
 			{
+				GlobalVersion[] alignmentGlobalVersions = tran.Context.Alignment?.GlobalVersions;
 				if (alignmentGlobalVersions != null)
 				{
 					TTTrace.Write(database.TraceId, database.Id);
-					GlobalVersion.TTTraceState(database.TraceId, alignmentGlobalVersions);
 					globalVersions = new List<GlobalVersion>(alignmentGlobalVersions);
 					globalTerm = globalVersions[globalVersions.Count - 1].GlobalTerm;
 					readVersion = globalVersions[globalVersions.Count - 1].Version;
 				}
 
-				orderer.TranCommited(tran, finalizedCallback);
+				orderer.TranCommited(tran, publishCallback);
 			}
 			else
 			{
@@ -224,17 +210,15 @@ internal sealed class DatabaseVersions
 	public DatabaseVersions Clone()
 	{
 		sync.EnterReadLock();
-		writeSync.EnterReadLock();
 
 		try
 		{
 			List<GlobalVersion> gvs = new List<GlobalVersion>(globalVersions);
 			gvs[gvs.Count - 1] = new GlobalVersion(globalTerm, readVersion);
-			return new DatabaseVersions(database, tranId, readVersion, commitVersion, baseStandbyLogSeqNum, localTerm, gvs);
+			return new DatabaseVersions(database, readVersion, commitVersion, baseStandbyLogSeqNum, localTerm, gvs);
 		}
 		finally
 		{
-			writeSync.ExitReadLock();
 			sync.ExitReadLock();
 		}
 	}
@@ -291,7 +275,6 @@ internal sealed class DatabaseVersions
 
 		try
 		{
-			tranId = Math.Max(tranId, other.tranId);
 			localTerm = Math.Max(localTerm, other.localTerm);
 			baseStandbyLogSeqNum = Math.Max(baseStandbyLogSeqNum, other.baseStandbyLogSeqNum);
 			logSeqNum = baseStandbyLogSeqNum;
@@ -352,13 +335,13 @@ internal sealed class DatabaseVersions
 	public void TransactionRestored(SimpleGuid globalTerm, uint localTerm, ulong version, ulong logSeqNum)
 	{
 		TTTrace.Write(database.TraceId, database.Id, globalTerm.Low, globalTerm.Hight, localTerm, version,
-			tranId, logSeqNum, this.globalTerm.Low, this.globalTerm.Hight, this.localTerm, this.baseStandbyLogSeqNum);
+			logSeqNum, this.globalTerm.Low, this.globalTerm.Hight, this.localTerm, this.baseStandbyLogSeqNum);
 
 		Checker.AssertTrue(globalVersions.Count > 0);
-		Checker.AssertTrue(logSeqNum > this.baseStandbyLogSeqNum);
+		Checker.AssertTrue(logSeqNum > this.logSeqNum);
 
-		this.baseStandbyLogSeqNum = logSeqNum;
 		this.logSeqNum = logSeqNum;
+		this.baseStandbyLogSeqNum = logSeqNum;
 
 		if (!globalTerm.Equals(this.globalTerm))
 		{
@@ -422,7 +405,7 @@ internal sealed class DatabaseVersions
 	[Conditional("TTTRACE")]
 	public void TTTraceState()
 	{
-		TTTrace.Write(database.TraceId, database.Id, tranId, globalTerm.Low, globalTerm.Hight, localTerm, readVersion, commitVersion, baseStandbyLogSeqNum, logSeqNum);
+		TTTrace.Write(database.TraceId, database.Id, globalTerm.Low, globalTerm.Hight, localTerm, readVersion, commitVersion, baseStandbyLogSeqNum, logSeqNum);
 		TTTrace.Write(globalVersions.Count);
 		for (int i = 0; i < globalVersions.Count; i++)
 		{

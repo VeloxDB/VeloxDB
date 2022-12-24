@@ -21,6 +21,7 @@ internal unsafe sealed class HashIndex
 	ulong capacityMask;
 	float growthFactor;
 	float loadFactor;
+	long minCapacity;
 	ulong seed;
 	Bucket* buckets;
 
@@ -43,13 +44,17 @@ internal unsafe sealed class HashIndex
 		this.database = database;
 		this.memoryManager = database.Engine.MemoryManager;
 		this.fixedMemoryManager = memoryManager.RegisterFixedConsumer(HashIndexItem.Size);
+#if !HUNT_CORRUPT
 		Checker.AssertTrue(fixedMemoryManager.BufferSize == HashIndexItem.Size);
+#endif
 		this.stringStorage = engine.StringStorage;
 
 		// Since we count used buckets, load factor needs to be smaller than that of a class for example.
 		this.loadFactor = Min(0.5f, engine.Settings.HashLoadFactor * 0.7f);
 
-		capacity = HashUtils.CalculatePow2Capacity(Math.Max(64, capacity), loadFactor, out bucketCountLimit);
+		minCapacity = database.Id == DatabaseId.User ? ParallelResizeCounter.SingleThreadedLimit * 2 : 64;
+
+		capacity = HashUtils.CalculatePow2Capacity(Math.Max(minCapacity, capacity), loadFactor, out bucketCountLimit);
 		capacityMask = (ulong)capacity - 1;
 		seed = engine.HashSeed;
 		buckets = (Bucket*)NativeAllocator.Allocate(capacity * Bucket.Size, false);

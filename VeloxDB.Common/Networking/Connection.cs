@@ -75,17 +75,20 @@ internal abstract class Connection
 	Action<byte[]> managedMemDelegator;
 	Action<MessageChunk> processor;
 
+	JobWorkers<Action> priorityWorkers;
+
 	public event Action Closed;
 	public event Action<HandleResponseDelegate> ResponseProcessed;
 
 	internal unsafe Connection(MessageChunkPool chunkPool, TimeSpan inactivityInterval, TimeSpan inactivityTimeout,
-		int maxQueuedChunkCount, bool groupSmallMessages, HandleMessageDelegate messageHandler)
+		int maxQueuedChunkCount, bool groupSmallMessages, HandleMessageDelegate messageHandler, JobWorkers<Action> priorityWorkers)
 	{
 		this.inactivityInterval = inactivityInterval;
 		this.inactivityTimeout = inactivityTimeout;
 		this.state = ConnectionState.Created;
 		this.messageHandler = messageHandler;
 		this.chunkPool = chunkPool;
+		this.priorityWorkers = priorityWorkers;
 
 		socketSenderDelegate = SendChunk;
 		chunkDelegator = DelegateGroupWorkItemsFromChunk;
@@ -102,8 +105,9 @@ internal abstract class Connection
 	}
 
 	public Connection(Socket socket, MessageChunkPool chunkPool, TimeSpan inactivityInterval,
-		TimeSpan inactivityTimeout, int maxQueuedChunkCount, bool groupSmallMessages, HandleMessageDelegate messageHandler) :
-		this(chunkPool, inactivityInterval, inactivityTimeout, maxQueuedChunkCount, groupSmallMessages, messageHandler)
+		TimeSpan inactivityTimeout, int maxQueuedChunkCount, bool groupSmallMessages, HandleMessageDelegate messageHandler,
+		JobWorkers<Action> priorityWorkers) :
+		this(chunkPool, inactivityInterval, inactivityTimeout, maxQueuedChunkCount, groupSmallMessages, messageHandler, priorityWorkers)
 	{
 		this.socket = socket;
 		state = ConnectionState.Opened;
@@ -787,7 +791,7 @@ internal abstract class Connection
 			return false;
 		}
 
-		if (chunk.IsTheOnlyOne && chunk.ChunkSize <= MessageChunk.SmallBufferSize)
+		if (groupingSender != null && chunk.IsTheOnlyOne && chunk.ChunkSize <= MessageChunk.SmallBufferSize)
 		{
 			groupingSender.Send((IntPtr)chunk.PBuffer, chunk.ChunkSize);
 			chunkPool.Put(chunk);
@@ -827,8 +831,16 @@ internal abstract class Connection
 
 	protected void StartReceiving()
 	{
-		groupingSender = new GroupingSender(socket);    // At this point we are guaranteed to have a socket
 		Thread t = new Thread(ReceiveWorker);
+		if (priorityWorkers != null)
+		{
+			t.Priority = ThreadPriority.AboveNormal;
+		}
+		else
+		{
+			groupingSender = new GroupingSender(socket, priorityWorkers != null);    // At this point we are guaranteed to have a socket
+		}
+
 		t.IsBackground = true;
 		t.Start();
 	}
@@ -906,7 +918,11 @@ internal abstract class Connection
 			return;
 		}
 
-		if (totalReceived <= MessageChunk.SmallBufferSize * 2)
+		if (priorityWorkers != null)
+		{
+			DelegatePriorityWork(receiveChunk, ref totalReceived);
+		}
+		else if (totalReceived <= MessageChunk.SmallBufferSize * 2)
 		{
 			DelegateUsingManagedMemory(receiveChunk, ref totalReceived);
 		}
@@ -974,6 +990,28 @@ internal abstract class Connection
 		totalReceived -= offset;
 	}
 
+	private unsafe void DelegatePriorityWork(MessageChunk receiveChunk, ref int totalReceived)
+	{
+		byte* buffer = receiveChunk.PBuffer;
+		while (TryPeekMessage(buffer, totalReceived, out _))
+		{
+			MessageChunk extracted = ExtractChunk(ref totalReceived, ref buffer);
+
+			try
+			{
+				PreProcessMessage(extracted, DelegationType.Priority);
+			}
+			catch
+			{
+				chunkPool.Put(extracted);
+				throw;
+			}
+		}
+
+		if (totalReceived > 0)
+			Utils.CopyMemory(buffer, receiveChunk.PBuffer, totalReceived);
+	}
+
 	private unsafe void DelegateUsingChunk(ref int currPool, ref MessageChunk receiveChunk, ref int totalReceived)
 	{
 		receiveChunk.SetupAutomaticCleanup(int.MaxValue);   // This will prevent cleanup until we are done here
@@ -989,18 +1027,8 @@ internal abstract class Connection
 			int itemCount = 0;
 			int offset = 0;
 
-			while (true)
+			while (TryPeekMessage(buffer + offset, totalReceived - offset, out int chunkSize))
 			{
-				if (offset + 4 > totalReceived)
-					break;
-
-				int chunkSize = *(int*)(buffer + offset);
-				if (chunkSize > MessageChunk.LargeBufferSize)
-					throw new CorruptMessageException();
-
-				if (offset + chunkSize > totalReceived)
-					break;
-
 				itemCount++;
 				offset += chunkSize;
 				groupSize += chunkSize;
@@ -1128,15 +1156,19 @@ internal abstract class Connection
 		if (chunk.IsFirst && chunk.ChunkSize > MessageChunk.LargeBufferSize)
 			throw new CorruptMessageException();
 
-		ChunkAwaiter nextChunkAwaiter = incompleteMessages.ChunkReceived(chunk, out bool chunkConsumed);
+		incompleteMessages.ChunkReceived(chunk, out bool chunkConsumed);
 		if (chunkConsumed)
 			return;
 
 		Checker.AssertTrue(chunk.IsFirst);
-		chunk.Awaiter = nextChunkAwaiter;
 		if (delegationType == DelegationType.Sync)
 		{
 			ProcessMessage(chunk);
+		}
+		else if (delegationType == DelegationType.Priority)
+		{
+			if (!priorityWorkers.TryEnqueueWork(() => ProcessMessage(chunk), -1, true))
+				ThreadPool.UnsafeQueueUserWorkItem(processor, chunk, false);
 		}
 		else
 		{
@@ -1151,7 +1183,7 @@ internal abstract class Connection
 			PendingRequests.PendingRequest pendingRequest = new PendingRequests.PendingRequest();
 			if (IsResponseMessage(chunk.MessageId))
 			{
-				if (!pendingRequests.TryRemove(chunk.MessageId, out pendingRequest))
+				if (pendingRequests == null || !pendingRequests.TryRemove(chunk.MessageId, out pendingRequest))
 					throw new CorruptMessageException();
 			}
 			else
@@ -1217,12 +1249,11 @@ internal abstract class Connection
 			if (currChunk.IsLast)
 				throw new CorruptMessageException();
 
-			incompleteMessages.WaitNextChunk(currChunk, out MessageChunk nextChunk, out ChunkAwaiter nextChunkAwaiter);
+			incompleteMessages.WaitNextChunk(currChunk, out MessageChunk nextChunk);
 
 			nextChunk.SwapReaders(currChunk);
 			chunkPool.Put(currChunk);
 
-			nextChunk.Awaiter = nextChunkAwaiter;
 			newState = nextChunk;
 			newBuffer = nextChunk.PBuffer;
 			newOffset = nextChunk.HeaderSize;
@@ -1302,9 +1333,9 @@ internal abstract class Connection
 			sync.ExitWriteLock();
 		}
 
-		groupingSender.Close();
+		groupingSender?.Close();
 
-		pendingRequests.Close(this, CreateClosedException());
+		pendingRequests?.Close(this, CreateClosedException());
 		incompleteMessages.Dispose();
 
 		SocketAsyncEventArgs e = new SocketAsyncEventArgs();
@@ -1412,10 +1443,10 @@ internal abstract class Connection
 
 	public unsafe sealed class PendingRequests
 	{
-		MultiSpinLock sync;
+		MultiSpinRWLock sync;
 
 		Connection owner;
-		Dictionary<ulong, PendingRequest>[] requests = new Dictionary<ulong, PendingRequest>[ProcessorNumber.CoreCount];
+		ConcurrentDictionary<ulong, PendingRequest>[] requests = new ConcurrentDictionary<ulong, PendingRequest>[ProcessorNumber.CoreCount];
 
 		ulong messageIdBit;
 		object idsHandle;
@@ -1432,19 +1463,19 @@ internal abstract class Connection
 			this.owner = owner;
 			this.messageIdBit = owner.MessageIdBit;
 
-			sync = new MultiSpinLock();
+			sync = new MultiSpinRWLock();
 			currMessageIds = (ulong*)CacheLineMemoryManager.Allocate(sizeof(long), out idsHandle);
 			for (int i = 0; i < requests.Length; i++)
 			{
 				ulong* currMessageId = (ulong*)CacheLineMemoryManager.GetBuffer(currMessageIds, i);
 				*currMessageId = 0;
-				requests[i] = new Dictionary<ulong, PendingRequest>(1024 * 8);
+				requests[i] = new ConcurrentDictionary<ulong, PendingRequest>(4, 1024 * 8);
 			}
 		}
 
 		public ulong ReserveId(int procNum)
 		{
-			sync.Enter(procNum);
+			sync.EnterReadLock(procNum);
 			try
 			{
 				NativeInterlocked64* currMessageId = (NativeInterlocked64*)CacheLineMemoryManager.GetBuffer(currMessageIds, procNum);
@@ -1454,7 +1485,7 @@ internal abstract class Connection
 			}
 			finally
 			{
-				sync.Exit(procNum);
+				sync.ExitReadLock(procNum);
 			}
 		}
 
@@ -1463,18 +1494,18 @@ internal abstract class Connection
 			if (request.Callback == null)
 				return ReserveId(procNum);
 
-			sync.Enter(procNum);
+			sync.EnterReadLock(procNum);
 			try
 			{
 				NativeInterlocked64* currMessageId = (NativeInterlocked64*)CacheLineMemoryManager.GetBuffer(currMessageIds, procNum);
 				ulong messageId = (ulong)currMessageId->Increment();
 				messageId = messageIdBit | ((ulong)procNum << 50) | messageId;
-				requests[procNum].Add(messageId, request);
+				requests[procNum].TryAdd(messageId, request);
 				return messageId;
 			}
 			finally
 			{
-				sync.Exit(procNum);
+				sync.ExitReadLock(procNum);
 			}
 		}
 
@@ -1486,28 +1517,29 @@ internal abstract class Connection
 				return false;
 			}
 
-			int procNum = (int)((messageId >> 50) & 0x1fff);
+			ProcessorNumber.GetCore();
+			int index = (int)((messageId >> 50) & 0x1fff);
 
-			sync.Enter(procNum);
+			int handle = sync.EnterReadLock();
 			try
 			{
-				if (requests[procNum] == null)
+				if (requests[index] == null)
 					throw new ObjectDisposedException(string.Empty, (Exception)null);
 
-				return requests[procNum].Remove(messageId, out request);
+				return requests[index].Remove(messageId, out request);
 			}
 			finally
 			{
-				sync.Exit(procNum);
+				sync.ExitReadLock(handle);
 			}
 		}
 
 		public void Close(Connection conn, Exception e)
 		{
-			for (int i = 0; i < requests.Length; i++)
+			sync.EnterWriteLock();
+			try
 			{
-				sync.Enter(i);
-				try
+				for (int i = 0; i < requests.Length; i++)
 				{
 					foreach (KeyValuePair<ulong, PendingRequest> request in requests[i])
 					{
@@ -1517,13 +1549,13 @@ internal abstract class Connection
 					requests[i].Clear();
 					requests[i] = null;
 				}
-				finally
-				{
-					sync.Exit(i);
-				}
-			}
 
-			CacheLineMemoryManager.Free(idsHandle);
+				CacheLineMemoryManager.Free(idsHandle);
+			}
+			finally
+			{
+				sync.ExitWriteLock();
+			}
 		}
 
 		public struct PendingRequest
@@ -1557,6 +1589,7 @@ internal abstract class Connection
 	{
 		Global = 1,
 		Local = 2,
-		Sync = 3
+		Sync = 3,
+		Priority = 4
 	}
 }

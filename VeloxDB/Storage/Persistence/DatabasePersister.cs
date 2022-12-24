@@ -13,12 +13,11 @@ internal unsafe sealed class DatabasePersister : IDisposable
 	public const short FormatVersion = 1;
 	public const int MaxLogCount = 8;
 
-	readonly object sync = new object();
-
 	StorageEngine engine;
 	Database database;
 	PersistenceDescriptor persistenceDesc;
 	LogPersister[] logPersisters;
+
 	Orderer<Transaction> orderer;
 	List<Transaction> orderedList = new List<Transaction>(8);
 
@@ -40,22 +39,6 @@ internal unsafe sealed class DatabasePersister : IDisposable
 		engine.Trace.Debug("DatabasePersister created, commitVersion={0}, logSeqNum={1}.", commitVersion, logSeqNum);
 	}
 
-	public void ProcessChangeset(Transaction tran, Changeset ch)
-	{
-		TransactionContext tc = tran.Context;
-
-		tc.Changesets.Add(ch);
-		ch.TakeRef();
-
-		for (int i = 0; i < ch.LogChangesets.Length; i++)
-		{
-			LogChangeset lch = ch.LogChangesets[i];
-			TTTrace.Write(engine.TraceId, database.Id, tran.Id, lch.LogIndex);
-			tc.LogChangesets[lch.LogIndex].Add(lch);
-			tc.AffectedLogGroups = (byte)(tc.AffectedLogGroups | (1 << lch.LogIndex));
-		}
-	}
-
 	public void BeginCommitTransaction(Transaction tran)
 	{
 		TTTrace.Write(engine.TraceId, database.Id, tran.Id, tran.CommitVersion,
@@ -67,20 +50,31 @@ internal unsafe sealed class DatabasePersister : IDisposable
 		if (tran.AffectedLogGroups == 0)
 			tran.AffectedLogGroups = 1;
 
-		byte affectedLogGroups = tran.AffectedLogGroups;
-		for (int i = 0; i < logPersisters.Length; i++)
+		if (tran.Source != TransactionSource.Replication)
 		{
-			if ((affectedLogGroups & (byte)(1 << i)) != 0)
-				tran.RegisterAsyncCommiter();
+			byte affectedLogGroups = tran.AffectedLogGroups;
+			for (int i = 0; i < logPersisters.Length; i++)
+			{
+				if ((affectedLogGroups & (byte)(1 << i)) != 0)
+				{
+					tran.RegisterAsyncCommitter();
+					logPersisters[i].CommitTransaction(tran);
+				}
+			}
 		}
-
-		lock (sync)
+		else
 		{
+			byte affectedLogGroups = tran.AffectedLogGroups;
+			for (int i = 0; i < logPersisters.Length; i++)
+			{
+				if ((affectedLogGroups & (byte)(1 << i)) != 0)
+					tran.RegisterAsyncCommitter();
+			}
+
 			orderer.Process(tran, orderedList);
 			for (int i = 0; i < orderedList.Count; i++)
 			{
 				Transaction currTran = orderedList[i];
-
 				TTTrace.Write(engine.TraceId, database.Id, tran.Id, tran.CommitVersion,
 					tran.LogSeqNum, tran.AffectedLogGroups, database.ReadVersion);
 

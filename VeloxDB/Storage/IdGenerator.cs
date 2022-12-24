@@ -22,9 +22,7 @@ internal unsafe sealed class IdGenerator
 	const long maxAllowedId = ((long)1 << IdHelper.CounterBitCount);
 
 	static HashSet<DatabaseErrorType> retryableErrors = new HashSet<DatabaseErrorType>() { DatabaseErrorType.Conflict,
-		DatabaseErrorType.NonUniqueId, DatabaseErrorType.HashIndexLockContentionLimitExceeded, DatabaseErrorType.HashIndexConflict,
-		DatabaseErrorType.TransactionCanceled, DatabaseErrorType.ConcurrentTranLimitExceeded, DatabaseErrorType.DatabaseBusy
-	};
+		DatabaseErrorType.NonUniqueId };
 
 	Database database;
 	ClassDescriptor idGenClass;
@@ -62,7 +60,7 @@ internal unsafe sealed class IdGenerator
 			throw new DatabaseException(DatabaseErrorDetail.Create(DatabaseErrorType.InvalidArgument));
 
 		long baseId = 0;
-		using (Transaction tran = database.Engine.CreateTransaction(database.Id, TransactionType.ReadWrite, 0, TransactionSource.Internal, null, true))
+		using (Transaction tran = database.Engine.CreateTransaction(database.Id, TransactionType.ReadWrite, TransactionSource.Internal, null, true))
 		{
 			ChangesetWriter cw = database.Engine.ChangesetWriterPool.Get();
 			ObjectReader reader = database.Engine.GetObject(tran, GeneratorId);

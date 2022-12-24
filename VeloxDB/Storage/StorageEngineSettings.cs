@@ -23,7 +23,6 @@ internal sealed class StorageEngineSettings
 	long scanClassSplitSize;
 
 	long snapshotMaxMemorySize;
-	long logMaxMemorySize;
 
 	long maxReplicationSendQueueSize;
 	TimeSpan replicationSyncTimeout;
@@ -63,17 +62,16 @@ internal sealed class StorageEngineSettings
 		systemLogMaxSize = 1024 * 1024 * 1;
 
 		resizeSplitSize = 200000;
-		scanClassSplitSize = 50000;
+		scanClassSplitSize = 100000;
 
 		snapshotMaxMemorySize = 1024 * 1024 * 128;
-		logMaxMemorySize = 1024 * 1024 * 256;
 
 		maxReplicationSendQueueSize = 1024 * 1024 * 512;
 		replicationSyncTimeout = TimeSpan.FromSeconds(60);
 		replicationSyncTresholdSize = 1024 * 1024 * 512;
 
-		commitWorkerCount = Math.Max(ProcessorNumber.CoreCount / 4, 4);
-		maxMergedTransactionCount = 256;
+		commitWorkerCount = Math.Max(ProcessorNumber.CoreCount, 4);
+		maxMergedTransactionCount = 512;
 		maxMergedOperationCount = 1024 * 4;
 
 		preAlignmentRatio = 0.3f;
@@ -106,7 +104,6 @@ internal sealed class StorageEngineSettings
 		c.scanClassSplitSize = scanClassSplitSize;
 
 		c.snapshotMaxMemorySize = snapshotMaxMemorySize;
-		c.logMaxMemorySize = logMaxMemorySize;
 
 		c.maxReplicationSendQueueSize = maxReplicationSendQueueSize;
 		c.replicationSyncTimeout = replicationSyncTimeout;
@@ -137,7 +134,6 @@ internal sealed class StorageEngineSettings
 	public long ResizeSplitSize { get => resizeSplitSize; set => resizeSplitSize = value; }
 	public long ScanClassSplitSize { get => scanClassSplitSize; set => scanClassSplitSize = value; }
 	public long SnapshotMaxMemorySize { get => snapshotMaxMemorySize; set => snapshotMaxMemorySize = value; }
-	public long LogMaxMemorySize { get => logMaxMemorySize; set => logMaxMemorySize = value; }
 	public long MaxReplicationSendQueueSize { get => maxReplicationSendQueueSize; set => maxReplicationSendQueueSize = value; }
 	public TimeSpan ReplicationSyncTimeout { get => replicationSyncTimeout; set => replicationSyncTimeout = value; }
 	public long ReplicationSyncTresholdSize { get => replicationSyncTresholdSize; set => replicationSyncTresholdSize = value; }
@@ -159,7 +155,6 @@ internal sealed class StorageEngineSettings
 		Checker.CheckRange(resizeSplitSize, 1, nameof(ResizeSplitSize));
 		Checker.CheckRange(scanClassSplitSize, 1, nameof(ScanClassSplitSize));
 		Checker.CheckRange(snapshotMaxMemorySize, 1024 * 1024, nameof(SnapshotMaxMemorySize));
-		Checker.CheckRange(logMaxMemorySize, 1024 * 1024, nameof(SnapshotMaxMemorySize));
 		Checker.CheckRange(maxReplicationSendQueueSize, 0, nameof(MaxReplicationSendQueueSize));
 		Checker.CheckRange(replicationSyncTresholdSize, 1024 * 8, nameof(ReplicationSyncTresholdSize));
 		Checker.CheckRange(commitWorkerCount, 1, 64, nameof(CommitWorkerCount));

@@ -9,9 +9,6 @@ internal unsafe delegate bool ProcessChunkDelegate(int size, ref object state, r
 
 internal unsafe sealed class MessageWriter
 {
-	internal const short HeaderVersion = 1;
-	internal const int Header1Size = sizeof(int) + sizeof(int) + sizeof(long) + sizeof(byte);
-
 	internal const int SmallArrayLength = 253;
 
 	// These fields are public because they are used in IL code generation (inlined)
@@ -42,10 +39,10 @@ internal unsafe sealed class MessageWriter
 		this.isFirst = true;
 		this.offset = 0;
 
-		this.offset += sizeof(int); // Chunk size
-		WriteInt(HeaderVersion);
-		WriteULong(messageId);      // Message id
-		this.offset++;              // Chunk type
+		MessageChunkHeader* ph = (MessageChunkHeader*)buffer;
+		ph->version = MessageChunkHeader.HeaderVersion;
+		ph->messageId = messageId;
+		this.offset += MessageChunkHeader.Size;
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1133,23 +1130,25 @@ internal unsafe sealed class MessageWriter
 		if (isFirst)
 			flags |= ChunkFlags.First;
 
+		MessageChunkHeader* ph = (MessageChunkHeader*)buffer;
+
 #if TEST_BUILD
 		if (InvalidLastChunk && isLast)
-			*(long*)(buffer + sizeof(int) + sizeof(int)) = long.MaxValue;
+			ph->messageId = (ulong)long.MaxValue;
 #endif
 
-		*((int*)buffer) = offset;
-		*(buffer + sizeof(int) + sizeof(int) + sizeof(long)) = (byte)flags;
+		ph->size = offset;
+		ph->flags = flags;
 
 		if (processor(offset, ref state, ref buffer, ref capacity))
 		{
 			if (!isLast)
 			{
 				isFirst = false;
-				offset = sizeof(int);       // Skip chunk size
-				WriteInt(HeaderVersion);
-				WriteULong(messageId);      // Message id
-				this.offset++;              // Is last chunk
+				ph = (MessageChunkHeader*)buffer;
+				ph->version = MessageChunkHeader.HeaderVersion;
+				ph->messageId = messageId;
+				this.offset = MessageChunkHeader.Size;
 			}
 		}
 		else

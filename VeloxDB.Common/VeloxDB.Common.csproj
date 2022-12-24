@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<TargetFramework>net6.0</TargetFramework>
+		<TargetFramework>net7.0</TargetFramework>
 		<Platforms>x64</Platforms>
 		<RootNamespace>VeloxDB</RootNamespace>
 		<AssemblyName>vlxc</AssemblyName>
@@ -34,7 +34,7 @@
 
 	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
 		<OutputPath>$(VlxRootDir)\bin</OutputPath>
-		<DefineConstants>TRACE;X86_64;TEST_BUILD;HUNT_CHG_LEAKS; TTTRACE</DefineConstants>
+		<DefineConstants>TRACE;X86_64;TEST_BUILD; TTTRACE</DefineConstants>
 		<GenerateSerializationAssemblies>Off</GenerateSerializationAssemblies>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 	</PropertyGroup>

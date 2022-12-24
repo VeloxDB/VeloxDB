@@ -8,6 +8,14 @@ namespace VeloxDB.Storage.Persistence;
 
 internal unsafe struct LogItem
 {
+	const int fixedPartSize =
+							8 +		// commitVersion
+							4 +		// local term
+							16 +	// global term
+							1 +		// affected log groups
+							8 +		// logSeqNum
+							4;		// Changeset count
+
 	ulong commitVersion;
 	SimpleGuid globalTerm;
 	uint localTerm;
@@ -58,24 +66,18 @@ internal unsafe struct LogItem
 	}
 
 	public bool CanRunParallel => ChangesetReader.PeekOperationType(changesetsList) != OperationType.DefaultValue;
+	public static bool CanLogRunParallel(LogChangeset ch) => ch == null || ChangesetReader.PeekOperationType(ch) != OperationType.DefaultValue;
 
 	public long SerializedSize
 	{
 		get
 		{
-			int serializedSize = 8 +   // commitVersion
-								 4 +   // local term
-								 16 +  // global term
-								 1 +   // affected log groups
-								 8;    // logSeqNum
+			int serializedSize = fixedPartSize + AlignmentData.Size(alignment);
 
-			serializedSize += AlignmentData.Size(alignment);
-
-			serializedSize += 4;    // Changeset count
 			LogChangeset curr = changesetsList;
 			for (int i = 0; i < changesetCount; i++)
 			{
-				serializedSize += curr.GetSerializedSize();
+				serializedSize += curr.SerializedSize;
 				curr = curr.Next;
 			}
 
@@ -83,38 +85,55 @@ internal unsafe struct LogItem
 		}
 	}
 
-	public long Serialize(byte* buffer)
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static long CalculateSerializedSize(Transaction tran, int logIndex)
+	{
+		TransactionContext tc = tran.Context;
+		long size = fixedPartSize + AlignmentData.Size(tc.Alignment);
+		if (tc.Changeset != null)
+		{
+			LogChangeset lc = tc.Changeset.GetLogChangeset(logIndex);
+			if (lc != null)
+				size += lc.SerializedSize;
+		}
+		
+		return size;
+	}
+
+	public static long Serialize(byte* buffer, Transaction tran, LogChangeset lc)
 	{
 		byte* startBuffer = buffer;
 
-		*((ulong*)buffer) = commitVersion;
+		*((ulong*)buffer) = tran.CommitVersion;
 		buffer += 8;
 
-		*((uint*)buffer) = localTerm;
+		*((uint*)buffer) = tran.LocalTerm;
 		buffer += 4;
 
-		*((long*)buffer) = globalTerm.Low;
+		*((long*)buffer) = tran.GlobalTerm.Low;
 		buffer += 8;
 
-		*((long*)buffer) = globalTerm.Hight;
+		*((long*)buffer) = tran.GlobalTerm.Hight;
 		buffer += 8;
 
-		*((byte*)buffer) = affectedLogsMask;
+		*((byte*)buffer) = tran.AffectedLogGroups;
 		buffer += 1;
 
-		*((ulong*)buffer) = logSeqNum;
+		*((ulong*)buffer) = tran.LogSeqNum;
 		buffer += 8;
 
-		AlignmentData.WriteTo(alignment, ref buffer);
+		AlignmentData.WriteTo(tran.Context.Alignment, ref buffer);
 
-		*(int*)buffer = changesetCount;
-		buffer += 4;
-
-		LogChangeset curr = changesetsList;
-		for (int i = 0; i < changesetCount; i++)
+		if (lc == null)
 		{
-			curr.WriteTo(ref buffer);
-			curr = curr.Next;
+			*(int*)buffer = 0;
+			buffer += 4;
+		}
+		else
+		{
+			*(int*)buffer = 1;
+			buffer += 4;
+			lc.WriteTo(ref buffer);
 		}
 
 		return (long)buffer - (long)startBuffer;

@@ -1,7 +1,9 @@
 ﻿using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using System.Threading.Tasks;
 using VeloxDB.Common;
 
 namespace VeloxDB.Storage;
@@ -13,8 +15,10 @@ internal unsafe sealed class GarbageCollector
 
 	Database database;
 
-	ActiveTransations activeTrans;
+	NativeInterlocked64 lastReadVersion;
 	UncollectedTransactions uncollectedTrans;
+
+	ActiveTransations activeTrans;
 
 	int workerCount;
 	List<Thread> workers;
@@ -30,7 +34,7 @@ internal unsafe sealed class GarbageCollector
 
 		this.database = database;
 
-		activeTrans = new ActiveTransations(database.TraceId);
+		activeTrans = new ActiveTransations();
 		uncollectedTrans = new UncollectedTransactions(database.Engine.MemoryManager,
 			database.Engine.Settings, AddWorkItems, database.TraceId);
 
@@ -48,35 +52,63 @@ internal unsafe sealed class GarbageCollector
 		return !activeTrans.IsEmpty;
 	}
 
-	public void ForEachActiveTransaction(Action<Transaction> action)
+	public void CancelTransactions()
 	{
-		foreach (Transaction tran in activeTrans)
+		activeTrans.CancelTransactions();
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public bool TryInsertTransaction(Transaction tran)
+	{
+		activeTrans.AddTran(tran);
+		Thread.MemoryBarrier();
+		ulong lastReadVersion = (ulong)this.lastReadVersion.state;
+		if (lastReadVersion <= tran.ReadVersion)
 		{
-			action(tran);
+			return true;
+		}
+		else
+		{
+			activeTrans.Remove(tran);
+			tran.PrevActiveTran = tran.NextActiveTran = null;
+			return false;
 		}
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public void InsertTransaction(Transaction tran)
+	public void TransactionCompleted(Transaction tran)
 	{
-		activeTrans.AddTran(tran);
+		activeTrans.Remove(tran);
 	}
 
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public Transaction TransactionCompleted(Transaction tran)
+	public void ProcessGarbage(Transaction tran)
 	{
-		return activeTrans.TransactionCompleted(tran);
-	}
+		Transaction oldestReader = activeTrans.GetOldestReader();
+		ulong lastReadVersion = oldestReader == null ? tran.CommitVersion : oldestReader.ReadVersion;
+		TTTrace.Write(database.TraceId, tran.Id, tran.ReadVersion, tran.CommitVersion, this.lastReadVersion.state, lastReadVersion);
 
-	public void PrepareGarbage(Transaction tran, Transaction lastReader, ulong databaseReadVersion)
-	{
-		TTTrace.Write(database.TraceId, tran.Id, tran.ReadVersion, databaseReadVersion);
-
-		ulong lastReadVersion = lastReader == null ? databaseReadVersion : lastReader.ReadVersion;
+		bool collect = false;
+		while (true)
+		{
+			ulong prevLastReadVersion = (ulong)this.lastReadVersion.state;
+			if (lastReadVersion > prevLastReadVersion)
+			{
+				if (this.lastReadVersion.CompareExchange((long)lastReadVersion, (long)prevLastReadVersion) == (long)prevLastReadVersion)
+				{
+					collect = true;
+					break;
+				}
+			}
+			else
+			{
+				break;
+			}
+		}
 
 		lock (uncollectedTrans)
 		{
-			uncollectedTrans.Collect(lastReadVersion);
+			if (collect)
+				uncollectedTrans.Collect(lastReadVersion);
 
 			if (tran.Type == TransactionType.ReadWrite)
 			{
@@ -92,10 +124,32 @@ internal unsafe sealed class GarbageCollector
 		}
 	}
 
+	public void Rewind(ulong version)
+	{
+		if (version < (ulong)lastReadVersion.state)
+			lastReadVersion.state = (long)version;
+	}
+
+	private void CollectImmediate(Transaction tran, ulong handle)
+	{
+		ModifiedBufferHeader* curr = (ModifiedBufferHeader*)database.Engine.MemoryManager.GetBuffer(handle);
+		while (curr != null)
+		{
+			curr->readVersion = ulong.MaxValue;
+			curr->nextQueueGroup = null;
+			ulong nextHandle = curr->nextBuffer;
+			GarbageCollect(curr);
+			curr = (ModifiedBufferHeader*)database.Engine.MemoryManager.GetBuffer(nextHandle);
+		}
+	}
+
 	public void Flush()
 	{
 		TTTrace.Write(database.TraceId);
-		uncollectedTrans.Flush();
+		lock (uncollectedTrans)
+		{
+			uncollectedTrans.Flush(database.Versions.ReadVersion);
+		}
 	}
 
 	private void AddWorkItems(IntPtr item)
@@ -168,8 +222,6 @@ internal unsafe sealed class GarbageCollector
 			else if (cp->modificationType == ModifiedType.HashReadLock)
 				GarbageCollectHashReadLocks(cp);
 
-			// We do not collect ObjectReadLock (there isn't any garbage produced). Best would be to not put those in the queue.
-
 			ModifiedBufferHeader* nextCP = cp->nextQueueGroup;
 			database.Engine.MemoryManager.Free(cp->handle);
 			cp = nextCP;
@@ -239,6 +291,7 @@ internal unsafe sealed class GarbageCollector
 	{
 		DestroyWorkers();
 		commands.Dispose();
+		activeTrans.Dispose();
 	}
 
 #if TEST_BUILD

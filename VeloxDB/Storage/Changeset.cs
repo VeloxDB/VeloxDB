@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using VeloxDB.Common;
 using VeloxDB.Networking;
@@ -15,22 +16,19 @@ internal sealed unsafe partial class Changeset : IDisposable
 	MemoryManager memoryManager;
 	LogChangeset[] logChangesets;
 
-	bool ownsLogChangesets;
-
 	bool disposed;
 
-	internal Changeset(MemoryManager memoryManager)
+	public Changeset(MemoryManager memoryManager)
 	{
 		this.memoryManager = memoryManager;
+		refCount = 1;
 
 		TrackReferencingStack();
 		TrackAllocation();
 	}
 
-	internal Changeset(LogChangeset[] logChangesets, bool ownsLogChangesets = true)
+	public Changeset(LogChangeset[] logChangesets)
 	{
-		this.ownsLogChangesets = ownsLogChangesets;
-
 		refCount = 1;
 		this.logChangesets = logChangesets;
 
@@ -43,53 +41,109 @@ internal sealed unsafe partial class Changeset : IDisposable
 		TrackAllocation();
 	}
 
-	internal LogChangeset[] LogChangesets => logChangesets;
+	~Changeset()
+	{
+		throw new CriticalDatabaseException();
+	}
 
-	internal void TakeRef()
+	public LogChangeset[] LogChangesets => logChangesets;
+	public Changeset Next { get; set; }
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public LogChangeset GetLogChangeset(int logIndex)
+	{
+		for (int i = 0; i < logChangesets.Length; i++)
+		{
+			if (logChangesets[i].LogIndex == logIndex)
+				return logChangesets[i];
+		}
+
+		return null;
+	}
+
+	public void TakeRef()
 	{
 		Interlocked.Increment(ref refCount);
 		TrackReferencingStack();
 	}
 
-	internal void ReleaseRef()
+	public void TakeRef(int count)
 	{
+		Interlocked.Add(ref refCount, count);
+		TrackReferencingStack(count);
+	}
+
+	public void ReleaseRef()
+	{
+		TrackDereferencingStack();
+
 		int nrc = Interlocked.Decrement(ref refCount);
-		Checker.AssertTrue(nrc >= 0);
+
+		if (nrc < 0)
+			throw new CriticalDatabaseException();
 
 		if (nrc == 0)
 		{
 			CleanUp();
-			System.GC.SuppressFinalize(this);
+			GC.SuppressFinalize(this);
 		}
-
-		TrackDereferencingStack();
 	}
 
 	public void Dispose()
 	{
-		TrackDereferencingStack();
-
-		int nrc = Interlocked.Decrement(ref refCount);
-		Checker.AssertTrue(nrc >= 0);
-
-		if (nrc > 0)
-			return;
-
-		CleanUp();
+		ReleaseRef();
 	}
 
-	internal int GetSerializedSize()
+	public int GetSerializedSize()
 	{
 		int s = sizeof(ushort) + sizeof(byte);
 		for (int i = 0; i < logChangesets.Length; i++)
 		{
-			s += logChangesets[i].GetSerializedSize();
+			s += logChangesets[i].SerializedSize;
 		}
 
 		return s;
 	}
 
-	internal void Serialize(MessageWriter writer)
+	public void Merge(Changeset ch)
+	{
+		for (int i = 0; i < ch.logChangesets.Length; i++)
+		{
+			LogChangeset lch2 = ch.logChangesets[i];
+			int index1 = FindLogChangeset(lch2.LogIndex);
+			if (logChangesets[index1] != null)
+			{
+				logChangesets[index1].Merge(lch2);
+			}
+			else
+			{
+				lch2.SetOwner(this);
+				logChangesets[index1] = lch2;
+				ch.logChangesets[i] = null;
+			}
+		}
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	private int FindLogChangeset(int logIndex)
+	{
+		for (int i = 0; i < logChangesets.Length; i++)
+		{
+			if (logChangesets[i].LogIndex == logIndex)
+				return i;
+		}
+
+		LogChangeset[] temp = new LogChangeset[logChangesets.Length + 1];
+		for (int i = 0; i < logChangesets.Length; i++)
+		{
+			temp[i] = logChangesets[i];
+		}
+
+		logChangesets = temp;
+		return temp.Length - 1;
+	}
+
+	public void Serialize(MessageWriter writer)
 	{
 		writer.WriteUShort(serializationVersion);
 		writer.WriteByte((byte)logChangesets.Length);
@@ -99,7 +153,7 @@ internal sealed unsafe partial class Changeset : IDisposable
 		}
 	}
 
-	internal void Deserialize(MessageReader reader)
+	public void Deserialize(MessageReader reader)
 	{
 		try
 		{
@@ -118,7 +172,7 @@ internal sealed unsafe partial class Changeset : IDisposable
 				}
 			}
 
-			System.GC.SuppressFinalize(this);
+			GC.SuppressFinalize(this);
 			throw;
 		}
 	}
@@ -128,8 +182,6 @@ internal sealed unsafe partial class Changeset : IDisposable
 		ushort ver = reader.ReadUShort();
 		if (ver > serializationVersion)
 			Checker.NotSupportedException("Unsupported changeset format {0} encountered.", ver);
-
-		refCount = 1;
 
 		int logCount = reader.ReadByte();
 		logChangesets = new LogChangeset[logCount];
@@ -147,210 +199,11 @@ internal sealed unsafe partial class Changeset : IDisposable
 
 		TrackDeallocation();
 
-		if (ownsLogChangesets)
+		for (int i = 0; i < logChangesets.Length; i++)
 		{
-			for (int i = 0; i < logChangesets.Length; i++)
-			{
-				logChangesets[i].Dispose();
-			}
+			logChangesets[i]?.Dispose();
 		}
 
 		disposed = true;
-	}
-}
-
-internal sealed unsafe class LogChangeset : IDisposable
-{
-	Changeset owner;
-	MemoryManager memoryManager;
-	int logIndex;
-	int bufferCount;
-	byte* buffers;
-	string[] strings;
-	LogChangeset next;
-
-	internal LogChangeset(Changeset owner, MemoryManager memoryManager)
-	{
-		this.owner = owner;
-		this.memoryManager = memoryManager;
-	}
-
-	internal LogChangeset(MemoryManager memoryManager, int logIndex, int bufferCount, byte* buffers, string[] strings)
-	{
-		this.memoryManager = memoryManager;
-		this.logIndex = logIndex;
-		this.bufferCount = bufferCount;
-		this.buffers = buffers;
-		this.strings = strings;
-	}
-
-	~LogChangeset()
-	{
-		memoryManager.SafeFree(() =>
-		{
-			ChangesetBufferHeader* curr = (ChangesetBufferHeader*)buffers;
-			while (curr != null)
-			{
-				ChangesetBufferHeader* next = curr->next;
-				memoryManager.Free(curr->handle);
-				curr = next;
-			}
-		});
-	}
-
-	internal int BufferCount => bufferCount;
-	internal byte* Buffers => buffers;
-	internal int LogIndex => logIndex;
-	internal string[] Strings => strings;
-	internal LogChangeset Next { get => next; set => next = value; }
-
-	public void SetOwner(Changeset owner)
-	{
-		this.owner = owner;
-	}
-
-	public void Dispose()
-	{
-		ChangesetBufferHeader* curr = (ChangesetBufferHeader*)buffers;
-		while (curr != null)
-		{
-			ChangesetBufferHeader* next = curr->next;
-			memoryManager.Free(curr->handle);
-			curr = next;
-		}
-
-		buffers = null;
-
-		GC.SuppressFinalize(this);
-	}
-
-	internal int GetSerializedSize()
-	{
-		int size = sizeof(byte) + sizeof(short);
-
-		ChangesetBufferHeader* cp = (ChangesetBufferHeader*)buffers;
-		for (int i = 0; i < bufferCount; i++)
-		{
-			size += (int)cp->size - ChangesetBufferHeader.Size + sizeof(int);
-			cp = cp->next;
-		}
-
-		return size;
-	}
-
-	internal void WriteTo(ref byte* bp)
-	{
-		*bp = (byte)logIndex;
-		bp += 1;
-
-		*((short*)bp) = (short)BufferCount;
-		bp += 2;
-
-		ChangesetBufferHeader* cp = (ChangesetBufferHeader*)buffers;
-		for (int i = 0; i < bufferCount; i++)
-		{
-			int currSize = (int)cp->size;
-			currSize -= ChangesetBufferHeader.Size;
-
-			*(int*)bp = (int)currSize;
-			bp += sizeof(int);
-
-			Utils.CopyMemory((byte*)cp + ChangesetBufferHeader.Size, bp, currSize);
-			bp += currSize;
-
-			cp = (ChangesetBufferHeader*)cp->next;
-		}
-	}
-
-	internal void ReadFrom(ref byte* bp)
-	{
-		logIndex = *bp;
-		bp += 1;
-
-		bufferCount = *(short*)bp;
-		bp += 2;
-
-		ChangesetBufferHeader* prev = null;
-		for (uint i = 0; i < bufferCount; i++)
-		{
-			int size = *(int*)bp;
-			bp += sizeof(int);
-
-			ulong handle = memoryManager.Allocate(size + ChangesetBufferHeader.Size);
-			byte* buffer = memoryManager.GetBuffer(handle);
-
-			if (i == 0)
-				buffers = buffer;
-
-			Utils.CopyMemory(bp, buffer + ChangesetBufferHeader.Size, size);
-			bp += size;
-
-			if (prev != null)
-				prev->next = (ChangesetBufferHeader*)buffer;
-
-			prev = (ChangesetBufferHeader*)buffer;
-			prev->size = size + ChangesetBufferHeader.Size; // This is total buffer size including the header
-			prev->handle = handle;
-		}
-
-		prev->next = null;
-	}
-
-	internal void Serialize(MessageWriter writer)
-	{
-		writer.WriteByte((byte)logIndex);
-		writer.WriteUShort((ushort)bufferCount);
-
-		ChangesetBufferHeader* curr = (ChangesetBufferHeader*)buffers;
-		for (int i = 0; i < bufferCount; i++)
-		{
-			int size = (int)curr->size;
-			size -= ChangesetBufferHeader.Size;
-
-			writer.WriteInt(size);
-			writer.WriteBuffer((byte*)curr + ChangesetBufferHeader.Size, size);
-
-			curr = (ChangesetBufferHeader*)curr->next;
-		}
-	}
-
-	internal void Deserialize(MessageReader reader)
-	{
-		logIndex = reader.ReadByte();
-		bufferCount = reader.ReadUShort();
-
-		if (bufferCount != 0)
-		{
-			ChangesetBufferHeader* prev = null;
-			for (uint i = 0; i < bufferCount; i++)
-			{
-				int size = reader.ReadInt();
-				ulong handle = memoryManager.Allocate(size + ChangesetBufferHeader.Size);
-				byte* buffer = memoryManager.GetBuffer(handle);
-
-				try
-				{
-					reader.ReadBuffer(buffer + ChangesetBufferHeader.Size, size);
-				}
-				catch
-				{
-					memoryManager.Free(handle);
-					throw;
-				}
-
-				if (i == 0)
-					buffers = buffer;
-
-				if (prev != null)
-					prev->next = (ChangesetBufferHeader*)buffer;
-
-				prev = (ChangesetBufferHeader*)buffer;
-				prev->size = size + ChangesetBufferHeader.Size; // This is total buffer size including the header
-				prev->handle = handle;
-				prev->next = null;
-			}
-
-			prev->next = null;
-		}
 	}
 }

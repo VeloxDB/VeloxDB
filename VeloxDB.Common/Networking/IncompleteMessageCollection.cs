@@ -32,25 +32,23 @@ internal sealed class IncompleteMessageCollection : IDisposable
 		awaiterPool = new ItemPool<ChunkAwaiter>(Connection.AwaiterPoolCount, new ChunkAwaiterFactory(abortWait));
 	}
 
-	public unsafe ChunkAwaiter ChunkReceived(MessageChunk chunk, out bool chunkConsumed)
+	public unsafe void ChunkReceived(MessageChunk chunk, out bool chunkConsumed)
 	{
 		Checker.AssertFalse(chunk.MessageId == 0);
 
 		chunkConsumed = false;
 		if (chunk.IsTheOnlyOne)
-			return null;
+			return;
 
 		// We are going to need an awaiter to be able to wait for the next chunk if this chunk is not the last one.
-		ChunkAwaiter nextAwaiter = null;
 		if (!chunk.IsLast)
-			nextAwaiter = awaiterPool.Get();
+			chunk.NextChunkAwaiter = awaiterPool.Get();
 
 		lock (sync)
 		{
 			if (chunk.IsFirst)
 			{
-				map.Add(chunk.MessageId, nextAwaiter);
-				return nextAwaiter;
+				map.Add(chunk.MessageId, chunk.NextChunkAwaiter);
 			}
 			else
 			{
@@ -65,25 +63,24 @@ internal sealed class IncompleteMessageCollection : IDisposable
 				{
 					currChunkCount++;
 					awaiter.SetChunk(chunk);
-					awaiter.NextAwaiter = nextAwaiter;
+					awaiter.NextAwaiter = chunk.NextChunkAwaiter;
 
 					if (currChunkCount == maxQueuedChunkCount)
 						stopReceiving();
 				}
 
 				chunkConsumed = true;
-				return null;
 			}
 		}
 	}
 
-	public void WaitNextChunk(MessageChunk prevChunk, out MessageChunk chunk, out ChunkAwaiter nextAwaiter)
+	public void WaitNextChunk(MessageChunk chunk, out MessageChunk nextChunk)
 	{
-		Checker.AssertFalse(prevChunk.MessageId == 0);
+		Checker.AssertFalse(chunk.MessageId == 0);
 
 		try
 		{
-			prevChunk.Awaiter.WaitChunk();
+			chunk.NextChunkAwaiter.WaitChunk();
 		}
 		catch (Exception)
 		{
@@ -93,9 +90,8 @@ internal sealed class IncompleteMessageCollection : IDisposable
 
 			lock (sync)
 			{
-				CancelMessageInternal(prevChunk.MessageId, true);
-				chunk = null;
-				nextAwaiter = null;
+				CancelMessageInternal(chunk.MessageId, true);
+				nextChunk = null;
 			}
 
 			throw;
@@ -103,21 +99,21 @@ internal sealed class IncompleteMessageCollection : IDisposable
 
 		lock (sync)
 		{
-			ChunkAwaiter currAwaiter = map[prevChunk.MessageId];
-			Checker.AssertTrue(object.ReferenceEquals(currAwaiter, prevChunk.Awaiter));
+			ChunkAwaiter awaiter = map[chunk.MessageId];
+			Checker.AssertTrue(object.ReferenceEquals(awaiter, chunk.NextChunkAwaiter));
 
-			nextAwaiter = currAwaiter.NextAwaiter;
-			chunk = currAwaiter.Chunk;
-			if (nextAwaiter == null)
+			nextChunk = awaiter.Chunk;
+			nextChunk.NextChunkAwaiter = awaiter.NextAwaiter;
+			if (nextChunk.NextChunkAwaiter == null)
 			{
-				map.Remove(prevChunk.MessageId);
+				map.Remove(chunk.MessageId);
 			}
 			else
 			{
-				map[prevChunk.MessageId] = nextAwaiter;
+				map[chunk.MessageId] = nextChunk.NextChunkAwaiter;
 			}
 
-			awaiterPool.Put(currAwaiter);
+			awaiterPool.Put(awaiter);
 
 			currChunkCount--;
 			if (currChunkCount == maxQueuedChunkCount - 1)
@@ -153,7 +149,7 @@ internal sealed class IncompleteMessageCollection : IDisposable
 		if (!map.TryGetValue(msgId, out ChunkAwaiter awaiter))
 			return null;
 
-		while (awaiter != null && awaiter.Chunk != null)
+		while (awaiter.NextAwaiter != null)
 		{
 			awaiter = awaiter.NextAwaiter;
 		}
@@ -175,7 +171,7 @@ internal sealed class IncompleteMessageCollection : IDisposable
 
 			disposed = true;
 
-			foreach (ulong msgId in map.Keys)
+			foreach (ulong msgId in new List<ulong>(map.Keys))
 			{
 				CancelMessageInternal(msgId, false);
 			}

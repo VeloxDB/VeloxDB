@@ -27,6 +27,13 @@ internal unsafe sealed class MultiSpinRWLock : IDisposable
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public void EnterReadLock(int handle)
+	{
+		RWSpinLockFair* rw = (RWSpinLockFair*)CacheLineMemoryManager.GetBuffer(syncs, handle);
+		rw->EnterReadLock();
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public bool TryEnterReadLock(int timeout, out int handle)
 	{
 		if (timeout == -1)

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.IO;
 using VeloxDB.Common;
@@ -8,32 +9,30 @@ namespace VeloxDB.Storage.Persistence;
 
 internal unsafe sealed class LogFileReader : IDisposable
 {
-	const int initBufferSize = 1024 * 1024;
+	const int smallBufferSize = 1024 * 8;
+	const int mediumBufferSize = 1024 * 128;
 
 	string fileName;
 	ReadThroughLogReader reader;
-	long bufferSize;
-	long bufferOffset;
-	IntPtr buffer;
-	LogBlockFileHeader chunkHeader;
+
 	LogFileHeader logHeader;
 	long offset;
-	MemoryManager memoryManager;
 
-	public LogFileReader(string traceName, string fileName, LogFileHeader header, MemoryManager memoryManager)
+	LogBufferPool smallBufferPool, mediumBuffersPool;
+
+	public LogFileReader(string traceName, string fileName, LogFileHeader header)
 	{
 		TTTrace.Write(fileName, header.version);
 
 		this.fileName = fileName;
 		this.logHeader = header;
-		this.memoryManager = memoryManager;
+
+		smallBufferPool = new LogBufferPool(smallBufferSize, 2048);
+		mediumBuffersPool = new LogBufferPool(mediumBufferSize, 128);
 
 		reader = new ReadThroughLogReader(traceName, fileName, LogFileHeader.SkipSize, header.sectorSize, header.isPackedFormat);
 
 		offset = reader.TotalReadBytes;
-
-		bufferSize = initBufferSize;
-		buffer = NativeAllocator.Allocate(initBufferSize);
 	}
 
 	public static LogFileHeader ReadHeader(string fileName)
@@ -61,28 +60,65 @@ internal unsafe sealed class LogFileReader : IDisposable
 		return offset;
 	}
 
-	public bool TryRead(List<LogItem> logItems, ulong invalidLogSeqNum)
+	public bool TryReadBlock(out LogBufferPool.Buffer buffer, out bool isStandard)
 	{
-		if (reader == null)
-			return false;
+		isStandard = true;
 
-		if (!TryLoadChunk())
+		LogBlockFileHeader h = new LogBlockFileHeader();
+		if (!reader.Read((IntPtr)(&h), LogBlockFileHeader.Size, false))
 		{
-			reader.Dispose();
-			reader = null;
+			buffer = default;
 			return false;
 		}
 
+		if (h.marker.Low != logHeader.marker.Low || h.marker.Hight != logHeader.marker.Hight)
+		{
+			buffer = default;
+			return false;
+		}
+
+		if (h.size <= smallBufferSize)
+			buffer = smallBufferPool.Get(h.size);
+		else if (h.size <= mediumBufferSize)
+			buffer = mediumBuffersPool.Get(h.size);
+		else
+			buffer = new LogBufferPool.Buffer(h.size);
+
+		if (!reader.Read(buffer.Value, h.size, true))
+		{
+			buffer.Dispose();
+			buffer = default;
+			return false;
+		}
+
+		long* lp = (long*)((byte*)buffer.Value + (h.size - SimpleGuid.Size));
+		if (logHeader.marker.Low != lp[0] || logHeader.marker.Hight != lp[1])
+		{
+			buffer.Dispose();
+			buffer = default;
+			return false;
+		}
+
+		isStandard = h.type == LogBlockType.Standard;
+
 		offset = reader.TotalReadBytes;
 
-		while (bufferOffset < chunkHeader.size - SimpleGuid.Size)
+		return true;
+	}
+
+	public static bool TryExtractLogItems(MemoryManager memoryManager, byte* buffer, long size,
+		List<LogItem> logItems, ulong invalidLogSeqNum)
+	{
+		long bufferOffset = 0;
+		while (bufferOffset < size - SimpleGuid.Size)
 		{
-			LogItem logItem = ReadLogItem();
+			byte* bp = buffer + bufferOffset;
+			LogItem logItem = LogItem.Deserialize(memoryManager, ref bp);
+			bufferOffset = (long)bp - (long)buffer;
+
 			if (logItem.LogSeqNum >= invalidLogSeqNum)
 			{
 				logItem.DisposeChangesets();
-				reader.Dispose();
-				reader = null;
 				return logItems.Count > 0;
 			}
 
@@ -92,58 +128,10 @@ internal unsafe sealed class LogFileReader : IDisposable
 		return logItems.Count > 0;
 	}
 
-	private bool TryLoadChunk()
-	{
-		LogBlockFileHeader h = new LogBlockFileHeader();
-		h.version = 1234;
-		h.size = 123123;
-
-		if (!reader.Read((IntPtr)(&h), LogBlockFileHeader.Size, false))
-			return false;
-
-		if (h.marker.Low != logHeader.marker.Low || h.marker.Hight != logHeader.marker.Hight)
-			return false;
-
-		chunkHeader = h;
-
-		EnsureBufferSize();
-
-		if (!reader.Read(buffer, chunkHeader.size, true))
-			return false;
-
-		long* lp = (long*)((byte*)buffer + (chunkHeader.size - SimpleGuid.Size));
-		if (logHeader.marker.Low != lp[0] || logHeader.marker.Hight != lp[1])
-			return false;
-
-		bufferOffset = 0;
-
-		return true;
-	}
-
-	private void EnsureBufferSize()
-	{
-		if (bufferSize < chunkHeader.size)
-		{
-			long newSize = Max(bufferSize * 2, chunkHeader.size);
-			Utils.ResizeMem(ref buffer, bufferSize, newSize);
-			bufferSize = newSize;
-		}
-	}
-
-	private LogItem ReadLogItem()
-	{
-		byte* bp = (byte*)buffer + bufferOffset;
-		LogItem li = LogItem.Deserialize(memoryManager, ref bp);
-		bufferOffset = (long)bp - buffer.ToInt64();
-
-		return li;
-	}
-
 	public void Dispose()
 	{
-		NativeAllocator.Free(buffer);
-
-		if (reader != null)
-			reader.Dispose();
+		reader.Dispose();
+		smallBufferPool.Dispose();
+		mediumBuffersPool.Dispose();
 	}
 }

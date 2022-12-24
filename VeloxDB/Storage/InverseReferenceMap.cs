@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -6,12 +6,12 @@ using System.Diagnostics;
 using VeloxDB.Common;
 using VeloxDB.Descriptor;
 using System.Collections.Generic;
+using System.Reflection.Metadata;
 
 namespace VeloxDB.Storage;
 
 internal unsafe sealed partial class InverseReferenceMap
 {
-	const int initCapacity = 128;
 	const int mergeOnStackLimit = 1024;
 
 	Database database;
@@ -22,6 +22,7 @@ internal unsafe sealed partial class InverseReferenceMap
 	float growthFactor;
 	float loadFactor;
 	long capacity;
+	long minCapacity;
 	long bucketCountLimit;
 	ulong capacityMask;
 	ulong seed;
@@ -44,7 +45,10 @@ internal unsafe sealed partial class InverseReferenceMap
 
 		classIndex = (ushort)classDesc.Index;
 
-		capacity = HashUtils.CalculatePow2Capacity(initCapacity, loadFactor, out bucketCountLimit);
+		minCapacity = database.Id == DatabaseId.User ? ParallelResizeCounter.SingleThreadedLimit * 2 : 64;
+		capacity = Math.Max(minCapacity, 128);
+
+		capacity = HashUtils.CalculatePow2Capacity(capacity, loadFactor, out bucketCountLimit);
 		capacityMask = (ulong)capacity - 1;
 		seed = database.Engine.HashSeed;
 
@@ -106,6 +110,26 @@ internal unsafe sealed partial class InverseReferenceMap
 
 		TTTrace.Write(bitem->id, bitem->propertyId);
 		ReaderInfo.FinalizeInvRefLock(tran, bitem->id, bitem->propertyId, &bitem->readerInfo, true, slot);
+
+		Bucket.UnlockAccess(bucket);
+		resizeCounter.ExitReadLock(lockHandle);
+
+		return bitem->id;
+	}
+
+	public long RemapReadLockSlot(ulong item, ushort prevSlot, ushort newSlot)
+	{
+		TTTrace.Write(database.TraceId, classDesc.Id, prevSlot, newSlot);
+
+		int lockHandle = resizeCounter.EnterReadLock();
+
+		InvRefBaseItem* bitem = (InvRefBaseItem*)memoryManager.GetBuffer(item);
+
+		Bucket* bucket = buckets + CalculateBucket(bitem->id, bitem->propertyId);
+		Bucket.LockAccess(bucket);
+
+		TTTrace.Write(bitem->id, bitem->propertyId);
+		ReaderInfo.RemapSlot(&bitem->readerInfo, prevSlot, newSlot);
 
 		Bucket.UnlockAccess(bucket);
 		resizeCounter.ExitReadLock(lockHandle);
@@ -1168,7 +1192,7 @@ internal unsafe sealed partial class InverseReferenceMap
 		InvRefBaseItem* resItem = null;
 		while (item != null)
 		{
-			TTTrace.Write(item->id, item->IsDeleted, item->propertyId, item->Version);
+			TTTrace.Write(item->id, item->IsDeleted, item->propertyId, item->Version, readVersion);
 
 			if (ReaderInfo.IsInvRefInConflict(tran, id, item->propertyId, &item->readerInfo))
 			{
@@ -1358,7 +1382,7 @@ internal unsafe sealed partial class InverseReferenceMap
 			item->Count, item->readerInfo.LockCount, item->nextDelta);
 
 		// If the item was created just for the purpose of locking
-		if (item->nextDelta == 0 && item->Count == 0 && item->readerInfo.LockCount == 0 &&
+		if (item->NextBase == 0 && item->nextDelta == 0 && item->Count == 0 && item->readerInfo.LockCount == 0 &&
 			item->readerInfo.CommReadLockVer <= readVersion)
 		{
 			ReleaseItems(*handlePointer, readVersion, out ulong dummy);
@@ -1379,11 +1403,41 @@ internal unsafe sealed partial class InverseReferenceMap
 
 		Checker.AssertTrue(item->readerInfo.LockCount == 0);
 
+		// Since transaction release their read snapshot before fully being committed, it is possible that
+		// we are attempting garbage collection while there are still uncommited delta items down the chain.
+		// We can just skip the collection since it will occurr again anyways.
+		if (HasUncommited(*handlePointer))
+			return;
+
 		ReleaseItems(*handlePointer, readVersion, out ulong commReadLockVer);
 		*handlePointer = 0;
 
 		if (prevItem != null && prevItem->readerInfo.CommReadLockVer < commReadLockVer)
 			prevItem->readerInfo.CommReadLockVer = commReadLockVer;
+	}
+
+	private bool HasUncommited(ulong bhandle)
+	{
+		while (bhandle != 0)
+		{
+			InvRefBaseItem* bitem = (InvRefBaseItem*)memoryManager.GetBuffer(bhandle);
+			TTTrace.Write(bitem->id, bitem->propertyId, bitem->IsDeleted, bitem->Version);
+
+			ulong dhandle = bitem->nextDelta;
+			while (dhandle != 0)
+			{
+				InvRefDeltaItem* ditem = (InvRefDeltaItem*)memoryManager.GetBuffer(dhandle);
+				TTTrace.Write(ditem->version);
+				if (Database.IsUncommited(ditem->version))
+					return true;
+
+				dhandle = ditem->nextDelta;
+			}
+
+			bhandle = bitem->NextBase;
+		}
+
+		return false;
 	}
 
 	private void ReleaseItems(ulong bhandle, ulong readVersion, out ulong maxCommReadLockVer)

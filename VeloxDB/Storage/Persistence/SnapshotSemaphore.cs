@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Threading;
+using Velox.Common;
 
 namespace VeloxDB.Storage.Persistence;
 
@@ -32,6 +33,8 @@ internal sealed class SnapshotSemaphore
 		try
 		{
 			count--;
+			if (count < 0)
+				throw new CriticalDatabaseException();
 		}
 		finally
 		{

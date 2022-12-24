@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using VeloxDB.Common;
@@ -24,7 +25,6 @@ internal static class TransactionFlags
 	public const byte SourceMask = 0x06;
 	public const byte AllowsOtherTrans = 0x08;
 	public const byte Closed = 0x10;
-	public const byte Async = 0x20;
 }
 
 [Flags]
@@ -38,7 +38,10 @@ internal enum WriteTransactionFlags
 
 internal unsafe sealed partial class Transaction : IDisposable
 {
-	public const int MaxConcurrentTrans = 16384; // Must not be greater than 2^14 because first two bits of slot are used in ReaderInfo
+	// Must not be greater than 2^14 because ReaderInfo struct counts how many transaction read-locked a record
+	// and this number is 2^14. We might introduce in the future a limitation on how many transactions can read lock a single record
+	// and remove this limitation.
+	public const int MaxConcurrentTrans = 16384;
 
 	Database database;
 	Thread managedThread;
@@ -50,13 +53,18 @@ internal unsafe sealed partial class Transaction : IDisposable
 
 	Transaction prevActiveTran;
 	Transaction nextActiveTran;
-	CollectableCollections collectable;
+	int activeListIndex;
+	CollectableCollections garbage;
 
 	bool cancelRequested;
 
 	byte flags;
 
 	TransactionContext context;
+
+	object asyncCallbackState;
+	Action<object, DatabaseException> asyncCallback;
+	Transaction nextMerged;
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public Transaction(Database database, TransactionType type)
@@ -92,7 +100,7 @@ internal unsafe sealed partial class Transaction : IDisposable
 	public ushort Slot => context.Slot;
 	public ulong ReadVersion => readVersion;
 	public TransactionContext Context => context;
-	public CollectableCollections Collectable => collectable;
+	public CollectableCollections Garbage => garbage;
 	public byte AffectedLogGroups { get => context.AffectedLogGroups; set => context.AffectedLogGroups = value; }
 	public IReplica OriginReplica => context.OriginReplica;
 	public uint LocalTerm => context.LocalTerm;
@@ -116,15 +124,7 @@ internal unsafe sealed partial class Transaction : IDisposable
 		set => flags = (byte)((flags & ~TransactionFlags.SourceMask) | ((int)value << TransactionFlags.SourceShift));
 	}
 
-	public bool IsAsyncCommitScheduled
-	{
-		get => (flags & TransactionFlags.Async) != 0;
-		set
-		{
-			int v = value ? 1 : 0;
-			flags = (byte)((flags & ~TransactionFlags.Async) | (v << TransactionFlags.AsyncShift));
-		}
-	}
+	public bool IsAsyncCommitScheduled => context != null && asyncCallback != null;
 
 	public bool Closed
 	{
@@ -160,48 +160,33 @@ internal unsafe sealed partial class Transaction : IDisposable
 
 	public Transaction PrevActiveTran { get => prevActiveTran; set => prevActiveTran = value; }
 	public Transaction NextActiveTran { get => nextActiveTran; set => nextActiveTran = value; }
+	public int ActiveListIndex { get => activeListIndex; set => activeListIndex = value; }
+	public Action<object, DatabaseException> AsyncCallback { get => asyncCallback; set => asyncCallback = value; }
+	public object AsyncCallbackState { get => asyncCallbackState; set => asyncCallbackState = value; }
+	public Transaction NextMerged { get => nextMerged; set => nextMerged = value; }
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public void StartAsyncCommit()
+	public void RegisterAsyncCommitter()
 	{
-		context.EnterAsyncCommitStateLock();
+		context.IncAsyncCommitterCount();
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public void RegisterAsyncCommiter()
+	public void AsyncCommitterFinished(bool result = true)
 	{
-		context.AsyncCommitCount++;
-	}
-
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public void EndPrepareAsyncCommit()
-	{
-		context.RegAsyncCommitCount = context.AsyncCommitCount;
-		context.ExitAsyncCommitStateLock();
-	}
-
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public void AsyncCommiterFinished(bool result = true)
-	{
-		context.EnterAsyncCommitStateLock();
-
 		if (!result)
+		{
 			context.AsyncCommitResult = false;
+			Thread.MemoryBarrier();
+		}
 
-		bool isFinished = (--context.AsyncCommitCount) == 0;
-
-		context.ExitAsyncCommitStateLock();
-
-		if (isFinished)
-			database.Engine.FinalizeTransaction(this);
+		if (context.DecAsyncCommiterCount() == 0)
+			database.PublishTransactionCommit(this);
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public void WaitAsyncCommit()
+	public void WaitAsyncCommitters()
 	{
-		if (context.RegAsyncCommitCount == 0)
-			database.Engine.FinalizeTransaction(this);
-
 		context.CommitWaitEvent.WaitOne();
 	}
 
@@ -260,6 +245,18 @@ internal unsafe sealed partial class Transaction : IDisposable
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public void SetCommitVersion(ulong commitVersion)
+	{
+		this.commitVersion = commitVersion;
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public void SetLogSeqNum(ulong logSeqNum)
+	{
+		this.context.LogSeqNum = logSeqNum;
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public void SetCommitAndLogSeqNum(ulong commitVersion, ulong logSeqNum)
 	{
 		this.commitVersion = commitVersion;
@@ -278,14 +275,16 @@ internal unsafe sealed partial class Transaction : IDisposable
 		context.GlobalTerm = globalTerm;
 	}
 
-	public void Complete()
+	public void Complete(bool isCommited)
 	{
 		TTTrace.Write(database.TraceId, id, commitVersion);
 
 		if (Type == TransactionType.ReadWrite)
+		{
 			PrepareForGarbageCollection();
+			database.ProcessGarbage(this);
+		}
 
-		database.TransactionCompleted(this);
 		Closed = true;
 	}
 
@@ -306,16 +305,16 @@ internal unsafe sealed partial class Transaction : IDisposable
 		// to the affected list so that they get garbage collected. Affected list is now only used for GC
 		context.PrepareEmptyInvRefEntriesForGC();
 
-		collectable.objects = context.AffectedObjects.TakeContent();
-		collectable.invRefs = context.AffectedInvRefs.TakeContent();
-		collectable.hashReadLocks = context.HashReadLocks.TakeContent();
+		garbage.objects = context.AffectedObjects.TakeContent();
+		garbage.invRefs = context.AffectedInvRefs.TakeContent();
+		garbage.hashReadLocks = context.HashReadLocks.TakeContent();
 
 		context.ObjectReadLocks.FreeMemory();
 	}
 
 	public void MergeWith(Transaction tran)
 	{
-		Context.Merge(tran);
+		Context.Merge(this, tran);
 	}
 
 	private void ProvideContext(Database database)

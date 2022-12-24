@@ -1,7 +1,9 @@
 ﻿using System;
+using System.Drawing;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Text;
 using VeloxDB.Common;
 using VeloxDB.Descriptor;
 using static System.Math;
@@ -41,7 +43,8 @@ internal unsafe struct ChangesetBufferHeader
 	public const int Size = 24;
 
 	public ulong handle;
-	public long size;
+	public int size;
+	public int bufferSize;
 	public ChangesetBufferHeader* next;
 }
 
@@ -699,8 +702,8 @@ internal unsafe sealed class ChangesetWriter
 
 internal unsafe sealed class LogChangesetWriter
 {
+	const int largeBuferSize = 1024 * 512;
 	const int startBufferSize = 512;
-	const int largeStartBuferSize = 1024 * 512;
 	const int endBufferSize = 1024 * 1024 * 8;
 
 	ClassDescriptor classDesc;
@@ -729,7 +732,7 @@ internal unsafe sealed class LogChangesetWriter
 	int propertyIndex;
 	OperationType operationType;
 	int blockOperationCount;
-	UShortPlaceholder blockCountPlaceholder;
+	BytePlaceholder blockCountPlaceholder;
 
 	public LogChangesetWriter(MemoryManager memoryManager, int logIndex)
 	{
@@ -749,7 +752,7 @@ internal unsafe sealed class LogChangesetWriter
 
 	public void TurnLargeInitSizeOn()
 	{
-		activeBufferSize = largeStartBuferSize / 2;
+		activeBufferSize = largeBuferSize;
 	}
 
 	public LogChangeset FinishWriting()
@@ -816,7 +819,7 @@ internal unsafe sealed class LogChangesetWriter
 		propertyIndex = 0;
 		operationType = OperationType.None;
 		blockOperationCount = 0;
-		blockCountPlaceholder = new UShortPlaceholder();
+		blockCountPlaceholder = new BytePlaceholder();
 		blockDefined = false;
 		propertyCount = 0;
 	}
@@ -837,7 +840,7 @@ internal unsafe sealed class LogChangesetWriter
 
 		WriteByte((byte)operationType);
 		WriteShort(classDesc.Id);
-		blockCountPlaceholder = CreateUShortPlaceholder();
+		blockCountPlaceholder = CreateBytePlaceholder();
 
 		return new BlockProperties(this);
 	}
@@ -911,7 +914,7 @@ internal unsafe sealed class LogChangesetWriter
 		{
 			ComleteBlockDefinition();
 			operationType = OperationType.None;
-			blockCountPlaceholder.Populate((ushort)blockOperationCount);
+			blockCountPlaceholder.Populate((byte)blockOperationCount);
 			classDesc = null;
 		}
 	}
@@ -990,7 +993,7 @@ internal unsafe sealed class LogChangesetWriter
 
 		WriteByte((byte)operationType);
 		WriteShort(classDesc.Id);
-		blockCountPlaceholder = CreateUShortPlaceholder();
+		blockCountPlaceholder = CreateBytePlaceholder();
 
 		ReadOnlyArray<PropertyDescriptor> props = classDesc.Properties;
 		WriteShort((short)propertyCount);
@@ -1013,7 +1016,7 @@ internal unsafe sealed class LogChangesetWriter
 			propertyIndex = 0;
 			blockOperationCount++;
 
-			if (blockOperationCount == ushort.MaxValue)
+			if (blockOperationCount == byte.MaxValue)
 			{
 				ClassDescriptor cd = classDesc;
 				OperationType opType = operationType;
@@ -1088,7 +1091,7 @@ internal unsafe sealed class LogChangesetWriter
 
 		if (propertyIndex == 0)
 		{
-			WriteLong(0);   // Create place holder for the previous version
+			CreatePreviousVersionPlaceHolder();
 
 			if (operationType == OperationType.DefaultValue)
 			{
@@ -1288,27 +1291,31 @@ internal unsafe sealed class LogChangesetWriter
 		if (operationType != OperationType.Delete)
 			throw new InvalidOperationException("Active block is not a delete block.");
 
-		WriteLong(0);       // Place holder for previous version
+		CreatePreviousVersionPlaceHolder();
 		WriteLong(id);
 		CheckIfOperationComplete();
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	private void ProvideSpace(int size)
+	private void ProvideSpace()
 	{
-		if (activeOffset + size > activeBufferSize)
+		Checker.AssertFalse(activeOffset > activeBufferSize);
+		if (activeOffset == activeBufferSize)
 			AllocateNewBuffer();
 	}
 
 	[MethodImpl(MethodImplOptions.NoInlining)]
 	private void AllocateNewBuffer()
 	{
-		activeBufferSize = Min(endBufferSize, Max(startBufferSize, activeBufferSize * 2));
+		if (activeBufferSize != largeBuferSize)
+			activeBufferSize = Min(endBufferSize, Max(startBufferSize, activeBufferSize * 2));
+
 		ulong handle = memoryManager.Allocate(activeBufferSize);
 		ChangesetBufferHeader* newBuffer = (ChangesetBufferHeader*)memoryManager.GetBuffer(handle);
 
 		newBuffer->handle = handle;
 		newBuffer->size = activeBufferSize;
+		newBuffer->bufferSize = activeBufferSize;
 		newBuffer->next = null;
 
 		if (head == null)
@@ -1328,71 +1335,126 @@ internal unsafe sealed class LogChangesetWriter
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public void CreatePreviousVersionPlaceHolder()
 	{
-		ProvideSpace(8);
-		activeOffset += 8;
+		if (activeOffset + 8 <= activeBufferSize)
+		{
+			activeOffset += 8;
+			return;
+		}
+
+		CreatePreviousVersionPlaceHolderSplit();
+	}
+
+	[MethodImpl(MethodImplOptions.NoInlining)]
+	private void CreatePreviousVersionPlaceHolderSplit()
+	{
+		int t = activeBufferSize - activeOffset;
+		AllocateNewBuffer();
+		activeOffset += 8 - t;
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public void WriteByte(byte v)
 	{
-		ProvideSpace(1);
-		activeBuffer[activeOffset++] = v;
+		if (activeOffset + 1 <= activeBufferSize)
+		{
+			activeBuffer[activeOffset] = v;
+			activeOffset++;
+			return;
+		}
+
+		WriteBytes((byte*)&v, 1);
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public void WriteShort(short v)
 	{
-		ProvideSpace(2);
-		*((short*)(activeBuffer + activeOffset)) = v;
-		activeOffset += 2;
+		if (activeOffset + 2 <= activeBufferSize)
+		{
+			*((short*)(activeBuffer + activeOffset)) = v;
+			activeOffset += 2;
+			return;
+		}
+
+		WriteBytes((byte*)&v, 2);
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public void WriteInt(int v)
 	{
-		ProvideSpace(4);
-		*((int*)(activeBuffer + activeOffset)) = v;
-		activeOffset += 4;
+		if (activeOffset + 4 <= activeBufferSize)
+		{
+			*((int*)(activeBuffer + activeOffset)) = v;
+			activeOffset += 4;
+			return;
+		}
+
+		WriteBytes((byte*)&v, 4);
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public void WriteLong(long v)
 	{
-		ProvideSpace(8);
-		*((long*)(activeBuffer + activeOffset)) = v;
-		activeOffset += 8;
+		if (activeOffset + 8 <= activeBufferSize)
+		{
+			*((long*)(activeBuffer + activeOffset)) = v;
+			activeOffset += 8;
+			return;
+		}
+
+		WriteBytes((byte*)&v, 8);
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public void WriteFloat(float v)
 	{
-		ProvideSpace(4);
-		*((float*)(activeBuffer + activeOffset)) = v;
-		activeOffset += 4;
+		if (activeOffset + 4 <= activeBufferSize)
+		{
+			*((float*)(activeBuffer + activeOffset)) = v;
+			activeOffset += 4;
+			return;
+		}
+
+		WriteBytes((byte*)&v, 4);
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public void WriteDouble(double v)
 	{
-		ProvideSpace(8);
-		*((double*)(activeBuffer + activeOffset)) = v;
-		activeOffset += 8;
+		if (activeOffset + 8 <= activeBufferSize)
+		{
+			*((double*)(activeBuffer + activeOffset)) = v;
+			activeOffset += 8;
+			return;
+		}
+
+		WriteBytes((byte*)&v, 8);
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public void WriteBool(bool v)
 	{
-		ProvideSpace(1);
-		*((bool*)(activeBuffer + activeOffset)) = v;
-		activeOffset++;
+		if (activeOffset + 1 <= activeBufferSize)
+		{
+			*((bool*)(activeBuffer + activeOffset)) = v;
+			activeOffset++;
+			return;
+		}
+
+		WriteBytes((byte*)&v, 1);
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public void WriteDateTime(DateTime v)
 	{
-		ProvideSpace(8);
-		*((long*)(activeBuffer + activeOffset)) = v.ToBinary();
-		activeOffset += 8;
+		if (activeOffset + 8 <= activeBufferSize)
+		{
+			*((long*)(activeBuffer + activeOffset)) = v.ToBinary();
+			activeOffset += 8;
+			return;
+		}
+
+		long b = v.ToBinary();
+		WriteBytes((byte*)&b, 8);
 	}
 
 	public void WriteNullArray()
@@ -1776,12 +1838,13 @@ internal unsafe sealed class LogChangesetWriter
 		}
 	}
 
+	[MethodImpl(MethodImplOptions.NoInlining)]
 	private void WriteBytes(byte* ptr, int length)
 	{
 		int w = 0;
 		while (w < length)
 		{
-			ProvideSpace(1);
+			ProvideSpace();
 			int wc = Min(length - w, activeBufferSize - activeOffset);
 			Utils.CopyMemory(ptr + w, activeBuffer + activeOffset, wc);
 			w += wc;
@@ -1804,11 +1867,11 @@ internal unsafe sealed class LogChangesetWriter
 		}
 	}
 
-	private UShortPlaceholder CreateUShortPlaceholder()
+	private BytePlaceholder CreateBytePlaceholder()
 	{
-		ProvideSpace(2);
-		activeOffset += 2;
-		return new UShortPlaceholder((ushort*)(activeBuffer + activeOffset - 2));
+		ProvideSpace();
+		activeOffset += 1;
+		return new BytePlaceholder(activeBuffer + activeOffset - 1);
 	}
 
 	public void WriteDefaultValue(PropertyDescriptor propDesc)
@@ -1893,16 +1956,16 @@ internal unsafe sealed class LogChangesetWriter
 		}
 	}
 
-	private struct UShortPlaceholder
+	private struct BytePlaceholder
 	{
-		ushort* pointer;
+		byte* pointer;
 
-		public UShortPlaceholder(ushort* pointer)
+		public BytePlaceholder(byte* pointer)
 		{
 			this.pointer = pointer;
 		}
 
-		public void Populate(ushort v)
+		public void Populate(byte v)
 		{
 			*pointer = v;
 		}

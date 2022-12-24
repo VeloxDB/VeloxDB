@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading;
 
@@ -22,6 +22,7 @@ internal sealed class JobQueue<T> : IDisposable
 	int count;
 	int capacityMask;
 	T[] items;
+	int dequeueCount;
 	bool disposed;
 
 	public JobQueue(int initCapacity, JobQueueMode mode, int maxItemCount = -1)
@@ -72,7 +73,7 @@ internal sealed class JobQueue<T> : IDisposable
 		TryEnqueue(item, -1);
 	}
 
-	public bool TryEnqueue(T item, int timeout)
+	public bool TryEnqueue(T item, int timeout, bool onlyIfDequeueAvailable = false)
 	{
 		Checker.NotDisposed(disposed);
 
@@ -80,6 +81,12 @@ internal sealed class JobQueue<T> : IDisposable
 		{
 			if (!freeSpotCounter.Wait(timeout))
 				return false;
+		}
+
+		if (onlyIfDequeueAvailable && dequeueCount == 0)
+		{
+			freeSpotCounter?.Release();
+			return false;
 		}
 
 		lock (sync)
@@ -114,6 +121,8 @@ internal sealed class JobQueue<T> : IDisposable
 		if (mode == JobQueueMode.Grouped)
 			throw new InvalidOperationException("Queue does not support dequeuing of a single item.");
 
+		Interlocked.Increment(ref dequeueCount);
+
 		if (!itemCounter.Wait(timeout))
 		{
 			item = default(T);
@@ -126,6 +135,8 @@ internal sealed class JobQueue<T> : IDisposable
 			items[first] = default(T);
 			first = (first + 1) & capacityMask;
 			count--;
+
+			Interlocked.Decrement(ref dequeueCount);
 		}
 
 		if (freeSpotCounter != null)
@@ -141,6 +152,7 @@ internal sealed class JobQueue<T> : IDisposable
 		if (mode == JobQueueMode.Normal)
 			throw new InvalidOperationException("Queue does not support dequeuing of all items.");
 
+		Interlocked.Increment(ref dequeueCount);
 		itemCounter.Wait();
 
 		lock (sync)
@@ -158,6 +170,8 @@ internal sealed class JobQueue<T> : IDisposable
 			first = 0;
 			last = 0;
 			count = 0;
+
+			Interlocked.Decrement(ref dequeueCount);
 		}
 	}
 
@@ -182,17 +196,20 @@ internal sealed class JobQueue<T> : IDisposable
 
 	private void CleanUp(bool disposing)
 	{
-		if (!disposed)
+		lock (sync)
 		{
-			if (disposing)
+			if (!disposed)
 			{
-				itemCounter.Dispose();
+				if (disposing)
+				{
+					itemCounter.Dispose();
 
-				if (freeSpotCounter != null)
-					freeSpotCounter.Dispose();
+					if (freeSpotCounter != null)
+						freeSpotCounter.Dispose();
+				}
 			}
-		}
 
-		disposed = true;
+			disposed = true;
+		}
 	}
 }

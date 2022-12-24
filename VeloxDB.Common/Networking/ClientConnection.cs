@@ -13,8 +13,9 @@ internal sealed partial class ClientConnection : Connection
 	bool failedToOpen;
 
 	public unsafe ClientConnection(IPEndPoint endpoint, MessageChunkPool chunkPool, TimeSpan inactivityInterval,
-		TimeSpan inactivityTimeout, int maxQueuedChunkCount, bool groupSmallMessages, HandleMessageDelegate messageHandler) :
-		base(chunkPool, inactivityInterval, inactivityTimeout, maxQueuedChunkCount, groupSmallMessages, messageHandler)
+		TimeSpan inactivityTimeout, int maxQueuedChunkCount, bool groupSmallMessages, HandleMessageDelegate messageHandler,
+		JobWorkers<Action> priorityWorkers = null) :
+		base(chunkPool, inactivityInterval, inactivityTimeout, maxQueuedChunkCount, groupSmallMessages, messageHandler, priorityWorkers)
 	{
 		this.endpoint = endpoint;
 	}

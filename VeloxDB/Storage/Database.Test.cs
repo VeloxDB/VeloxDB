@@ -94,8 +94,7 @@ internal unsafe sealed partial class Database
 
 		TryFlushGCAndWaitCompletion(allowedTranCount);
 
-		ulong readVer;
-		gc.GetOldestReaders(versions, out readVer);
+		gc.GetOldestReaders(versions, out ulong readVer);
 
 		bool checkEmpty = !gc.HasActiveTransactions();
 
@@ -111,11 +110,8 @@ internal unsafe sealed partial class Database
 
 	public bool TryFlushGCAndWaitCompletion(int allowedActiveTranCount)
 	{
-		lock (tranSync)
-		{
-			if (gc.ActiveTransactionCount > allowedActiveTranCount)
-				return false;
-		}
+		if (gc.ActiveTransactionCount > allowedActiveTranCount)
+			return false;
 
 		DrainGC();
 		return true;

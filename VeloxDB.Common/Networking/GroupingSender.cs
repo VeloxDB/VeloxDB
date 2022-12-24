@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Linq;
 using System.Net.Sockets;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -29,7 +30,7 @@ internal unsafe sealed class GroupingSender
 
 	CPUGroupWaiter[] waiters;
 
-	public GroupingSender(Socket socket)
+	public GroupingSender(Socket socket, bool isPriority)
 	{
 		this.socket = socket;
 
@@ -56,7 +57,7 @@ internal unsafe sealed class GroupingSender
 		for (int i = 0; i < groupCount; i++)
 		{
 			int t = Math.Min(waitGroupSize, ProcessorNumber.CoreCount - c);
-			waiters[i] = new CPUGroupWaiter(dataReady, c, Send);
+			waiters[i] = new CPUGroupWaiter(dataReady, c, Send, isPriority);
 			c += t;
 		}
 	}
@@ -254,7 +255,7 @@ internal unsafe sealed class GroupingSender
 		Func<CPUGroupWaiter, bool> callback;
 		bool closed;
 
-		public CPUGroupWaiter(ManualResetEvent[] dataReady, int baseCPU, Func<CPUGroupWaiter, bool> callback)
+		public CPUGroupWaiter(ManualResetEvent[] dataReady, int baseCPU, Func<CPUGroupWaiter, bool> callback, bool isPriority)
 		{
 			this.baseCPU = baseCPU;
 			this.dataReady = new WaitHandle[Math.Min(waitGroupSize, dataReady.Length - baseCPU)];
@@ -268,6 +269,9 @@ internal unsafe sealed class GroupingSender
 
 			worker = new Thread(Worker);
 			worker.IsBackground = true;
+			if (isPriority)
+				worker.Priority = ThreadPriority.AboveNormal;
+
 			worker.Start();
 		}
 

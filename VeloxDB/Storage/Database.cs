@@ -10,6 +10,7 @@ using VeloxDB.Descriptor;
 using VeloxDB.Storage.ModelUpdate;
 using static VeloxDB.Storage.Persistence.DatabaseRestorer;
 using System.IO;
+using System.Threading;
 
 namespace VeloxDB.Storage;
 
@@ -28,9 +29,7 @@ internal unsafe sealed partial class Database
 	// Last bit is not used because different structures expect commitVersion/tranId to be 63-bits
 	public const ulong MaxCommitedVersion = ulong.MaxValue / 4;
 	public const ulong MinTranId = MaxCommitedVersion + 1;
-
-	readonly object tranSync = new object();
-	RWSpinLockFair databaseLock = new RWSpinLockFair();
+	public const ulong MaxTranId = ((ulong)1 << 63);
 
 	long id;
 
@@ -56,6 +55,9 @@ internal unsafe sealed partial class Database
 	PrimaryAlignCodeCache primaryAlignCodeCache;
 	StandbyAlignCodeCache standbyAlignCodeCache;
 
+	object currTransIdsHandle;
+	ulong* currTransIds;
+
 	private Database(StorageEngine engine, DataModelDescriptor model, PersistenceDescriptor persistenceDesc, long id)
 	{
 		TTTrace.Write(engine.TraceId);
@@ -74,6 +76,8 @@ internal unsafe sealed partial class Database
 		tranOrderer = new TransactionCommitOrderer(engine.Settings);
 		hashReaders = new HashReadersCollection(model);
 		refValidator = new ReferenceIntegrityValidator(engine, this);
+
+		InitCurrTranIds();
 
 		CreateClasses();
 		gc = new GarbageCollector(this);
@@ -243,24 +247,17 @@ internal unsafe sealed partial class Database
 		versions.AssignCommitAndLogSeqNum(tran);
 	}
 
-	public void BeginPersistCommit(Transaction t)
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public void PersistCommit(Transaction t)
 	{
 		if (persister != null)
 			persister.BeginCommitTransaction(t);
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public void FinalizeTransactionCommit(Transaction tran)
+	public void PublishTransactionCommit(Transaction tran)
 	{
-		TTTrace.Write(engine.TraceId, tran.GlobalTerm.Low, tran.GlobalTerm.Hight, tran.LocalTerm, tran.CommitVersion);
-		versions.FinalizeTransactionCommit(tran, tranOrderer);
-	}
-
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public void FinalizeTransactionCommitPreAssigned(Transaction tran, GlobalVersion[] alignmentGlobalVersions)
-	{
-		TTTrace.Write(engine.TraceId, tran.GlobalTerm.Low, tran.GlobalTerm.Hight, tran.LocalTerm, tran.CommitVersion);
-		versions.FinalizeTransactionCommit(tran, tranOrderer, alignmentGlobalVersions);
+		versions.PublishTransactionCommit(tran, tranOrderer);
 	}
 
 	public GlobalVersion[] GetGlobalVersions(out uint localTerm)
@@ -281,6 +278,7 @@ internal unsafe sealed partial class Database
 		trace.Debug("Rewinding database {0} to version {1}.", id, version);
 		persister?.Rewind(version);
 		idGenerator = new IdGenerator(this);
+		gc.Rewind(version);
 		if (!versions.TryRewind(version))
 			throw new CriticalDatabaseException();
 	}
@@ -573,76 +571,44 @@ internal unsafe sealed partial class Database
 		snapshotController.Unblock();
 	}
 
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	private void TakeDatabaseLock(bool isRead)
-	{
-		if (isRead)
-		{
-			databaseLock.EnterReadLock();
-		}
-		else
-		{
-			databaseLock.EnterWriteLock();
-		}
-	}
-
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	private void ReleaseDatabaseLock(bool isRead)
-	{
-		if (isRead)
-		{
-			databaseLock.ExitReadLock();
-		}
-		else
-		{
-			databaseLock.ExitWriteLock();
-		}
-	}
-
 	public Transaction CreateTransaction(TransactionType type, out DatabaseVersions versions)
 	{
 		TTTrace.Write(engine.TraceId, id, (byte)type, this.versions.ReadVersion, this.versions.CommitVersion);
 
 		Transaction tran = new Transaction(this, type);
 
-		TakeDatabaseLock(true);
+		tran.Init(ulong.MaxValue, TransactionSource.Internal, null, true);
 
-		ulong tranId;
-		lock (tranSync)
+		while (true)
 		{
 			versions = this.versions.Clone();
-			versions.TTTraceState();
 			tran.InitReadVersion(versions.ReadVersion);
-			tranId = this.versions.GetNextTranId();
-			gc.InsertTransaction(tran);
+			if (gc.TryInsertTransaction(tran))
+				break;
 		}
-
-		TTTrace.Write(engine.TraceId, id, tranId);
-		tran.Init(tranId, TransactionSource.Internal, null, true);
 
 		return tran;
 	}
 
-	public Transaction CreateTransaction(TransactionType type, ulong readVersion,
-		TransactionSource source, IReplica originReplica, bool allowOtherWriteTransactions)
+	public Transaction CreateTransaction(TransactionType type, TransactionSource source,
+		IReplica originReplica, bool allowOtherWriteTransactions)
 	{
-		TTTrace.Write(engine.TraceId, id, (byte)type, readVersion, (byte)source, this.versions.ReadVersion, this.versions.CommitVersion);
+		TTTrace.Write(engine.TraceId, id, (byte)type, (byte)source, this.versions.ReadVersion, this.versions.CommitVersion);
 
 		Transaction tran = new Transaction(this, type);
 
-		TakeDatabaseLock(type == TransactionType.Read || allowOtherWriteTransactions);
-
 		ulong tranId = ulong.MaxValue;
 		if (type == TransactionType.ReadWrite)
-			tranId = versions.GetNextTranId();
+			tranId = GetNextTranId();
 
-		lock (tranSync)
+		while (true)
 		{
-			tran.InitReadVersion(readVersion == 0 ? versions.ReadVersion : readVersion);
-			gc.InsertTransaction(tran);
+			tran.InitReadVersion(versions.ReadVersion);
+			if (gc.TryInsertTransaction(tran))
+				break;
 		}
 
-		TTTrace.Write(engine.TraceId, id, tranId);
+		TTTrace.Write(engine.TraceId, id, tranId, tran.ReadVersion);
 		tran.Init(tranId, source, originReplica, allowOtherWriteTransactions);
 
 		return tran;
@@ -651,30 +617,13 @@ internal unsafe sealed partial class Database
 	public void TransactionCompleted(Transaction tran)
 	{
 		TTTrace.Write(engine.TraceId, id, tran.Id);
+		gc.TransactionCompleted(tran);
+	}
 
-		Transaction lastReader = null;
-		lock (tranSync)
-		{
-			lastReader = gc.TransactionCompleted(tran);
-		}
-
-		if (tran.Type == TransactionType.ReadWrite)
-		{
-			TransactionContext tc = tran.Context;
-			for (int i = 0; i < tc.MergedWith.Count; i++)
-			{
-				lock (tranSync)
-				{
-					Transaction temp = gc.TransactionCompleted(tc.MergedWith[i]);
-					if (temp != null)
-						lastReader = temp;
-				}
-			}
-		}
-
-		gc.PrepareGarbage(tran, lastReader, versions.ReadVersion);
-
-		ReleaseDatabaseLock(tran.AllowsOtherTrans);
+	public void ProcessGarbage(Transaction tran)
+	{
+		Checker.AssertTrue(tran.Type == TransactionType.ReadWrite);
+		gc.ProcessGarbage(tran);
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -742,24 +691,33 @@ internal unsafe sealed partial class Database
 
 	internal bool HasTransactions()
 	{
-		lock (tranSync)
-		{
-			return gc.HasActiveTransactions();
-		}
+		return gc.HasActiveTransactions();
 	}
 
 	public void CancelAllTransactions()
 	{
 		TTTrace.Write(engine.TraceId);
 		trace.Debug("Cancelling all transactions in database {0}.", id);
+		gc.CancelTransactions();
+	}
 
-		lock (tranSync)
+	private void InitCurrTranIds()
+	{
+		currTransIds = (ulong*)CacheLineMemoryManager.Allocate(sizeof(ulong), out currTransIdsHandle, false);
+		ulong delta = (MaxTranId - MinTranId) / (ulong)ProcessorNumber.CoreCount;
+		for (int i = 0; i < ProcessorNumber.CoreCount; i++)
 		{
-			gc.ForEachActiveTransaction(tran =>
-			{
-				tran.CancelRequested = true;
-			});
+			ulong* curr = (ulong*)CacheLineMemoryManager.GetBuffer(currTransIds, i);
+			*curr = MinTranId + (ulong)i * delta;
 		}
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	private ulong GetNextTranId()
+	{
+		int procNum = ProcessorNumber.GetCore();
+		NativeInterlocked64* curr = (NativeInterlocked64*)CacheLineMemoryManager.GetBuffer(currTransIds, procNum);
+		return (ulong)curr->Increment();
 	}
 
 	public HashIndexReaderBase<TKey1> GetHashIndexReader<TKey1>(short hashIndexId)
@@ -1102,11 +1060,12 @@ internal unsafe sealed partial class Database
 
 	public void AutosnapshotIfNeeded()
 	{
-		TTTrace.Write(engine.TraceId, id);
-		trace.Debug("Creating automatic snapshot of database {0}.", id);
-
-		if (persister != null && engine.Settings.AutoSnapshotOnShutdown)
+		if (persister != null && engine.Settings.AutoSnapshotOnShutdown && id == DatabaseId.User)
+		{
+			TTTrace.Write(engine.TraceId, id);
+			trace.Info("Creating automatic snapshot...");
 			persister.CreateSnapshots();
+		}
 	}
 
 	public void Dispose()
@@ -1120,6 +1079,8 @@ internal unsafe sealed partial class Database
 		trace.Debug("Disposing database {0}.", id);
 
 		gc.Dispose();
+
+		CacheLineMemoryManager.Free(currTransIdsHandle);
 
 		int workerCount = Engine.Settings.AllowInternalParallelization ? ProcessorNumber.CoreCount : 1;
 		string workerName = string.Format("{0}: vlx-DatabaseDisposeWorker", Engine.Trace.Name);

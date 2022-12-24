@@ -6,6 +6,7 @@ using static System.Math;
 using VeloxDB.Common;
 using VeloxDB.Descriptor;
 using System.Threading;
+using System.Reflection.PortableExecutable;
 
 namespace VeloxDB.Storage.Persistence;
 
@@ -202,8 +203,7 @@ internal unsafe sealed class DatabaseRestorer
 			sfr.Restore(out versions);
 		}
 
-		using (LogFileReader reader = new LogFileReader(database.Engine.Trace.Name,
-			restoreLog.LogFileNames[0], restoreLog.LogHeaders[0], database.Engine.MemoryManager))
+		using (LogFileReader reader = new LogFileReader(database.Engine.Trace.Name, restoreLog.LogFileNames[0], restoreLog.LogHeaders[0]))
 		{
 			ulong newInvalidLogSeqNum = RestoreLogFile(reader, restoreLog.LogIndex, stoppingLogSeqNum, versions, out filePosition);
 			if (newInvalidLogSeqNum != UnusedLogSeqNum)
@@ -223,8 +223,7 @@ internal unsafe sealed class DatabaseRestorer
 		CreateSnapshot(restoreLog.LogDesc, restoreLog.LogIndex, restoreLog.LogHeaders[1], versions, restoreLog.FileIndexes[1]);
 		File.Delete(restoreLog.SnapshotFileName);
 
-		using (LogFileReader reader = new LogFileReader(database.Engine.Trace.Name,
-			restoreLog.LogFileNames[1], restoreLog.LogHeaders[1], database.Engine.MemoryManager))
+		using (LogFileReader reader = new LogFileReader(database.Engine.Trace.Name, restoreLog.LogFileNames[1], restoreLog.LogHeaders[1]))
 		{
 			ulong newInvalidLogSeqNum = RestoreLogFile(reader, restoreLog.LogIndex, stoppingLogSeqNum, versions, out filePosition);
 			return newInvalidLogSeqNum;
@@ -250,51 +249,99 @@ internal unsafe sealed class DatabaseRestorer
 		File.Delete(tempFileName);
 	}
 
-	private void SetLogRestoreActions(out PendingRestoreOperations pendingOperations, out CapacityGate capacityGate)
+	private void SetLogRestoreActions(int logIndex, ulong stoppingLogSeqNum,
+		out PendingRestoreOperations pendingOperations, out DatabaseVersions[] versions)
 	{
 		PendingRestoreOperations pendingOps = pendingOperations =
 			new PendingRestoreOperations(database.TraceId, database.Engine.MemoryManager);
 
-		CapacityGate gate = capacityGate = new CapacityGate(database.Engine.Settings.LogMaxMemorySize);
-
+		versions = new DatabaseVersions[workers.WorkerCount];
 		Action<CommonWorkerParam>[] actions = new Action<CommonWorkerParam>[workers.WorkerCount];
 		for (int i = 0; i < actions.Length; i++)
 		{
-			LogWorkerParam p = new LogWorkerParam() { Reader = new ChangesetReader(), Block = new ChangesetBlock() };
+			versions[i] = new DatabaseVersions(database);
+			LogWorkerParam p = new LogWorkerParam()
+			{
+				LogIndex = logIndex,
+				Reader = new ChangesetReader(),
+				Block = new ChangesetBlock(),
+				Versions = versions[i],
+				StoppingLogSeqNum = stoppingLogSeqNum
+			};
+
 			actions[i] = dp =>
 			{
-				LogWorkerItem item = dp.LogWorkerItem;
-				for (int k = 0; k < item.LogItems.Length; k++)
-				{
-					LogItem logItem = item.LogItems[k];
-					TTTrace.Write(database.TraceId, database.Id, item.IsAlignment, logItem.CommitVersion,
-						logItem.LogSeqNum, logItem.AffectedLogsMask, logItem.ChangesetCount, logItem.GlobalTerm.Hight,
-						logItem.GlobalTerm.Low, logItem.LocalTerm, logItem.LogSeqNum,
-						logItem.Alignment != null ? (int)logItem.Alignment.Type : 0);
-
-					LogChangeset curr = logItem.ChangesetsList;
-					for (int i = 0; i < logItem.ChangesetCount; i++)
-					{
-#if TEST_BUILD
-						if (TryGetSlowdown(logItem.CommitVersion, i, out int dur))
-							Thread.Sleep(dur);
-#endif
-						using (curr)
-						{
-							p.Reader.Init(database.ModelDesc, curr);
-							database.Engine.RestoreChangeset(database, p.Block, pendingOps,
-								p.Reader, logItem.CommitVersion, item.IsAlignment);
-						}
-
-						curr = curr.Next;
-					}
-				}
-
-				gate.Exit(item.Size);
+				if (dp.LogWorkerItem.LogItems != null)
+					RestoreLogItems(p, dp, pendingOps);
+				else
+					RestoreLogBlock(p, dp, pendingOps);
 			};
 		}
 
 		workers.SetActions(actions);
+	}
+
+	private void RestoreLogBlock(LogWorkerParam p, CommonWorkerParam dp, PendingRestoreOperations pendingOps)
+	{
+		using (dp.LogWorkerItem.BlockBuffer)
+		{
+			byte* buffer = (byte*)dp.LogWorkerItem.BlockBuffer.Value;
+			long size = dp.LogWorkerItem.BlockBuffer.Size;
+
+			if (LogFileReader.TryExtractLogItems(database.Engine.MemoryManager, buffer, size, p.LogItems, p.StoppingLogSeqNum))
+			{
+#if TTTRACE
+				for (int i = 0; i < p.LogItems.Count; i++)
+				{
+					TTTrace.Write(database.TraceId, database.Id, p.LogItems[i].CommitVersion, p.LogItems[i].LogSeqNum,
+						p.LogItems[i].AffectedLogsMask, p.LogItems[i].ChangesetCount);
+				}
+#endif
+
+				dp.LogWorkerItem = new LogWorkerItem() { IsAlignment = dp.LogWorkerItem.IsAlignment, LogItems = p.LogItems };
+				RestoreLogItems(p, dp, pendingOps);
+
+				for (int i = 0; i < p.LogItems.Count; i++)
+				{
+					LogItem logItem = p.LogItems[i];
+					p.Versions.TransactionRestored(logItem.GlobalTerm, logItem.LocalTerm,
+						logItem.CommitVersion, logItem.LogSeqNum);
+					UpdateSplitTransaction(logItem, p.LogIndex);
+				}
+			}
+
+			p.LogItems.Clear();
+		}
+	}
+
+	private void RestoreLogItems(LogWorkerParam p, CommonWorkerParam dp, PendingRestoreOperations pendingOps)
+	{
+		LogWorkerItem item = dp.LogWorkerItem;
+		for (int k = 0; k < item.LogItems.Count; k++)
+		{
+			LogItem logItem = item.LogItems[k];
+			TTTrace.Write(database.TraceId, database.Id, item.IsAlignment, logItem.CommitVersion,
+				logItem.LogSeqNum, logItem.AffectedLogsMask, logItem.ChangesetCount, logItem.GlobalTerm.Hight,
+				logItem.GlobalTerm.Low, logItem.LocalTerm, logItem.Alignment != null ? (int)logItem.Alignment.Type : 0);
+
+			LogChangeset curr = logItem.ChangesetsList;
+			for (int i = 0; i < logItem.ChangesetCount; i++)
+			{
+#if TEST_BUILD
+				if (TryGetSlowdown(logItem.CommitVersion, i, out int dur))
+					Thread.Sleep(dur);
+#endif
+
+				using (curr)
+				{
+					p.Reader.Init(database.ModelDesc, curr);
+					database.Engine.RestoreChangeset(database, p.Block, pendingOps,
+						p.Reader, logItem.CommitVersion, item.IsAlignment);
+				}
+
+				curr = curr.Next;
+			}
+		}
 	}
 
 	private unsafe ulong RestoreLogFile(LogFileReader reader, int logIndex,
@@ -305,130 +352,39 @@ internal unsafe sealed class DatabaseRestorer
 
 		trace.Debug("Restoring log file, logIndex={0}.", logIndex);
 
-		SetLogRestoreActions(out PendingRestoreOperations restoreOps, out CapacityGate gate);
+		SetLogRestoreActions(logIndex, stoppingLogSeqNum, out PendingRestoreOperations restoreOps, out DatabaseVersions[] perWorkerVersions);
 
 		List<LogItem> logItems = new List<LogItem>(8);
 		filePosition = 0;
 
-		while (reader.TryRead(logItems, stoppingLogSeqNum))
+		while (reader.TryReadBlock(out var buffer, out bool isStandard))
 		{
-			if (logItems[0].Alignment != null)  // Beginning of alignment will come as a single logItem
+			if (isStandard)
 			{
-				LogItem beginLogItem = logItems[0];
-
-				TTTrace.Write(database.TraceId, database.Id, logIndex, beginLogItem.CommitVersion, beginLogItem.ChangesetCount);
-				logItems[0].TTTraceState(database.TraceId);
-				Checker.AssertTrue(logItems[0].Alignment.Type == AlignmentTransactionType.Beginning);
-
-				// We must not interleave alignment restoration with regular transactions since alignment might
-				// update records to a smaller version which would break the parallelization logic (which uses
-				// previous version to order updates of a single object). During alignment every object is only
-				// touched at most once, so there is no need to order anything.
-				workers.Drain();
-
-				// Extract and process rewind if present
-				if (beginLogItem.ChangesetsList != null)
-				{
-					ChangesetReader chr = new ChangesetReader();
-					using (Changeset ch = new Changeset(new LogChangeset[] { beginLogItem.ChangesetsList }, false))
-					{
-						chr.Init(database.ModelDesc, ch);
-						if (chr.TryReadRewindBlock(out ulong rewindVersion))
-						{
-							versions.TryRewind(rewindVersion);
-							TTTrace.Write(database.TraceId, logIndex, rewindVersion, beginLogItem.CommitVersion,
-								beginLogItem.LogSeqNum, beginLogItem.AffectedLogsMask, beginLogItem.ChangesetCount);
-
-							beginLogItem.DisposeFirstChangeset();
-							logItems[0] = beginLogItem;
-						}
-					}
-				}
-
-				versions.AlignmentRestored(logItems[0].Alignment.GlobalVersions);
-
-				// Load all alignment log items until we encounter End
-				while (true)
-				{
-					for (int i = 0; i < logItems.Count; i++)
-					{
-						long size = logItems[i].SerializedSize;
-						gate.Enter(size);
-						workers.EnqueueWork(new CommonWorkerParam()
-						{
-							LogWorkerItem = new LogWorkerItem()
-							{
-								LogItems = new LogItem[] { logItems[i] },
-								Size = size,
-								IsAlignment = true,
-							}
-						});
-
-						TTTrace.Write(database.TraceId, database.Id, logItems[i].GlobalTerm.Low, logItems[i].GlobalTerm.Hight,
-							logItems[i].LocalTerm, logItems[i].CommitVersion, logItems[i].LogSeqNum);
-
-						versions.TransactionRestored(logItems[i].GlobalTerm, logItems[i].LocalTerm,
-							logItems[i].CommitVersion, logItems[i].LogSeqNum);
-
-						UpdateSplitTransaction(logItems[i], logIndex);
-					}
-
-					if (logItems[0].Alignment != null && logItems[0].Alignment.Type == AlignmentTransactionType.End)
-					{
-						TTTrace.Write(database.TraceId, database.Id, logIndex);
-						break;
-					}
-
-					logItems.Clear();
-					if (!reader.TryRead(logItems, stoppingLogSeqNum))
-					{
-						TTTrace.Write(database.TraceId, database.Id, logIndex);
-						workers.Drain();
-						return beginLogItem.LogSeqNum;
-					}
-				}
-
-				// Again, we need to prevent interleaving of alignment transactions with regular transactions
-				workers.Drain();
-			}
-			else
-			{
-				long size = 0;
-				for (int i = 0; i < logItems.Count; i++)
-				{
-					TTTrace.Write(database.TraceId, database.Id, logIndex, logItems[i].CommitVersion, logItems[i].LogSeqNum,
-						logItems[i].AffectedLogsMask, logItems[i].ChangesetCount);
-					size += logItems[i].SerializedSize;
-				}
-
-				bool drain = !logItems[0].CanRunParallel;
-				if (drain)
-					workers.Drain();
-
-				gate.Enter(size);
 				workers.EnqueueWork(new CommonWorkerParam()
 				{
 					LogWorkerItem = new LogWorkerItem()
 					{
-						LogItems = logItems.ToArray(),
-						Size = size,
+						BlockBuffer = buffer,
 						IsAlignment = false,
 					}
 				});
-
-				if (drain)
-					workers.Drain();
-
-				for (int i = 0; i < logItems.Count; i++)
+			}
+			else
+			{
+				using (buffer)
 				{
-					LogItem logItem = logItems[i];
-					versions.TransactionRestored(logItem.GlobalTerm, logItem.LocalTerm,
-						logItem.CommitVersion, logItem.LogSeqNum);
-					UpdateSplitTransaction(logItem, logIndex);
+					if (!LogFileReader.TryExtractLogItems(database.Engine.MemoryManager,
+						(byte*)buffer.Value, buffer.Size, logItems, stoppingLogSeqNum))
+					{
+						break;
+					}
 				}
+
+				if (!TryProcessNonParallel(logIndex, reader, logItems, perWorkerVersions, ref stoppingLogSeqNum))
+					return stoppingLogSeqNum;
 			}
 
-			logItems.Clear();
 		}
 
 		workers.Drain();
@@ -436,8 +392,133 @@ internal unsafe sealed class DatabaseRestorer
 
 		restoreOps.ValidateEmpty();
 
+		for (int i = 0; i < perWorkerVersions.Length; i++)
+		{
+			versions.MergeFrom(perWorkerVersions[i]);
+		}
+
 		TTTrace.Write(database.TraceId, database.Id, logIndex, filePosition);
 		return UnusedLogSeqNum;
+	}
+
+	private bool TryProcessNonParallel(int logIndex, LogFileReader reader, List<LogItem> logItems,
+		DatabaseVersions[] perWorkerVersions, ref ulong stoppingLogSeqNum)
+	{
+		if (logItems[0].Alignment != null)  // Beginning of alignment will come as a single logItem
+		{
+			if (!TryProcessAlignment(logIndex, reader, logItems, perWorkerVersions, ref stoppingLogSeqNum))
+				return false;
+		}
+		else
+		{
+			workers.Drain();
+			workers.EnqueueWork(new CommonWorkerParam()
+			{
+				LogWorkerItem = new LogWorkerItem()
+				{
+					LogItems = new List<LogItem>(logItems),
+					IsAlignment = false,
+				}
+			});
+
+			workers.Drain();
+
+			for (int i = 0; i < logItems.Count; i++)
+			{
+				LogItem logItem = logItems[i];
+				perWorkerVersions.ForEach(x => x.TransactionRestored(logItem.GlobalTerm, logItem.LocalTerm,
+					logItem.CommitVersion, logItem.LogSeqNum));
+				UpdateSplitTransaction(logItem, logIndex);
+			}
+		}
+
+		logItems.Clear();
+
+		return true;
+	}
+
+	private bool TryProcessAlignment(int logIndex, LogFileReader reader, List<LogItem> logItems,
+		DatabaseVersions[] perWorkerVersions, ref ulong stoppingLogSeqNum)
+	{
+		LogItem beginLogItem = logItems[0];
+
+		TTTrace.Write(database.TraceId, database.Id, logIndex, beginLogItem.CommitVersion, beginLogItem.ChangesetCount);
+		logItems[0].TTTraceState(database.TraceId);
+		Checker.AssertTrue(logItems[0].Alignment.Type == AlignmentTransactionType.Beginning);
+
+		// We must not interleave alignment restoration with regular transactions since alignment might
+		// update records to a smaller version which would break the parallelization logic (which uses
+		// previous version to order updates of a single object). During alignment every object is only
+		// touched at most once, so there is no need to order anything.
+		workers.Drain();
+
+		// Extract and process rewind if present
+		if (beginLogItem.ChangesetsList != null)
+		{
+			ChangesetReader chr = new ChangesetReader();
+			chr.Init(database.ModelDesc, beginLogItem.ChangesetsList);
+			if (chr.TryReadRewindBlock(out ulong rewindVersion))
+			{
+				perWorkerVersions.ForEach(x => x.TryRewind(rewindVersion));
+				TTTrace.Write(database.TraceId, logIndex, rewindVersion, beginLogItem.CommitVersion,
+					beginLogItem.LogSeqNum, beginLogItem.AffectedLogsMask, beginLogItem.ChangesetCount);
+
+				beginLogItem.DisposeFirstChangeset();
+				logItems[0] = beginLogItem;
+			}
+		}
+
+		perWorkerVersions.ForEach(x => x.AlignmentRestored(logItems[0].Alignment.GlobalVersions));
+
+		// Load all alignment log items until we encounter End
+		while (true)
+		{
+			for (int i = 0; i < logItems.Count; i++)
+			{
+				long size = logItems[i].SerializedSize;
+				workers.EnqueueWork(new CommonWorkerParam()
+				{
+					LogWorkerItem = new LogWorkerItem()
+					{
+						LogItems = new List<LogItem> { logItems[i] },
+						IsAlignment = true,
+					}
+				});
+
+				TTTrace.Write(database.TraceId, database.Id, logItems[i].GlobalTerm.Low, logItems[i].GlobalTerm.Hight,
+					logItems[i].LocalTerm, logItems[i].CommitVersion, logItems[i].LogSeqNum);
+
+				perWorkerVersions.ForEach(x => x.TransactionRestored(logItems[i].GlobalTerm, logItems[i].LocalTerm,
+					logItems[i].CommitVersion, logItems[i].LogSeqNum));
+
+				UpdateSplitTransaction(logItems[i], logIndex);
+			}
+
+			if (logItems[0].Alignment != null && logItems[0].Alignment.Type == AlignmentTransactionType.End)
+			{
+				TTTrace.Write(database.TraceId, database.Id, logIndex);
+				break;
+			}
+
+			logItems.Clear();
+
+			if (!reader.TryReadBlock(out var buffer, out _) || !LogFileReader.TryExtractLogItems(database.Engine.MemoryManager,
+					(byte*)buffer.Value, buffer.Size, logItems, stoppingLogSeqNum))
+			{
+				TTTrace.Write(database.TraceId, database.Id, logIndex);
+				buffer.Dispose();
+				workers.Drain();
+				stoppingLogSeqNum = beginLogItem.LogSeqNum;
+				return false;
+			}
+
+			buffer.Dispose();
+		}
+
+		// Again, we need to prevent interleaving of alignment transactions with regular transactions
+		workers.Drain();
+
+		return true;
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -460,23 +541,26 @@ internal unsafe sealed class DatabaseRestorer
 		if (Utils.IsPowerOf2(item.AffectedLogsMask & restoredLogMask))  // Only single log affected
 			return;
 
-		byte invLogMask = (byte)(~(uint)(1 << logIndex));
+		byte inverseLogMask = (byte)(~(uint)(1 << logIndex));
 
-		TTTrace.Write(database.TraceId, database.Id, logIndex, item.CommitVersion, invLogMask, item.AffectedLogsMask);
+		TTTrace.Write(database.TraceId, database.Id, logIndex, item.CommitVersion, inverseLogMask, item.AffectedLogsMask);
 
-		if (!splitTrans.TryGetValue(item.LogSeqNum, out byte affectedLogsMask))
-			affectedLogsMask = FilterOutSnapshotedLog(item, logIndex, item.AffectedLogsMask);
-
-		affectedLogsMask &= invLogMask;
-		TTTrace.Write(database.TraceId, affectedLogsMask);
-
-		if (affectedLogsMask == 0)
+		lock (splitTrans)
 		{
-			splitTrans.Remove(item.LogSeqNum);
-		}
-		else
-		{
-			splitTrans[item.LogSeqNum] = affectedLogsMask;
+			if (!splitTrans.TryGetValue(item.LogSeqNum, out byte affectedLogsMask))
+				affectedLogsMask = FilterOutSnapshotedLog(item, logIndex, item.AffectedLogsMask);
+
+			affectedLogsMask &= inverseLogMask;
+			TTTrace.Write(database.TraceId, affectedLogsMask);
+
+			if (affectedLogsMask == 0)
+			{
+				splitTrans.Remove(item.LogSeqNum);
+			}
+			else
+			{
+				splitTrans[item.LogSeqNum] = affectedLogsMask;
+			}
 		}
 	}
 
@@ -666,15 +750,19 @@ internal unsafe sealed class DatabaseRestorer
 
 	public struct LogWorkerItem
 	{
-		public LogItem[] LogItems { get; set; }
-		public long Size { get; set; }
+		public List<LogItem> LogItems { get; set; }
 		public bool IsAlignment { get; set; }
+		public LogBufferPool.Buffer BlockBuffer { get; set; }
 	}
 
 	private class LogWorkerParam
 	{
+		public int LogIndex { get; set; }
 		public ChangesetBlock Block { get; set; }
 		public ChangesetReader Reader { get; set; }
+		public DatabaseVersions Versions { get; set; }
+		public ulong StoppingLogSeqNum { get; set; }
+		public List<LogItem> LogItems { get; set; } = new List<LogItem>(8);
 	}
 
 #if TEST_BUILD

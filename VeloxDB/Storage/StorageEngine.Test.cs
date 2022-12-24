@@ -28,12 +28,12 @@ internal unsafe sealed partial class StorageEngine
 
 	internal void CreateSnapshot(long databaseId, int logIndex)
 	{
-		databases[databaseId].Persister.CreateLogSnapshotAfterRestore(logIndex);
+		databases[databaseId].Persister.CreateLogSnapshotAfterRestore(logIndex + 1);	// Skip master log file
 	}
 
 	internal void PreventLogging(long databaseId, int logIndex)
 	{
-		databases[databaseId].Persister.PreventLogging(logIndex);
+		databases[databaseId].Persister.PreventLogging(logIndex + 1);	// Skip master log file
 	}
 
 	internal void ValidateGarbage()
@@ -90,14 +90,6 @@ internal unsafe sealed partial class StorageEngine
 		LocalSystemDatabase.DrainGC();
 		GlobalSystemDatabase.DrainGC();
 		UserDatabase.DrainGC();
-	}
-
-	public void Persist(string dir, int logIndex)
-	{
-		for (int i = 0; i < databases.Length; i++)
-		{
-			databases[i].Persist(dir, logIndex);
-		}
 	}
 
 	public ulong GetReadVersion(long databaseId)

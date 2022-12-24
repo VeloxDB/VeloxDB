@@ -27,9 +27,9 @@ internal interface IReplicator
 	public ReplicationDescriptor ReplicationDesc { get; }
 	void Start();
 	bool IsTransactionAllowed(long databaseId, TransactionSource source, IReplica sourceReplica, TransactionType type, out DatabaseErrorDetail reason);
-	void PreTransactionCommit(Transaction tran, out int commitHandle);
-	void PostTransactionCommit(Transaction tran, bool isCommited, int commitHandle);
-	void CommittingTransaction(Transaction tran);
+	void PreTransactionCommit(Transaction tran);
+	void PostTransactionCommit(Transaction tran, bool isCommited);
+	void CommitTransaction(Transaction tran);
 	void TransactionFailed();
 	IAsyncCleanup Dispose();
 

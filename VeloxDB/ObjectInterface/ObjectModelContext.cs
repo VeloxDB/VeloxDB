@@ -82,6 +82,20 @@ internal sealed class ObjectModelContext
 	public long[] ToDelete2 => toDelete2;
 	public ScanClassesSet ScanClasses => scanClasses;
 
+	public void TryReserverIdRange()
+	{
+		if (unusedIdsCount == 0)
+		{
+			try
+			{
+				currId = idRange.GetIdRange(out unusedIdsCount);
+			}
+			catch (DatabaseException)
+			{
+			}
+		}
+	}
+
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public long GetId()
 	{

@@ -69,7 +69,15 @@ public unsafe sealed partial class ObjectModel
 		toDelete1 = context.ToDelete1;
 		toDelete2 = context.ToDelete2;
 
-		transaction = engine.CreateTransaction(tranType);
+		try
+		{
+			transaction = engine.CreateTransaction(tranType);
+		}
+		catch
+		{
+			contextPool.PutContext(context);
+			throw;
+		}
 	}
 
 	internal bool Disposed => disposed;
@@ -240,7 +248,7 @@ public unsafe sealed partial class ObjectModel
 		*(long*)buffer = id;
 		DatabaseObject obj = cd.Creator(this, cd, buffer, DatabaseObjectState.Inserted, changeList);
 
-		return (T)(DatabaseObject)obj;
+		return (T)obj;
 	}
 
 	/// <summary>
@@ -958,7 +966,7 @@ public unsafe sealed partial class ObjectModel
 
 	private void ApplyChanges(bool isCommit)
 	{
-		if (changeList.Count == 0)
+		if (changeList.Count == 0 && !deletedSet.HasDeleted)
 			return;
 
 		if (classScanCount > 0)
@@ -1093,7 +1101,7 @@ public unsafe sealed partial class ObjectModel
 		DisposeInternal(false);
 	}
 
-	internal void CommitAsyncAndDispose(Action<DatabaseException> callback)
+	internal void CommitAsyncAndDispose(Action<object, DatabaseException> callback, object state)
 	{
 		ValidateThread();
 
@@ -1106,7 +1114,7 @@ public unsafe sealed partial class ObjectModel
 
 		try
 		{
-			engine.CommitTransactionAsync(transaction, callback);
+			engine.CommitTransactionAsync(transaction, callback, state);
 		}
 		catch (Exception e)
 		{

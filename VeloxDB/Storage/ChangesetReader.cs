@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.Runtime.CompilerServices;
 using VeloxDB.Common;
 using VeloxDB.Descriptor;
@@ -56,8 +57,7 @@ internal unsafe sealed class ChangesetReader
 	{
 		for (int i = 0; i < block.OperationCount; i++)
 		{
-			reader.ReadLong();  // Operation header
-
+			reader.GetOperationHeader();
 			reader.ReadLong();
 			for (int j = 1; j < block.PropertyCount; j++)
 			{
@@ -87,112 +87,182 @@ internal unsafe sealed class ChangesetReader
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public void ReadSimpleValue(byte* buffer, int size)
 	{
-		EnsureSpace(size);
+		if (offset + size <= bufferLength)
+		{
+			if (size == 8)
+			{
+				*((long*)buffer) = *(long*)(this.buffer + offset);
+				offset += 8;
+				TTTrace.Write(*((long*)buffer));
+			}
+			else if (size == 4)
+			{
+				*((int*)buffer) = *(int*)(this.buffer + offset);
+				offset += 4;
+				TTTrace.Write(*((int*)buffer));
+			}
+			else if (size == 2)
+			{
+				*((short*)buffer) = *(short*)(this.buffer + offset);
+				offset += 2;
+				TTTrace.Write(*((short*)buffer));
+			}
+			else
+			{
+				*buffer = *(this.buffer + offset++);
+				TTTrace.Write(*((byte*)buffer));
+			}
 
-		if (size == 8)
-		{
-			*((long*)buffer) = *(long*)(this.buffer + offset);
-			TTTrace.Write(*((long*)buffer));
-			offset += 8;
+			return;
 		}
-		else if (size == 4)
-		{
-			*((int*)buffer) = *(int*)(this.buffer + offset);
-			TTTrace.Write(*((int*)buffer));
-			offset += 4;
-		}
-		else if (size == 2)
-		{
-			*((short*)buffer) = *(short*)(this.buffer + offset);
-			TTTrace.Write(*((short*)buffer));
-			offset += 2;
-		}
-		else
-		{
-			*buffer = *(this.buffer + offset++);
-			TTTrace.Write(*((byte*)buffer));
-		}
+
+		ReadBytes(buffer, size);
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public byte ReadByte()
 	{
-		EnsureSpace(1);
-		return buffer[offset++];
+		if (offset + 1 <= bufferLength)
+			return buffer[offset++];
+
+		byte b;
+		ReadBytes((byte*)&b, 1);
+		return b;
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public short ReadShort()
 	{
-		EnsureSpace(2);
-		short v = *((short*)(buffer + offset));
-		offset += 2;
-		return v;
+		if (offset + 2 <= bufferLength)
+		{
+			short v = *((short*)(buffer + offset));
+			offset += 2;
+			return v;
+		}
+
+		short b;
+		ReadBytes((byte*)&b, 2);
+		return b;
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public int ReadInt()
 	{
-		EnsureSpace(4);
-		int v = *((int*)(buffer + offset));
-		offset += 4;
-		return v;
+		if (offset + 4 <= bufferLength)
+		{
+			int v = *((int*)(buffer + offset));
+			offset += 4;
+			return v;
+		}
+
+		int b;
+		ReadBytes((byte*)&b, 4);
+		return b;
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public OperationHeader GetOperationHeader()
 	{
-		EnsureSpace(8);
-		ulong* p = ((ulong*)(buffer + offset));
-		offset += 8;
-		return new OperationHeader(p);
+		if (offset + 8 <= bufferLength)
+		{
+			ulong* p = ((ulong*)(buffer + offset));
+			offset += 8;
+			return new OperationHeader(p);
+		}
+
+		return GetOperationHeaderSplit();
+	}
+
+	[MethodImpl(MethodImplOptions.NoInlining)]
+	private OperationHeader GetOperationHeaderSplit()
+	{
+		byte* p1 = buffer + offset;
+		int size1 = bufferLength - offset;
+		offset += size1;
+		EnsureSpace(8 - size1);
+		byte* p2 = buffer + offset;
+		offset += 8 - size1;
+		return new OperationHeader(p1, size1, p2);
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public long ReadLong()
 	{
-		EnsureSpace(8);
-		long v = *((long*)(buffer + offset));
-		offset += 8;
-		return v;
+		if (offset + 8 <= bufferLength)
+		{
+			long v = *((long*)(buffer + offset));
+			offset += 8;
+			return v;
+		}
+
+		long b;
+		ReadBytes((byte*)&b, 8);
+		return b;
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public float ReadFloat()
 	{
-		EnsureSpace(4);
-		float v = *((float*)(buffer + offset));
-		offset += 4;
-		return v;
+		if (offset + 4 <= bufferLength)
+		{
+			EnsureSpace(4);
+			float v = *((float*)(buffer + offset));
+			offset += 4;
+			return v;
+		}
+
+		float b;
+		ReadBytes((byte*)&b, 4);
+		return b;
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public double ReadDouble()
 	{
-		EnsureSpace(8);
-		double v = *((double*)(buffer + offset));
-		offset += 8;
-		return v;
+		if (offset + 8 <= bufferLength)
+		{
+			EnsureSpace(8);
+			double v = *((double*)(buffer + offset));
+			offset += 8;
+			return v;
+		}
+
+		double b;
+		ReadBytes((byte*)&b, 8);
+		return b;
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public bool ReadBool()
 	{
-		EnsureSpace(1);
-		byte v = *((byte*)(buffer + offset));
-		offset += 1;
-		return v != 0;
+		if (offset + 1 <= bufferLength)
+		{
+			byte v = *((byte*)(buffer + offset));
+			offset += 1;
+			return v != 0;
+		}
+
+		bool b;
+		ReadBytes((byte*)&b, 1);
+		return b;
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public DateTime ReadDateTime()
 	{
-		EnsureSpace(8);
-		long v = *((long*)(buffer + offset));
-		offset += 8;
-		return DateTime.FromBinary(v);
+		if (offset + 8 <= bufferLength)
+		{
+			long v = *((long*)(buffer + offset));
+			offset += 8;
+			return DateTime.FromBinary(v);
+		}
+
+		long b;
+		ReadBytes((byte*)&b, 8);
+		return DateTime.FromBinary(b);
 	}
 
+	[MethodImpl(MethodImplOptions.NoInlining)]
 	public void ReadBytes(byte* ptr, int length)
 	{
 		int r = 0;
@@ -326,7 +396,7 @@ internal unsafe sealed class ChangesetReader
 				throw new DatabaseException(DatabaseErrorDetail.CreateInvalidChangeset());
 		}
 
-		int operationCount = (ushort)ReadShort();
+		int operationCount = ReadByte();
 		int propertyCount = ReadShort();
 
 		if (propertyCount < 0)
@@ -362,7 +432,7 @@ internal unsafe sealed class ChangesetReader
 		}
 	}
 
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	[MethodImpl(MethodImplOptions.NoInlining)]
 	public void SkipBytes(int size)
 	{
 		int r = 0;
@@ -405,17 +475,8 @@ internal unsafe sealed class ChangesetReader
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public void SkipSimpleValue(int size)
 	{
-		EnsureSpace(size);
-		offset += size;
-	}
-
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public byte* GetSimpleValue(int size)
-	{
-		EnsureSpace(size);
-		byte* res = buffer + offset;
-		offset += size;
-		return res;
+		long l;
+		ReadSimpleValue((byte*)&l, size);
 	}
 
 	private void TakeNextLog()
@@ -496,28 +557,65 @@ internal unsafe struct OperationHeader
 {
 	public const ulong NotLastInTranFlag = 0x8000000000000000;
 
-	ulong* p;
+	int size1;
+	ulong* p1;
+	byte* p2;
+
+	ulong value;
+
+	static OperationHeader()
+	{
+		ushort v = 0x0001;
+		byte* b = (byte*)&v;
+		if (b[0] == 0)
+			throw new NotSupportedException("Big endian systems are not supported.");
+	}
 
 	public OperationHeader(ulong* p)
 	{
-		this.p = p;
+		this.p1 = p;
+		this.size1 = sizeof(ulong);
+		this.p2 = null;
+		value = *p1;
 	}
 
-	public ulong* Pointer => p;
-	public ulong PreviousVersion => *p & 0x7fffffffffffffff;
-	public bool IsLastInTransaction => (*p & 0x8000000000000000) == 0;
+	public OperationHeader(byte* p1, int size1, byte* p2)
+	{
+		this.p1 = (ulong*)p1;
+		this.size1 = size1;
+		this.p2 = p2;
+
+		ulong v;
+		Utils.CopyMemory(p1, (byte*)&v, size1);
+		Utils.CopyMemory(p2, (byte*)&v + size1, sizeof(ulong) - size1);
+		value = v;
+	}
+
+	public bool IsSplit => p2 != null;
+	public byte* NotLastInTransactionPointer => (byte*)p1;
+	public ulong PreviousVersion => value >> 1;
+	public bool IsLastInTransaction => (value & 0x01) == 0;
 	public bool IsFirstInTransaction => PreviousVersion != 0;
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public void WritePreviousVersion(ulong v)
 	{
-		*p = v;
+		value = v = v << 1;
+		if (p2 == null)
+		{
+			*p1 = value;
+		}
+		else
+		{
+			Utils.CopyMemory((byte*)&v, (byte*)p1, size1);
+			Utils.CopyMemory((byte*)&v + size1, p2, sizeof(ulong) - size1);
+		}
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public void SetNotLastInTransaction()
+	public static void SetNotLastInTransaction(byte* p)
 	{
-		*p |= 0x8000000000000000;
+		*p |= 0x01;
 	}
 }
 

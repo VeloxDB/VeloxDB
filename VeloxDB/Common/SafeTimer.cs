@@ -25,7 +25,7 @@ internal sealed class SafeTimer : IDisposable
 
 	public void ModifyIntervalAsync(int dueTime, int period)
 	{
-		Utils.RunAsTaskAndForget(() =>
+		Utils.RunAsObservedTask(() =>
 		{
 			lock (sync)
 			{

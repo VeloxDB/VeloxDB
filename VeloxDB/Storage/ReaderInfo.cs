@@ -1,6 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using VeloxDB.Common;
@@ -382,5 +380,22 @@ internal unsafe struct ReaderInfo
 		}
 
 		throw new CriticalDatabaseException();
+	}
+
+	public static void RemapSlot(ReaderInfo* rd, ushort prevSlot, ushort newSlot)
+	{
+		TTTrace.Write(prevSlot, newSlot, rd->CommReadLockVer, rd->LockCount);
+
+		int sc = rd->SlotCount;
+		ushort* slots = (ushort*)rd;
+
+		for (int i = 0; i < sc; i++)
+		{
+			if (slots[i] == prevSlot)
+			{
+				slots[i] = newSlot;
+				return;
+			}
+		}
 	}
 }

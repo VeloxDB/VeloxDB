@@ -1,8 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Security;
+using System.Threading;
 
 namespace VeloxDB.Common;
 
@@ -37,10 +39,12 @@ internal static class NativeAllocator
 		IntPtr hTargetProcessHandle, out IntPtr lpTargetHandle, uint dwDesiredAccess,
 		[MarshalAs(UnmanagedType.Bool)] bool bInheritHandle, uint dwOptions);
 
+	const int DUPLICATE_SAME_ACCESS = 0x00000002;
+
 	static readonly object largeHeapAllocSync = new object();
 	static readonly IntPtr processHandle;
 
-	const int DUPLICATE_SAME_ACCESS = 0x00000002;
+	private static long totalAllocated;
 
 	[Flags]
 	public enum AllocationType : uint
@@ -69,14 +73,16 @@ internal static class NativeAllocator
 		}
 	}
 
+	public static long TotalAllocated => totalAllocated;
+
 #if HUNT_CORRUPT
-	static HashSet<IntPtr> intPtrs = new HashSet<IntPtr>(1024 * 128);
+	static Dictionary<IntPtr, string> intPtrs = new Dictionary<IntPtr, string>(1024 * 128);
 
 	public unsafe static void Verify()
 	{
 		lock (intPtrs)
 		{
-			foreach (IntPtr item in intPtrs)
+			foreach (IntPtr item in intPtrs.Keys)
 			{
 				ulong* up = (ulong*)item;
 				if (up[0] != corruptionDetectionValue)
@@ -123,7 +129,10 @@ internal static class NativeAllocator
 		up = (ulong*)((byte*)p + size - 8);
 		up[0] = corruptionDetectionValue;
 #if HUNT_CORRUPT
-		intPtrs.Add(p);
+		lock (intPtrs)
+		{
+			intPtrs.Add(p, new StackTrace(true).ToString());
+		}
 #endif
 		return p + 16;
 #else
@@ -135,7 +144,10 @@ internal static class NativeAllocator
 	{
 #if TEST_BUILD
 #if HUNT_CORRUPT
-		intPtrs.Remove(p - 16);
+		lock (intPtrs)
+		{
+			intPtrs.Remove(p - 16, out string st);
+		}
 #endif
 		ulong* up = (ulong*)(p - 16);
 		if (up[0] != corruptionDetectionValue)
@@ -164,6 +176,7 @@ internal static class NativeAllocator
 	private unsafe static IntPtr AllocateWindows(long size)
 	{
 		size += sizeof(long);
+		Interlocked.Add(ref totalAllocated, size);
 
 		IntPtr p;
 		WindowsAllocationType allocType;
@@ -191,7 +204,7 @@ internal static class NativeAllocator
 		if (p == IntPtr.Zero)
 			throw new OutOfMemoryException();
 
-		*((long*)p) = (long)allocType;
+		*((long*)p) = (long)allocType | (long)(size << 2);
 		return IntPtr.Add(p, 8);
 	}
 
@@ -199,7 +212,11 @@ internal static class NativeAllocator
 	{
 		p = IntPtr.Add(p, -8);
 
-		WindowsAllocationType allocType = (WindowsAllocationType)(*(long*)p);
+		WindowsAllocationType allocType = (WindowsAllocationType)(*(long*)p & 0x03);
+		long size = *(long*)p >> 2;
+
+		Interlocked.Add(ref totalAllocated, -size);
+
 		if (allocType == WindowsAllocationType.SmallHeap)
 		{
 			Marshal.FreeHGlobal(p);

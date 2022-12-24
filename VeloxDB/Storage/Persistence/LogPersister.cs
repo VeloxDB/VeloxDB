@@ -1,6 +1,7 @@
 ﻿using System;
 using System.IO;
 using System.Reflection.PortableExecutable;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using VeloxDB.Common;
@@ -15,8 +16,6 @@ internal unsafe sealed class LogPersister : IDisposable
 	const string logNameFormat = "{0}_{1}" + logExtension;
 	const string snapshotNameFormat = "{0}_{1}" + snapshotExtension;
 
-	const int initCapacity = 1024 * 16;
-
 	readonly object sync = new object();
 
 	int logIndex;
@@ -24,10 +23,7 @@ internal unsafe sealed class LogPersister : IDisposable
 
 	LogDescriptor logDesc;
 
-	long pendingSize;
-	int itemCount;
-	LogItem[] pendingItems;
-	LogItem[] pendingItems2;
+	PendingCollection pendingItems;
 
 	bool shouldClose;
 	Thread workerThread;
@@ -48,6 +44,8 @@ internal unsafe sealed class LogPersister : IDisposable
 	ulong maxCommitVersion;
 	ulong maxLogSeqNum;
 
+	Transaction[] transactions;
+
 	SnapshotSemaphore snapshotController;
 
 	public LogPersister(int logIndex, Database database, SnapshotSemaphore snapshotSemaphore, ulong commitVersion, ulong logSeqNum,
@@ -67,15 +65,16 @@ internal unsafe sealed class LogPersister : IDisposable
 
 		this.activeFile = activeFile;
 
-		fileWriter = new LogFileWriter(logFileNames[activeFile], header.timestamp, header.marker,
+		fileWriter = new LogFileWriter(logFileNames[activeFile], logIndex, header.timestamp, header.marker,
 			header.sectorSize, header.isPackedFormat, initPosition, logDesc.MaxSize);
 
-		pendingItems = new LogItem[initCapacity];
-		pendingItems2 = new LogItem[initCapacity];
+		pendingItems = new PendingCollection();
+		transactions = new Transaction[1024];
 
 		workSignal = new SemaphoreSlim(0);
 		workerThread = Utils.RunThreadWithSupressedFlow(Worker, string.Format("{0}: vlx-Persister {1}",
 			database.Engine.Trace.Name, logIndex.ToString()));
+		workerThread.Priority = ThreadPriority.AboveNormal;
 
 		database.Trace.Debug("Log persister created logIndex={0}, commitVersion={1}, logSeqNum={2}.", logIndex, commitVersion, logSeqNum);
 	}
@@ -141,29 +140,15 @@ internal unsafe sealed class LogPersister : IDisposable
 		fileWriter.SetLimitSize(logDesc.MaxSize);
 	}
 
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public void CommitTransaction(Transaction tran)
 	{
-		TransactionContext tc = tran.Context;
+		TTTrace.Write(database.TraceId, database.Id, logIndex, tran.Id, tran.CommitVersion, tran.GlobalTerm.Low,
+			tran.GlobalTerm.Hight, tran.LocalTerm);
 
-		LogItem l = new LogItem(tran.CommitVersion, tran.LocalTerm, tran.GlobalTerm, tc.AffectedLogGroups,
-			tran, tc.Alignment, tran.LogSeqNum, tc.LogChangesets[logIndex]);
-
-		lock (sync)
-		{
-			TTTrace.Write(database.TraceId, database.Id, logIndex, tran.Id, tran.CommitVersion, tran.GlobalTerm.Low,
-				tran.GlobalTerm.Hight, tran.LocalTerm, l.SerializedSize);
-
-			if (itemCount == pendingItems.Length)
-				Array.Resize(ref pendingItems, pendingItems.Length * 2);
-
-			pendingItems[itemCount++] = l;
-			pendingSize += l.SerializedSize;
-
-			if (itemCount == 1)
-				workSignal.Release();
-
-			TTTrace.Write(database.TraceId, database.Id, logIndex, tran.Id, itemCount, activeFile);
-		}
+		pendingItems.Add(tran, logIndex, out bool isFirst);
+		if (isFirst)
+			workSignal.Release();
 	}
 
 	public void RewindVersions(ulong version)
@@ -264,7 +249,7 @@ internal unsafe sealed class LogPersister : IDisposable
 
 			TTTrace.Write(database.TraceId, database.Id, logIndex, activeFile, snapshot.Id);
 
-			fileWriter = new LogFileWriter(logFileNames[activeFile], timestamp,
+			fileWriter = new LogFileWriter(logFileNames[activeFile], logIndex, timestamp,
 				fileWriter.SectorSize, fileWriter.IsPackedFormat, logDesc.MaxSize);
 			fileWriter.Activate();
 
@@ -330,51 +315,40 @@ internal unsafe sealed class LogPersister : IDisposable
 
 	private void WritePending()
 	{
-		TakePendingItems(out int count, out long byteSize);
-
-		if (count == 0)
+		Transaction head = pendingItems.Take();
+		if (head == null)
 			return;
 
-		TTTrace.Write(database.TraceId, database.Id, logIndex, count, byteSize);
+		TTTrace.Write(database.TraceId, database.Id, logIndex);
+
+		int count = 0;
+		while (head != null)
+		{
+			if (count == transactions.Length)
+				Array.Resize(ref transactions, transactions.Length * 2);
+
+			transactions[count++] = head;
+			head = head.Context.NextPersisted[logIndex];
+		}
+
+		Array.Reverse(transactions, 0, count);
 
 #if TEST_BUILD
 		if (!preventLogging)
 #endif
-			fileWriter.WriteItems(pendingItems2, count, byteSize);
+			fileWriter.WriteItems(transactions, count);
 
 		for (int i = 0; i < count; i++)
 		{
-			LogItem li = pendingItems2[i];
+			Transaction tran = transactions[i];
+			TTTrace.Write(database.TraceId, database.Id, logIndex, tran.CommitVersion, tran.LogSeqNum);
 
-			TTTrace.Write(database.TraceId, database.Id, logIndex, li.CommitVersion);
+			Checker.AssertTrue(tran.LogSeqNum > maxLogSeqNum);
+			maxCommitVersion = tran.CommitVersion;
+			maxLogSeqNum = tran.LogSeqNum;
 
-			if (li.LogSeqNum != 0)
-			{
-				if (li.LogSeqNum > maxLogSeqNum)
-				{
-					maxCommitVersion = li.CommitVersion;
-					maxLogSeqNum = li.LogSeqNum;
-				}
-			}
-			else if (li.CommitVersion > maxCommitVersion)
-			{
-				maxCommitVersion = li.CommitVersion;
-			}
-
-			if (li.Transaction != null)
-				li.Transaction.AsyncCommiterFinished();
-		}
-	}
-
-	private void TakePendingItems(out int count, out long byteSize)
-	{
-		lock (sync)
-		{
-			count = itemCount;
-			byteSize = pendingSize;
-			Utils.Exchange(ref pendingItems2, ref pendingItems);
-			itemCount = 0;
-			pendingSize = 0;
+			tran.AsyncCommitterFinished();
+			transactions[i] = null;
 		}
 	}
 
@@ -442,5 +416,35 @@ internal unsafe sealed class LogPersister : IDisposable
 		workSignal.Release();
 		workerThread.Join();
 		fileWriter.Dispose();
+	}
+
+	private sealed class PendingCollection
+	{
+		Transaction head;
+
+		public PendingCollection()
+		{
+		}
+
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		public Transaction Take()
+		{
+			return Interlocked.Exchange(ref head, null);
+		}
+
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		public void Add(Transaction tran, int logIndex, out bool isFirst)
+		{
+			while (true)
+			{
+				Transaction temp = head;
+				tran.Context.NextPersisted[logIndex] = temp;
+				if (object.ReferenceEquals(Interlocked.CompareExchange(ref head, tran, temp), temp))
+				{
+					isFirst = temp == null;
+					return;
+				}
+			}
+		}
 	}
 }

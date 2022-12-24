@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
@@ -91,7 +91,7 @@ internal unsafe static class Utils
 		yield return obj;
 	}
 
-	public static void RunAsTaskAndForget(Action action, string threadName = null,
+	public static void RunAsObservedTask(Action action, string threadName = null,
 		TaskCreationOptions options = TaskCreationOptions.None, int delay = 0)
 	{
 		if (options == TaskCreationOptions.LongRunning)

@@ -18,6 +18,8 @@ internal sealed class JobWorkers<TItem>
 	CountdownEvent drainEvent;
 	volatile CountedManualResetEvent stopDrain;
 
+	volatile Action<int> finalizer;
+
 	private JobWorkers(string workerName, int workerCount, Action<TItem>[] actions,
 		Action<List<TItem>>[] groupedActions, JobQueueMode mode, int maxItemCount = -1)
 	{
@@ -148,13 +150,15 @@ internal sealed class JobWorkers<TItem>
 		}
 	}
 
-	public bool TryEnqueueWork(TItem item, int timeout)
+	public bool TryEnqueueWork(TItem item, int timeout, bool immediateWorkerRequired = false)
 	{
-		return queue.TryEnqueue(new Item<TItem>(item), timeout);
+		return queue.TryEnqueue(new Item<TItem>(item), timeout, immediateWorkerRequired);
 	}
 
-	public void WaitAndClose()
+	public void WaitAndClose(Action<int> finalizer = null)
 	{
+		this.finalizer = finalizer;
+
 		List<Thread> tempWorkers = new List<Thread>(workers);
 		for (int i = 0; i < workers.Count; i++)
 		{
@@ -175,6 +179,7 @@ internal sealed class JobWorkers<TItem>
 		}
 
 		queue.Dispose();
+		finalizer = null;
 	}
 
 	public void Drain()
@@ -227,7 +232,10 @@ internal sealed class JobWorkers<TItem>
 			}
 
 			if (item.Type == Item<TItem>.ItemType.Termination)
+			{
+				finalizer?.Invoke(index);
 				return;
+			}
 
 			if (item.Type == Item<TItem>.ItemType.Drain)
 			{
@@ -272,7 +280,10 @@ internal sealed class JobWorkers<TItem>
 			workItems.Clear();
 
 			if (shouldFinish)
+			{
+				finalizer?.Invoke(index);
 				return;
+			}
 		}
 	}
 

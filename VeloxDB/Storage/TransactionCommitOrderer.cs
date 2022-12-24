@@ -16,16 +16,16 @@ internal sealed class TransactionCommitOrderer
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public void TranCommited(Transaction tran, TransactionOrderedCallback finalizedCallback)
+	public void TranCommited(Transaction tran, TransactionOrderedCallback publishCallback)
 	{
-		finalizedCallback(tran);
+		publishCallback(tran);
 		tran.CommitEvent.Set();
 
 		ulong commitVersion = tran.CommitVersion;
 		while (Dequeue(commitVersion + 1, out Transaction p))
 		{
 			commitVersion++;
-			finalizedCallback(p);
+			publishCallback(p);
 			p.CommitEvent.Set();
 		}
 	}

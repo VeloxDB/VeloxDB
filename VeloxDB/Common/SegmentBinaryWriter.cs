@@ -23,6 +23,8 @@ internal unsafe sealed class SegmentBinaryWriter : IDisposable
 	public List<IntPtr> Segments => segments;
 	public long Size => (long)(segments.Count - 1) * segmentSize + offset;
 
+	public long SizeFrom(Position p) => (long)(segments.Count - 1 - p.SegmentIndex) * segmentSize + offset - p.Offset - sizeof(long);
+
 	[MethodImpl(MethodImplOptions.NoInlining)]
 	public Position ReserveSpace(int length)
 	{
@@ -133,17 +135,22 @@ internal unsafe sealed class SegmentBinaryWriter : IDisposable
 		offset = 0;
 	}
 
-	public void WriteToFile(NativeFile file)
+	public long WriteToFile(NativeFile file)
 	{
 		if (segments.Count == 0)
-			return;
+			return 0;
 
+		long s = 0;
 		for (int i = 0; i < segments.Count - 1; i++)
 		{
+			s += segmentSize;
 			file.Write(segments[i], segmentSize);
 		}
 
+		s += offset;
 		file.Write(segments[segments.Count - 1], offset);
+
+		return s;
 	}
 
 	public void Dispose()

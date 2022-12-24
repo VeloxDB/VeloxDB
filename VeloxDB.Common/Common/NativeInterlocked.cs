@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Runtime.InteropServices;
 using System.Threading;
 
@@ -7,7 +7,7 @@ namespace VeloxDB.Common;
 [StructLayout(LayoutKind.Sequential, Pack = 1, Size = 1)]
 internal struct NativeInterlocked
 {
-	int state;
+	public int state;
 
 	public int Increment()
 	{
@@ -28,12 +28,22 @@ internal struct NativeInterlocked
 	{
 		return Interlocked.CompareExchange(ref state, value, comparand);
 	}
+
+	public int VolotileRead()
+	{
+		return Volatile.Read(ref state);
+	}
+
+	public void VolotileWrite(int state)
+	{
+		Volatile.Write(ref this.state, state);
+	}
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 1, Size = 1)]
 internal struct NativeInterlocked64
 {
-	long state;
+	public long state;
 
 	public long Increment()
 	{
@@ -53,5 +63,15 @@ internal struct NativeInterlocked64
 	public long CompareExchange(long value, long comparand)
 	{
 		return Interlocked.CompareExchange(ref state, value, comparand);
+	}
+
+	public long VolotileRead()
+	{
+		return Volatile.Read(ref state);
+	}
+
+	public void VolotileWrite(long state)
+	{
+		Volatile.Write(ref this.state, state);
 	}
 }

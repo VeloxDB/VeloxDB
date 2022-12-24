@@ -187,7 +187,6 @@ internal sealed class EngineLock
 	public void ExitWriteLockThreadAgnostic(ThreadAgnosticLocker lockOwnership)
 	{
 		lockOwnership.Exit();
-		engine.AllowPersistanceSnapshots();
 	}
 
 	public sealed class ThreadAgnosticLocker

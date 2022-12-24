@@ -7,34 +7,35 @@
 6. Modify the value of the property BufferPoolSize to 134217728 (128 MB).
 	This increases connection buffer pool size which is neccessary for acheiving extremly high transaction throughput.
 7. Modify the value of the properties SystemDatabasePath and Log->Path
-	Make sure that this both directories exist
-8. Oepn the file config.cluster.json (in the unpacked server directory) and replace the localhost with the machine host name or ip address (do not use 0.0.0.0)
+	Make sure that both directories exist
+8. Open the file config.cluster.json (in the unpacked server directory) and replace the localhost with the machine host name or ip address (do not use 0.0.0.0)
 	This step is neccessary only if test client is not run locally.
 9. Start the database server by running the CLI command:
-	dotnet vlxdbsrv.dll --interactive
+	vlxdbsrv --interactive
 10. Create a single log file for the database by running the following CLI command (while still in unpacked server directory):
-	dotnet vlx.dll create-log --name Log0 --dir log_path --snapshot-dir snapshot_path --size 3072
+	vlx create-log --name Log0 --dir log_path --snapshot-dir snapshot_path --size 10000
 		log_path and snapshot_path are path to directories where database log and snapshot files will be stored.
-	For best performance it is recommended to store log files and snapshot files on separate drives.
-12. Deploy the server side files to the server by running the following CLI command:
-	dotnet vlx.dll update-assemblies --dir assemblies_directory_path --no-confirm
+	For best performance it is recommended to store log files and snapshot files on separate storage devices.
+11. Deploy the server side files to the server by running the following CLI command:
+	vlx update-assemblies --dir assemblies_directory_path --no-confirm
 		assemblies_directory_path is the path where you copied API.dll and Server.dll
 12. Run the client test application (from the bin directory of the Client project) by running the following CLI command:
-	dotnet client.dll host_name multiplier worker_count conn_count
-		host_name is the host name of the machine where database server is deplyoed (You can use localhost or ip address here).
+	client host_name multiplier worker_count conn_count
+		host_name is the host name (or address) that u used in step 8, (uou can use localhost).
 			For best performance keep the client and server on separate machines.
-		multiplier determines the size of the dataset (number of Vehicle objects inserted into the database).
-			Spcify 1 to insert 8 million vehicles, 2 for 16 million vehicles and so on...
-		worker_count specifies the number of worker threads applying the changes to the database. This number simulates the number of concurrent users in a real world scenario.
-		conn_count specifies the number of connections that will be be opened to the database. This number should be between 1 and 4.
+			Also, for acheiving the peak peformance network bandwith of the server needs to be more than 1Gbps.
+		multiplier determines the size of the dataset (number of Vehicle and Ride objects inserted into the database).
+			Spcify 1 to insert 8 million vehicles and 8 million rides, 2 for 16 and so on...
+		worker_count number of concurrent requests
+		conn_count specifies the number of connections that will be be opened to the database. Good value for this are between 2 and 4.
 
 
-To run the sample with a cluster of two nodes:
-1. Run steps 1 to 8 (in step 4, you will need the standard version of VeloxDB database for cluster support)
+To run the sample with an HA cluster:
+1. Run steps 1 to 7 (in step 4, you will need the enterprise version of VeloxDB database because of cluster support being needed)
 2. Provision two separate machines, one for Primary node and one for Standby node
-3. Provide a shared network location (SMB) accessible to both machines (with write access rights)
-4. Create cluster configuration file by running the following CLI commands (for this we use the interactive mode of the client tool)
-	dotnet vlx.dll
+3. Provide a shared network location (SMB) accessible to both machines (with read/write access rights)
+4. Create a cluster configuration file in the server directory by running the following CLI commands (for this we use the interactive mode of the client tool)
+	vlx
 	cluster-config
 	new
 	create-ha --name main --host1 host_name1 --host2 host_name2 --witness shared_witness_path
@@ -42,21 +43,20 @@ To run the sample with a cluster of two nodes:
 			
 	save --file config.cluster.json
 	show
-		You should see the configuration of the cluster similar to the following:
+		/*You should see the configuration of the cluster similar to the following:
 		main (HA)                 Election timeout: 2.00 s
-		├─Shared Folder Witness   Path: witness, File timeout: 2 s.
+		├─Shared Folder Witness   Path: witness_path, File timeout: 2 s.
 		├─node1 (Write)
 		└─node2 (Write)
-		
+		*/
 	exit
 	exit
 	
-5. Copy the unpacked server directory (with modified configuration and cluster configuration inside it) to the two provisioned machines
+5. Copy the an entire server directory that we just created the cluster configuration in, to the second of the two provisioned machines
 6. Open vlxdbcfg.json on both machines and modify the property ThisNodeName to host_name1 and host_name2 respectively
-6. Run the VeloxDB server on both machines (step 9 in the previous section)
-7. Run the following CLI command on one of the machines (from inside the server directory) to confirm that the cluster is up and running and that the Primary node has been choosen:
-	dotnet vlx.dll status 
-	exit
-8. Run steps 9 to 10 from the previous section (on any of the two server machines)
-9. Run the client application (step 12 of the precious section), but instead specifying a single host name, specify host names of both server machines:
-	dotnet client host_name1/host_name2 multiplier worker_count
+7. Run the VeloxDB server on both machines (step 9 in the previous section)
+8. Run the following CLI command on one of the machines (from inside the server directory) to confirm that the cluster is up and running and that the Primary node has been choosen:
+	vlx status 
+9. Run steps 10 to 12 from the previous section (on any of the two server machines)
+10. Run the client application (step 12 of the precious section), but instead of specifying a single host name, specify host names of both server machines:
+	client host_name1/host_name2 multiplier worker_count conn_count

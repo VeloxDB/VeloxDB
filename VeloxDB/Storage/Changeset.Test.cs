@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using VeloxDB.Common;
@@ -17,6 +17,17 @@ internal partial class Changeset
 	{
 #if HUNT_CHG_LEAKS
 		allocStacks.Add(new StackTrace(true).ToString());
+#endif
+	}
+
+	[Conditional("HUNT_CHG_LEAKS")]
+	private void TrackReferencingStack(int count)
+	{
+#if HUNT_CHG_LEAKS
+		for (int i = 0; i < count; i++)
+		{
+			allocStacks.Add(new StackTrace(true).ToString());
+		}
 #endif
 	}
 
