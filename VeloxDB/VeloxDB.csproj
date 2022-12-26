@@ -95,4 +95,11 @@
 	<ItemGroup>
 		<ProjectReference Include="..\VeloxDB.Common\VeloxDB.Common.csproj" />
 	</ItemGroup>
+
+	<ItemGroup>
+    <None Include="../LICENSE.txt" Pack="true" PackagePath="" />
+		<None Include="../README.md" Pack="true" PackagePath="" />
+    <None Include="../icon.png" Pack="true" PackagePath="" />
+  </ItemGroup>
+
 </Project>

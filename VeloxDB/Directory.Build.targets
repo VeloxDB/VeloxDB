@@ -1,6 +1,6 @@
 <Project>
 	<Target Name="PublishServer" BeforeTargets="GenerateNuspec">
-		<Exec Command="dotnet publish /p:Platform=x64 -c Release -o $(VlxRootDir)/bin/publish/_vlxdbsrv_temp" WorkingDirectory="$(ProjectDir)/../Server/Host"/>
+		<Exec Command="dotnet publish /p:Platform=x64 /p:NugetPublish='true' -c Release -o $(VlxRootDir)/bin/publish/_vlxdbsrv_temp" WorkingDirectory="$(ProjectDir)/../Server/Host"/>
 	</Target>
 	<Target Name="BuildSourceGen" BeforeTargets="GenerateNuspec">
 		<Exec Command="dotnet build /p:Platform=x64 -c Release" WorkingDirectory="$(ProjectDir)/../VeloxDB.SourceGenerator"/>
