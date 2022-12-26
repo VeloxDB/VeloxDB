@@ -6,8 +6,7 @@ using VeloxDB.Common;
 
 namespace VeloxDB.Networking;
 
-internal unsafe delegate void MessageReaderCallback(object state, out object newState,
-	out byte* newBuffer, out int newOffset, out int newCapacity);
+internal unsafe delegate MessageChunk MessageReaderCallback(MessageChunk chunk);
 
 internal unsafe sealed class MessageReader
 {
@@ -16,27 +15,30 @@ internal unsafe sealed class MessageReader
 	public int offset;
 	public byte* buffer;
 
-	int capacity;
 	MessageReaderCallback callback;
-	object state;
+	MessageChunk chunk;
+
+	bool isReleased;
 
 	internal MessageReader()
 	{
 	}
 
-	public object State => state;
-
-	internal void Init(object state, byte* buffer, int offset, int size, int capacity, MessageReaderCallback callback)
+	internal void Init(MessageChunk chunk, MessageReaderCallback callback)
 	{
-		this.state = state;
-		this.buffer = buffer;
-		this.size = size;
-		this.capacity = capacity;
-		this.offset = offset;
+		this.chunk = chunk;
 		this.callback = callback;
+
+		chunk.ReadHeader();
+
+		size = chunk.ChunkSize;
+		offset = chunk.HeaderSize;
+		buffer = chunk.PBuffer;
 	}
 
 	public bool IsEndReached => offset == size;
+	public MessageChunk Chunk => chunk;
+	public bool IsReleased { get => isReleased; set => isReleased = value; }
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public sbyte ReadSByte()
@@ -174,7 +176,7 @@ internal unsafe sealed class MessageReader
 	public string ReadString()
 	{
 		const int s = 1 + MessageWriter.SmallArrayLength * sizeof(char);
-		if (offset + s <= capacity)
+		if (offset + s <= size)
 		{
 			byte b = *(buffer + offset);
 			if (b >= 2)
@@ -245,7 +247,7 @@ internal unsafe sealed class MessageReader
 	public sbyte[] ReadSByteArray()
 	{
 		const int s = 1 + MessageWriter.SmallArrayLength * sizeof(sbyte);
-		if (offset + s <= capacity)
+		if (offset + s <= size)
 		{
 			byte b = *(buffer + offset);
 			if (b >= 2)
@@ -270,7 +272,7 @@ internal unsafe sealed class MessageReader
 	public sbyte[] ReadSByteArrayFact(Func<int, sbyte[]> fact)
 	{
 		const int s = 1 + MessageWriter.SmallArrayLength * sizeof(sbyte);
-		if (offset + s <= capacity)
+		if (offset + s <= size)
 		{
 			byte b = *(buffer + offset);
 			if (b >= 2)
@@ -339,7 +341,7 @@ internal unsafe sealed class MessageReader
 	public byte[] ReadByteArray()
 	{
 		const int s = 1 + MessageWriter.SmallArrayLength * sizeof(byte);
-		if (offset + s <= capacity)
+		if (offset + s <= size)
 		{
 			byte b = *(buffer + offset);
 			if (b >= 2)
@@ -364,7 +366,7 @@ internal unsafe sealed class MessageReader
 	public byte[] ReadByteArrayFact(Func<int, byte[]> fact)
 	{
 		const int s = 1 + MessageWriter.SmallArrayLength * sizeof(byte);
-		if (offset + s <= capacity)
+		if (offset + s <= size)
 		{
 			byte b = *(buffer + offset);
 			if (b >= 2)
@@ -433,7 +435,7 @@ internal unsafe sealed class MessageReader
 	public short[] ReadShortArray()
 	{
 		const int s = 1 + MessageWriter.SmallArrayLength * sizeof(short);
-		if (offset + s <= capacity)
+		if (offset + s <= size)
 		{
 			byte b = *(buffer + offset);
 			if (b >= 2)
@@ -458,7 +460,7 @@ internal unsafe sealed class MessageReader
 	public short[] ReadShortArrayFact(Func<int, short[]> fact)
 	{
 		const int s = 1 + MessageWriter.SmallArrayLength * sizeof(short);
-		if (offset + s <= capacity)
+		if (offset + s <= size)
 		{
 			byte b = *(buffer + offset);
 			if (b >= 2)
@@ -527,7 +529,7 @@ internal unsafe sealed class MessageReader
 	public ushort[] ReadUShortArray()
 	{
 		const int s = 1 + MessageWriter.SmallArrayLength * sizeof(ushort);
-		if (offset + s <= capacity)
+		if (offset + s <= size)
 		{
 			byte b = *(buffer + offset);
 			if (b >= 2)
@@ -552,7 +554,7 @@ internal unsafe sealed class MessageReader
 	public ushort[] ReadUShortArrayFact(Func<int, ushort[]> fact)
 	{
 		const int s = 1 + MessageWriter.SmallArrayLength * sizeof(ushort);
-		if (offset + s <= capacity)
+		if (offset + s <= size)
 		{
 			byte b = *(buffer + offset);
 			if (b >= 2)
@@ -621,7 +623,7 @@ internal unsafe sealed class MessageReader
 	public int[] ReadIntArray()
 	{
 		const int s = 1 + MessageWriter.SmallArrayLength * sizeof(int);
-		if (offset + s <= capacity)
+		if (offset + s <= size)
 		{
 			byte b = *(buffer + offset);
 			if (b >= 2)
@@ -646,7 +648,7 @@ internal unsafe sealed class MessageReader
 	public int[] ReadIntArrayFact(Func<int, int[]> fact)
 	{
 		const int s = 1 + MessageWriter.SmallArrayLength * sizeof(int);
-		if (offset + s <= capacity)
+		if (offset + s <= size)
 		{
 			byte b = *(buffer + offset);
 			if (b >= 2)
@@ -715,7 +717,7 @@ internal unsafe sealed class MessageReader
 	public uint[] ReadUIntArray()
 	{
 		const int s = 1 + MessageWriter.SmallArrayLength * sizeof(uint);
-		if (offset + s <= capacity)
+		if (offset + s <= size)
 		{
 			byte b = *(buffer + offset);
 			if (b >= 2)
@@ -740,7 +742,7 @@ internal unsafe sealed class MessageReader
 	public uint[] ReadUIntArrayFact(Func<int, uint[]> fact)
 	{
 		const int s = 1 + MessageWriter.SmallArrayLength * sizeof(uint);
-		if (offset + s <= capacity)
+		if (offset + s <= size)
 		{
 			byte b = *(buffer + offset);
 			if (b >= 2)
@@ -809,7 +811,7 @@ internal unsafe sealed class MessageReader
 	public long[] ReadLongArray()
 	{
 		const int s = 1 + MessageWriter.SmallArrayLength * sizeof(long);
-		if (offset + s <= capacity)
+		if (offset + s <= size)
 		{
 			byte b = *(buffer + offset);
 			if (b >= 2)
@@ -834,7 +836,7 @@ internal unsafe sealed class MessageReader
 	public long[] ReadLongArrayFact(Func<int, long[]> fact)
 	{
 		const int s = 1 + MessageWriter.SmallArrayLength * sizeof(long);
-		if (offset + s <= capacity)
+		if (offset + s <= size)
 		{
 			byte b = *(buffer + offset);
 			if (b >= 2)
@@ -903,7 +905,7 @@ internal unsafe sealed class MessageReader
 	public ulong[] ReadULongArray()
 	{
 		const int s = 1 + MessageWriter.SmallArrayLength * sizeof(ulong);
-		if (offset + s <= capacity)
+		if (offset + s <= size)
 		{
 			byte b = *(buffer + offset);
 			if (b >= 2)
@@ -928,7 +930,7 @@ internal unsafe sealed class MessageReader
 	public ulong[] ReadULongArrayFact(Func<int, ulong[]> fact)
 	{
 		const int s = 1 + MessageWriter.SmallArrayLength * sizeof(ulong);
-		if (offset + s <= capacity)
+		if (offset + s <= size)
 		{
 			byte b = *(buffer + offset);
 			if (b >= 2)
@@ -997,7 +999,7 @@ internal unsafe sealed class MessageReader
 	public float[] ReadFloatArray()
 	{
 		const int s = 1 + MessageWriter.SmallArrayLength * sizeof(float);
-		if (offset + s <= capacity)
+		if (offset + s <= size)
 		{
 			byte b = *(buffer + offset);
 			if (b >= 2)
@@ -1044,7 +1046,7 @@ internal unsafe sealed class MessageReader
 	public double[] ReadDoubleArray()
 	{
 		const int s = 1 + MessageWriter.SmallArrayLength * sizeof(double);
-		if (offset + s <= capacity)
+		if (offset + s <= size)
 		{
 			byte b = *(buffer + offset);
 			if (b >= 2)
@@ -1091,7 +1093,7 @@ internal unsafe sealed class MessageReader
 	public bool[] ReadBoolArray()
 	{
 		const int s = 1 + MessageWriter.SmallArrayLength * sizeof(bool);
-		if (offset + s <= capacity)
+		if (offset + s <= size)
 		{
 			byte b = *(buffer + offset);
 			if (b >= 2)
@@ -1138,7 +1140,7 @@ internal unsafe sealed class MessageReader
 	public decimal[] ReadDecimalArray()
 	{
 		const int s = 1 + MessageWriter.SmallArrayLength * sizeof(decimal);
-		if (offset + s <= capacity)
+		if (offset + s <= size)
 		{
 			byte b = *(buffer + offset);
 			if (b >= 2)
@@ -1201,7 +1203,7 @@ internal unsafe sealed class MessageReader
 	public DateTime[] ReadDateTimeArray()
 	{
 		const int s = 1 + MessageWriter.SmallArrayLength * 8;
-		if (offset + s <= capacity)
+		if (offset + s <= size)
 		{
 			byte b = *(buffer + offset);
 			if (b >= 2)
@@ -1248,7 +1250,7 @@ internal unsafe sealed class MessageReader
 	public TimeSpan[] ReadTimeSpanArray()
 	{
 		const int s = 1 + MessageWriter.SmallArrayLength * 8;
-		if (offset + s <= capacity)
+		if (offset + s <= size)
 		{
 			byte b = *(buffer + offset);
 			if (b >= 2)
@@ -1696,14 +1698,7 @@ internal unsafe sealed class MessageReader
 	{
 		buffer = null;
 		callback = null;
-		state = null;
-	}
-
-	internal void SwapStates(MessageReader reader)
-	{
-		object temp = this.state;
-		this.state = reader.State;
-		reader.state = temp;
+		chunk = null;
 	}
 
 	[MethodImpl(MethodImplOptions.NoInlining)]
@@ -1728,6 +1723,13 @@ internal unsafe sealed class MessageReader
 		if (callback == null)
 			throw new CorruptMessageException();
 
-		callback(state, out state, out buffer, out offset, out size);
+		MessageChunk temp = chunk;
+		chunk = null;			// Relinquish the chunk, callback method will dispose of it
+
+		chunk = callback(temp);
+		chunk.ReadHeader();
+		size = chunk.ChunkSize;
+		offset = chunk.HeaderSize;
+		buffer = chunk.PBuffer;
 	}
 }

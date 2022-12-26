@@ -5,21 +5,23 @@ using VeloxDB.Common;
 
 namespace VeloxDB.Networking;
 
-internal unsafe delegate bool ProcessChunkDelegate(int size, ref object state, ref byte* buffer, ref int capacity);
+internal unsafe delegate bool ProcessChunkDelegate(MessageChunk chunk, out MessageChunk nextChunk);
 
 internal unsafe sealed class MessageWriter
 {
 	internal const int SmallArrayLength = 253;
 
-	// These fields are public because they are used in IL code generation (inlined)
+	// These fields are public because they are used in IL code (inlined)
 	public int capacity;
 	public int offset;
 	public byte* buffer;
 
-	object state;
+	MessageChunk chunk;
 	ulong messageId;
 	ProcessChunkDelegate processor;
 	bool isFirst;
+
+	int chunkNum;
 
 #if TEST_BUILD
 	public static bool InvalidLastChunk { get; set; }
@@ -29,20 +31,21 @@ internal unsafe sealed class MessageWriter
 	{
 	}
 
-	internal void Init(object state, byte* buffer, int capacity, ProcessChunkDelegate processor, ulong messageId)
+	internal void Init(MessageChunk chunk, ProcessChunkDelegate processor, ulong messageId)
 	{
-		this.buffer = buffer;
-		this.state = state;
-		this.capacity = capacity;
+		this.chunk = chunk;
+		this.buffer = chunk.PBuffer;
+		this.capacity = chunk.BufferSize;
 		this.processor = processor;
 		this.messageId = messageId;
 		this.isFirst = true;
-		this.offset = 0;
 
 		MessageChunkHeader* ph = (MessageChunkHeader*)buffer;
 		ph->version = MessageChunkHeader.HeaderVersion;
 		ph->messageId = messageId;
-		this.offset += MessageChunkHeader.Size;
+		this.offset = MessageChunkHeader.Size;
+
+		chunkNum = 1;
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1115,11 +1118,14 @@ internal unsafe sealed class MessageWriter
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public void Reset()
+	public void Reset(MessageChunkPool chunkPool)
 	{
+		if (chunk != null && chunkPool != null)
+			chunkPool.Put(chunk);
+
 		buffer = null;
 		processor = null;
-		state = null;
+		chunk = null;
 		isFirst = false;
 	}
 
@@ -1139,21 +1145,37 @@ internal unsafe sealed class MessageWriter
 
 		ph->size = offset;
 		ph->flags = flags;
+		ph->chunkNum = chunkNum;
 
-		if (processor(offset, ref state, ref buffer, ref capacity))
+		MessageChunk temp = chunk;
+		chunk = null;
+
+		if (processor(temp, out MessageChunk nextChunk))
 		{
 			if (!isLast)
 			{
+				chunk = nextChunk;
 				isFirst = false;
+				buffer = nextChunk.PBuffer;
+				capacity = nextChunk.BufferSize;
 				ph = (MessageChunkHeader*)buffer;
 				ph->version = MessageChunkHeader.HeaderVersion;
 				ph->messageId = messageId;
 				this.offset = MessageChunkHeader.Size;
 			}
+			else
+			{
+				Checker.AssertTrue(nextChunk == null);
+			}
+
+			chunkNum++;
 		}
 		else
 		{
-			// else we just got an upgrade of the small first chunk to a large one, nothing to do here
+			// else we just got an upgrade of the small first chunk to a large one
+			chunk = nextChunk;
+			buffer = nextChunk.PBuffer;
+			capacity = nextChunk.BufferSize;
 		}
 	}
 }

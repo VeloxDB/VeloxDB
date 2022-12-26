@@ -6,9 +6,10 @@ namespace VeloxDB.Networking;
 
 internal sealed class ChunkAwaiter : IDisposable
 {
-	const int chunkTimeout = 10 * 1000;
+	const int chunkTimeout = 5 * 1000;
 
 	AutoResetEvent signal;
+	int waitingChunkNum;
 	MessageChunk chunk;
 	bool disposed;
 	ChunkAwaiter nextAwaiter;
@@ -23,6 +24,7 @@ internal sealed class ChunkAwaiter : IDisposable
 	public MessageChunk Chunk => chunk;
 
 	public ChunkAwaiter NextAwaiter { get => nextAwaiter; set => nextAwaiter = value; }
+	public int WaitingChunkNum { get => waitingChunkNum; set => waitingChunkNum = value; }
 
 	public void SetChunk(MessageChunk chunk)
 	{

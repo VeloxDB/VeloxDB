@@ -1,6 +1,6 @@
 ﻿using System;
 using System.Threading;
-using Velox.Common;
+using VeloxDB.Common;
 
 namespace VeloxDB.Storage.Persistence;
 

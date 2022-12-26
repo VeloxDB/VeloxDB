@@ -1,6 +1,6 @@
 ﻿using System;
 using System.Net.Sockets;
-using Velox.Common;
+using VeloxDB.Common;
 
 namespace VeloxDB.Networking;
 

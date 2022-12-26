@@ -43,7 +43,9 @@ internal sealed unsafe partial class Changeset : IDisposable
 
 	~Changeset()
 	{
+#if DEBUG
 		throw new CriticalDatabaseException();
+#endif
 	}
 
 	public LogChangeset[] LogChangesets => logChangesets;

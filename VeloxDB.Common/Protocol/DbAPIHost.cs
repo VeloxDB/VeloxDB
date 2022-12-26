@@ -591,7 +591,7 @@ internal sealed class DbAPIHost
 		// Release the last reader chunk
 		il.Emit(OpCodes.Ldarg, n + 1);
 		il.Emit(OpCodes.Ldarg, n + 3);
-		il.Emit(OpCodes.Call, Methods.ConnReleaseLastChunkMethod);
+		il.Emit(OpCodes.Call, Methods.ConnReleaseReaderMethod);
 
 		// Call implementation
 		il.Emit(OpCodes.Ldarg, n + 0);

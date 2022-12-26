@@ -21,17 +21,35 @@ internal sealed unsafe class MessageChunkPool
 	public MessageChunk GetSmall(int procNum = -1)
 	{
 		MessageChunk chunk = smallPool.Get(procNum);
+		if (!chunk.IsInPool)
+			throw new CriticalDatabaseException();
+
+		chunk.TrackPoolRetreival();
+		chunk.IsInPool = false;
+
 		return chunk;
 	}
 
 	public MessageChunk GetLarge(int procNum = -1)
 	{
 		MessageChunk chunk = largePool.Get(procNum);
+		if (!chunk.IsInPool)
+			throw new CriticalDatabaseException();
+
+		chunk.TrackPoolRetreival();
+		chunk.IsInPool = false;
+
 		return chunk;
 	}
 
 	public void Put(MessageChunk chunk)
 	{
+		if (chunk.IsInPool)
+			throw new CriticalDatabaseException();
+
+		chunk.TrackPoolReturn();
+		chunk.IsInPool = true;
+
 		if (chunk.BufferSize == MessageChunk.SmallBufferSize)
 			smallPool.Put(chunk);
 		else
@@ -51,7 +69,7 @@ internal sealed unsafe class MessageChunkPool
 		largeChunkCount = Math.Max(ProcessorNumber.CoreCount, (int)(poolSize * 0.5) / MessageChunk.LargeBufferSize);
 	}
 
-	private sealed class Pool
+	internal sealed class Pool
 	{
 		PoolData* poolData;
 		object poolDataHandle;
@@ -73,7 +91,7 @@ internal sealed unsafe class MessageChunkPool
 				pools[i] = new MessageChunk[perCoreCapacity];
 				for (int j = 0; j < perCoreCapacity; j++)
 				{
-					pools[i][j] = new MessageChunk(chunkSize) { PoolIndex = i };
+					pools[i][j] = new MessageChunk(chunkSize) { PoolIndex = i, IsInPool = true };
 				}
 			}
 
@@ -101,9 +119,7 @@ internal sealed unsafe class MessageChunkPool
 				chunk = Borrow(procNum);
 
 			if (chunk == null)
-			{
-				chunk = new MessageChunk(chunkSize) { PoolIndex = procNum };
-			}
+				chunk = new MessageChunk(chunkSize) { PoolIndex = procNum, IsInPool = true };
 
 			return chunk;
 		}
@@ -117,7 +133,7 @@ internal sealed unsafe class MessageChunkPool
 			try
 			{
 				if (disposed)
-					return new MessageChunk(chunkSize);
+					return new MessageChunk(chunkSize) { IsInPool = true };
 
 				if (pd->count > 0)
 				{
@@ -221,7 +237,7 @@ internal sealed unsafe class MessageChunkPool
 						PoolData* pd = (PoolData*)CacheLineMemoryManager.GetBuffer(poolData, i);
 						for (int j = 0; j < diff; j++)
 						{
-							pools[i][pd->count++] = new MessageChunk(chunkSize) { PoolIndex = i };
+							pools[i][pd->count++] = new MessageChunk(chunkSize) { PoolIndex = i, IsInPool = true };
 						}
 					}
 				}

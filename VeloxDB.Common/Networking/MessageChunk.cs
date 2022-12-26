@@ -20,15 +20,20 @@ internal enum ChunkFlags : byte
 internal struct MessageChunkHeader
 {
 	internal const short HeaderVersion = 1;
-	internal const int Size = sizeof(int) + sizeof(int) + sizeof(ulong) + sizeof(byte);
+	internal const int Size = sizeof(int) + sizeof(int) + sizeof(ulong) + sizeof(int) + sizeof(byte);
 
 	public int size;
 	public int version;
 	public ulong messageId;
+	public int chunkNum;
 	public ChunkFlags flags;
+
+	public bool IsFirst => (flags & ChunkFlags.First) != ChunkFlags.None;
+	public bool IsLast => (flags & ChunkFlags.Last) != ChunkFlags.None;
+	public bool IsTheOnlyOne => flags == ChunkFlags.TheOnlyOne;
 }
 
-internal unsafe sealed class MessageChunk : IDisposable
+internal unsafe sealed partial class MessageChunk : IDisposable
 {
 	public const int SmallBufferSize = 1024 * 4;
 	public const int LargeBufferSize = 1024 * 64;
@@ -36,40 +41,40 @@ internal unsafe sealed class MessageChunk : IDisposable
 	int bufferSize;
 	byte* pbuffer;
 
-	MessageWriter writer;
-	MessageReader reader;
-	ChunkAwaiter awaiter;
 	int headerSize;
 	int poolIndex;
 	int refCount;
+	bool isInPool;
 	bool disposed;
 
 	public MessageChunk(int bufferSize)
 	{
+		TrackCreationStack();
+
 		this.bufferSize = bufferSize;
-		this.writer = new MessageWriter();
-		this.reader = new MessageReader();
 		pbuffer = (byte*)AlignedAllocator.Allocate(bufferSize, false);
 	}
 
 	public int BufferSize => bufferSize;
 	public byte* PBuffer => pbuffer;
-	public MessageWriter Writer => writer;
-	public MessageReader Reader => reader;
 	public ulong MessageId => ((MessageChunkHeader*)pbuffer)->messageId;
 	public int ChunkSize => ((MessageChunkHeader*)pbuffer)->size;
+	public int ChunkNum => ((MessageChunkHeader*)pbuffer)->chunkNum;
 	public int HeaderSize => headerSize;
-	public ChunkAwaiter NextChunkAwaiter { get => awaiter; set => awaiter = value; }
-	public bool IsFirst => (Flags & ChunkFlags.First) != ChunkFlags.None;
-	public bool IsLast => (Flags & ChunkFlags.Last) != ChunkFlags.None;
-	public bool IsTheOnlyOne => Flags == ChunkFlags.TheOnlyOne;
+	public bool IsFirst => ((MessageChunkHeader*)pbuffer)->IsFirst;
+	public bool IsLast => ((MessageChunkHeader*)pbuffer)->IsLast;
+	public bool IsTheOnlyOne => ((MessageChunkHeader*)pbuffer)->IsTheOnlyOne;
 	public int PoolIndex { get => poolIndex; set => poolIndex = value; }
-
-	private ChunkFlags Flags => ((MessageChunkHeader*)pbuffer)->flags;
+	public bool IsInPool { get => isInPool; set => isInPool = value; }
+	public MessageChunkHeader* Header => (MessageChunkHeader*)pbuffer;
 
 	~MessageChunk()
 	{
+#if DEBUG
 		throw new CriticalDatabaseException();
+#else
+		CleanUp(false);
+#endif
 	}
 
 	public unsafe void ReadHeader()
@@ -88,25 +93,7 @@ internal unsafe sealed class MessageChunk : IDisposable
 
 	public void Reset()
 	{
-		reader.Reset();
-		writer.Reset();
-		awaiter = null;
 		refCount = 0;
-	}
-
-	public void SwapReaders(MessageChunk chunk)
-	{
-		reader.SwapStates(chunk.reader);
-		MessageReader temp = reader;
-		reader = chunk.reader;
-		chunk.reader = temp;
-	}
-
-	public void SwapWriters(MessageChunk chunk)
-	{
-		MessageWriter temp = writer;
-		writer = chunk.writer;
-		chunk.writer = temp;
 	}
 
 	public void CopyContent(MessageChunk chunk)

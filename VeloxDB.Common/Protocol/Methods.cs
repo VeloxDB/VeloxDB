@@ -143,7 +143,7 @@ internal static class Methods
 	public static readonly FieldInfo MessageWriterSizeFld = typeof(MessageWriter).GetField(nameof(MessageWriter.capacity), BindingFlags.DeclaredOnly | BindingFlags.Public | BindingFlags.Instance);
 	public static readonly FieldInfo MessageWriterBufferFld = typeof(MessageWriter).GetField(nameof(MessageWriter.buffer), BindingFlags.DeclaredOnly | BindingFlags.Public | BindingFlags.Instance);
 
-	public static readonly MethodInfo ConnReleaseLastChunkMethod = typeof(Connection).GetMethod(nameof(Connection.ReleaseLastChunk), BindingFlags.DeclaredOnly | BindingFlags.Public | BindingFlags.Instance);
+	public static readonly MethodInfo ConnReleaseReaderMethod = typeof(Connection).GetMethod(nameof(Connection.ReleaseReader), BindingFlags.DeclaredOnly | BindingFlags.Public | BindingFlags.Instance);
 
 	public static void GenerateForLoop(ILGenerator il, Action<LocalBuilder> bodyGenerator, LocalBuilder lenVar)
 	{

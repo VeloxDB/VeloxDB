@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Security.Cryptography;
-using Velox.Common;
-using Velox.Networking;
+using VeloxDB.Common;
+using VeloxDB.Networking;
 
-namespace Velox.Storage;
+namespace VeloxDB.Storage;
 
 internal sealed unsafe class LogChangeset : IDisposable
 {
@@ -37,7 +37,21 @@ internal sealed unsafe class LogChangeset : IDisposable
 
 	~LogChangeset()
 	{
+#if DEBUG
 		throw new CriticalDatabaseException();
+#else
+
+		memoryManager.SafeFree(() =>
+		{
+			ChangesetBufferHeader* curr = (ChangesetBufferHeader*)buffers;
+			while (curr != null)
+			{
+				ChangesetBufferHeader* next = curr->next;
+				memoryManager.Free(curr->handle);
+				curr = next;
+			}
+		});
+#endif
 	}
 
 	public int BufferCount => bufferCount;
