@@ -46,7 +46,7 @@ CRUD performance is critical for most on-line transaction processing (OLTP) syst
 
 Following is the definition of the class used in this example. This class has no affected indexes other than the primary key index which is mandatory in VeloxDB. Do not worry at this point if some aspects of the code are not fully clear.
 
-[!code-csharp[Main](../../../Samples/Performance/CRUDPerfSample/Server/Vehicle.cs#Vehicle)]
+[!code-csharp[Main](../../Samples/Performance/CRUDPerfSample/Server/Vehicle.cs#Vehicle)]
 
 The test executes insertion/update/deletion and read-update of a small number of these objects (per transaction) with the parallelism level set to TODO. Level of parallelism simulates number of concurrent users executing operations on the database.
 
@@ -70,7 +70,7 @@ Notice how the number of processed transactions per second drops slightly when i
 
 As already stated, the previous example does not affect any indexes, except for the mandatory primary key index. Lets take a look at what happens when we start modifying properties that are included in additional indexes. In VeloxDB every reference from one class to another is automatically indexed so that you can quickly navigate the reference in the reverse direction. In the following example, the Ride class references the Vehicle class. This means that every time we modify that reference, inverse reference index must be updated as well.
 
-[!code-csharp[Main](../../../Samples/Performance/CRUDPerfSample/Server/Ride.cs#Ride)]
+[!code-csharp[Main](../../Samples/Performance/CRUDPerfSample/Server/Ride.cs#Ride)]
 
 | Number of objects<br>per transaction| Insert \[MT/s\]| Update \[MT/s\]| Delete \[MT/s\]| Read-Update \[MT/s\]|
 |-------------------------------------|--------|--------|--------|-------------|

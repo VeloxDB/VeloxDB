@@ -157,7 +157,7 @@ public enum DatabaseErrorType
 	/// <summary>
 	/// Hash index has been added to an existing class, with a newly inserted property.
 	/// This has to be done as two separate transactions. For information about adding
-	/// indexes see <see href="~/articles/guide/data_model.md#hash-indexes">Indexes</see>.
+	/// indexes see <see href="~/guide/data_model.md#hash-indexes">Indexes</see>.
 	/// </summary>
 	[ErrorCode("Hash index has been added to an existing class {5} with a newly inserted property {4}.")]
 	InsertedPropertyClassAddedToHashIndex = 19,

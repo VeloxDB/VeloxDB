@@ -64,7 +64,7 @@ dotnet add package VeloxDB
 
 Model is defined using regular C# classes. Add a Model.cs file to your project with the following content:
 
-[!code-csharp[Main](../../../Samples/GetStarted/VlxBlog/Model.old.cs)]
+[!code-csharp[Main](../../Samples/GetStarted/VlxBlog/Model.old.cs)]
 
 Let's take a closer look at the classes defined here. Model classes must be declared as abstract, this is also true for all database properties. This allows VeloxDB to dynamically create implementation of classes at runtime.
 
@@ -77,14 +77,14 @@ Post.Blog property is marked with <xref:VeloxDB.ObjectInterface.DatabaseReferenc
 #### Create DTOs
 We will now define DTO classes, which will be used to transfer data between the client and the server. Create DTO.cs file with the following content:
 
-[!code-csharp[Main](../../../Samples/GetStarted/VlxBlog/DTO.cs)]
+[!code-csharp[Main](../../Samples/GetStarted/VlxBlog/DTO.cs)]
 
 <!-- For more information about why we use DTOs see [Data Transfer Objects](../tech.md#data-transfer-objects).-->
 
 #### Create ToDTO and FromDTO methods
 Copying data between model and DTOs can be cumbersome. For that reason VeloxDB comes with builtin automapper that can save you from typing some boilerplate code. To use automapper make Blog and Post database classes in Model.cs partial. Also add highlighted methods to Blog and Post.
 
-[!code-csharp[Main](../../../Samples/GetStarted/VlxBlog/Model.cs?highlight=16-18,33-35)]
+[!code-csharp[Main](../../Samples/GetStarted/VlxBlog/Model.cs?highlight=16-18,33-35)]
 
 Automapper is implemented using [C# Source Generators][6]. The partial methods you created will be implemented by the source generator at compile time. There are two types of methods: To and From methods. To create an automapper method you need to add a partial method to the database class. Currently automapper methods are only supported for database classes. The method needs to start with an appropriate prefix (To/From). It also has to have correct arguments and return type. You can see the specific requirements for each method type in the table below.
 
@@ -97,7 +97,7 @@ For more detailed information see [Automapper](automapper.md) section of the gui
 
 #### Create database API
 All business logic is defined in server side methods, we call these methods database operations. By keeping the business logic and the data in the same process, VeloxDB avoids multiple round trips to the Database. Create BlogApi.cs file with the following content:
-[!code-csharp[Main](../../../Samples/GetStarted/VlxBlog/BlogApi.cs)]
+[!code-csharp[Main](../../Samples/GetStarted/VlxBlog/BlogApi.cs)]
 
 The methods described in this file can be called from the client using VeloxDB.Protocol library. This will be covered in the next chapter. To define a database API operation you need to create a class marked with the <xref:VeloxDB.Protocol.DbAPIAttribute>. Each method should be decorated with the <xref:VeloxDB.Protocol.DbAPIOperationAttribute>.
 
@@ -213,7 +213,7 @@ dotnet add reference ../VlxBlog/vlxblog.csproj
 
 Add an IBlogApi.cs file to your project with the following content:
 
-[!code-csharp[Main](../../../Samples/GetStarted/VlxClient/IBlogApi.cs)]
+[!code-csharp[Main](../../Samples/GetStarted/VlxClient/IBlogApi.cs)]
 
 The interface must be marked with the <xref:VeloxDB.Protocol.DbAPIAttribute>. Note the name parameter, as it specifies the name of the database API we target with this interface. Default name for a database API is the full .NET name of the API class. Then we specify all operations we have defined on the server. Note that operations omit ObjectModel argument here. ObjectModel is injected server side and is not needed (or available) client side. Each operation is marked with the <xref:VeloxDB.Protocol.DbAPIOperationAttribute>.
 
@@ -221,7 +221,7 @@ The interface must be marked with the <xref:VeloxDB.Protocol.DbAPIAttribute>. No
 
 Replace the content of Program.cs with the following:
 
-[!code-csharp[Main](../../../Samples/GetStarted/VlxClient/Program.cs)]
+[!code-csharp[Main](../../Samples/GetStarted/VlxClient/Program.cs)]
 
 We first create an instance of <xref:VeloxDB.Client.ConnectionStringParams>. This is a helper class that will help us create the connection string. We add our server's address to it (VeloxDB's default port is 7568). Then we use <xref:VeloxDB.Client.ConnectionFactory> to get the connection to the server. Once we have the connection, calling database operations is trivial, we just call appropriate methods.
 

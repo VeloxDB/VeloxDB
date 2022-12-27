@@ -24,10 +24,6 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-	  <PackageReference Include="NUnit.Console" Version="3.15.2" />
-	</ItemGroup>
-
-	<ItemGroup>
 	  <ProjectReference Include="..\Server\AdminAPI\AdminAPI.csproj" />
 	  <ProjectReference Include="..\VeloxDB.Common\VeloxDB.Common.csproj" />
 	</ItemGroup>

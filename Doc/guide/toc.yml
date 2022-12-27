@@ -1,0 +1,14 @@
+- name: "VeloxDB: The Definitive Guide"
+  items:
+  - name: Introduction
+    href: introduction.md
+  - name: Getting Started
+    href: getting_started.md
+  - name: Automapper
+    href: automapper.md
+  - name: Architecture
+    href: architecture.md
+  - name: Data Model
+    href: data_model.md
+  - name: Persistance
+    href: persistence.md

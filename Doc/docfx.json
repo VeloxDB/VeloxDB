@@ -30,8 +30,8 @@
       },
       {
         "files": [
-          "articles/**.md",
-          "articles/**/toc.yml",
+          "guide/**.md",
+          "guide/**/toc.yml",
           "toc.yml",
           "*.md"
         ]
@@ -42,6 +42,7 @@
         "files": [
 					"logo.svg",
 					"favicon.ico",
+					"robots.txt",
           "images/**"
         ]
       }
@@ -70,66 +71,5 @@
     "keepFileLink": false,
     "cleanupCacheHistory": false,
     "disableGitFeatures": true
-  },
-	"pdf": {
-    "content": [
-      {
-        "files": [
-          "api/**.yml",
-          "api-vb/**.yml"
-        ],
-        "exclude": [
-          "**/toc.yml",
-          "**/toc.md"
-        ]
-      },
-      {
-        "files": [
-          "articles/**.md",
-          "articles/**/toc.yml",
-          "toc.yml",
-          "*.md",
-          "pdf/*"
-        ],
-        "exclude": [
-          "**/bin/**",
-          "**/obj/**",
-          "_site_pdf/**",
-          "**/toc.yml",
-          "**/toc.md"
-        ]
-      },
-      {
-        "files": "pdf/toc.yml"
-      }
-    ],
-    "resource": [
-      {
-        "files": [
-          "images/**"
-        ],
-        "exclude": [
-          "**/bin/**",
-          "**/obj/**",
-          "_site_pdf/**"
-        ]
-      }
-    ],
-    "overwrite": [
-      {
-        "files": [
-          "apidoc/**.md"
-        ],
-        "exclude": [
-          "**/bin/**",
-          "**/obj/**",
-          "_site_pdf/**"
-        ]
-      }
-    ],
-    "wkhtmltopdf": {
-      "additionalArguments": "--enable-local-file-access"
-    },
-    "dest": "../bin/site_pdf"
   }
 }

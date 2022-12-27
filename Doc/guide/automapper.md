@@ -17,13 +17,13 @@ Here is a brief overview of automapper features:
 
 Throughout this guide, we will be using the following model:
 
-[!code-csharp[Main](../../../Samples/University/Model/University.cs)]
+[!code-csharp[Main](../../Samples/University/Model/University.cs)]
 
 ## Simple mapping
 
 The core feature of the automapper is mapping properties from one object to another. VeloxDB automapper supports mapping properties from database object to DTO and from DTO to database object. Lets consider a simple DTO class for `Course` class:
 
-[!code-csharp[Main](../../../Samples/University/NoPolyNoRef/Course.cs#CourseDTO)]
+[!code-csharp[Main](../../Samples/University/NoPolyNoRef/Course.cs#CourseDTO)]
 
 The DTO contains two properties `Name` and `Id`. In order to map `Course` class to its DTO we will need to add automapper method to it. Automapper methods are partial methods added to database classes. Their body is filled in by the automapper source generator during compile time. Automapper methods that copy data to DTO must start with `To` prefix. Here is an example of method that creates `CourseDTO` from `Course` object.
 
@@ -44,7 +44,7 @@ Note that the method takes <xref:VeloxDB.ObjectInterface.ObjectModel> as an argu
 ## Mapping arrays
 
 Automapper supports mapping arrays. It has full support for both arrays of simple types and reference arrays. VeloxDB represents arrays with either <xref:VeloxDB.ObjectInterface.DatabaseArray> or <xref:VeloxDB.ObjectInterface.ReferenceArray>. These classes are not available on client side and should be mapped to either an array or [List][4]. Here is an example of `StudentDTO` DTO class that includes arrays:
-[!code-csharp[Main](../../../Samples/University/NoPoly/Student.cs#StudentDTO)]
+[!code-csharp[Main](../../Samples/University/NoPoly/Student.cs#StudentDTO)]
 
 If the value of array in database object is null, automapper will also produce null in the mapped object.
 
@@ -54,26 +54,26 @@ There are two ways to map a reference property, by mapping by id, or by mapping 
 
 The simplest approach is to map a reference by id. This is done by creating a DTO property of the same name and `long` type. The result is that referenced object's id is written into the property. When naming the DTO property in this case it is also valid to add Id or Ids suffix. Id mapping also works for arrays by mapping to `long[]` or `List<long>` types. Here is an example of `TeacherDTO` class that uses Id mapping:
 
-[!code-csharp[Main](../../../Samples/University/NoPolyNoRef/Teacher.cs#TeacherDTO)]
+[!code-csharp[Main](../../Samples/University/NoPolyNoRef/Teacher.cs#TeacherDTO)]
 
 You can note `AssistantId` property which maps to `Assistant` property in `Teacher` class, and `TeachesIds` property which maps to `Teaches` property. If the reference points to `null`, 0 will be written to Id property. When creating database object from DTO, these ids are used to fetch objects from the database and assign them to database object. In case the object does not exist in the database, `From` method will throw an [ArgumentException][5].
 
 Besides mapping to id, reference property can be mapped to another DTO. This enables you to easily map object graphs. In order to map a reference property to another DTO, referenced object must also contain To/From method with the same name. Here is an example of DTO with reference to another DTO:
 
-[!code-csharp[Main](../../../Samples/University/NoPoly/Teacher.cs#TeacherDTO)]
+[!code-csharp[Main](../../Samples/University/NoPoly/Teacher.cs#TeacherDTO)]
 
 In order for this mapping to work `Course` database class must also have mapping methods with same names which map `Course` to `CourseDTO`. Here is an example of `Course` class and its DTO:
 
-[!code-csharp[Main](../../../Samples/University/NoPoly/Course.cs)]
+[!code-csharp[Main](../../Samples/University/NoPoly/Course.cs)]
 
 Mapping object graphs introduces some problems. For example if you have graph like, deeply connected model, you could easily end up mapping the whole database and sending it to the client. Since this behavior is not desired, VeloxDB automapper provides a method for selecting which objects should be mapped. By default, only the object you called To method on will be mapped, objects it references will not be mapped. In order to map referenced objects to DTOs you need to call <xref:VeloxDB.ObjectInterface.DatabaseObject.Select> method on them first.
 Here is an example of database operation that maps `Teacher` and all referenced courses to DTO:
 
-[!code-csharp[Main](../../../Samples/University/NoPoly/UniApi.cs#GetTeacher)]
+[!code-csharp[Main](../../Samples/University/NoPoly/UniApi.cs#GetTeacher)]
 
 It is also possible to map inverse references to DTOs. They are treated in the same way as reference arrays. They can be mapped to either ids or objects. Here is an example of `Course` class with inverse reference and its DTO:
 
-[!code-csharp[Main](../../../Samples/University/InvRef/Course.cs)]
+[!code-csharp[Main](../../Samples/University/InvRef/Course.cs)]
 
 >[!CAUTION]
 >It is strongly advised against using a reference in both directions (direct and inverse) in DTOs. If the DTO is not consistent, for example object A points to object B but inverse reference in object B does not point back to A, mapping to database object can produce unexpected results. Mapping from database object to DTO does not have these problems.
@@ -88,13 +88,13 @@ VeloxDB automapper supports polymorphism through the use of the <xref:VeloxDB.Ob
 
 Here is an example of DTOs that use polymorphism, note that they follow the DBOs hierarchy:
 
-[!code-csharp[Main](../../../Samples/University/Poly/PolyDTO.cs#PolyDTO)]
+[!code-csharp[Main](../../Samples/University/Poly/PolyDTO.cs#PolyDTO)]
 
 Subclasses must have their own To or From methods that override the base class method and provide specific mapping instructions for the subclass. This allows for a DTO to be mapped to the appropriate DBO class based on the type of DTO provided.
 
 Here is an example of `Teacher` class note its `To` and `From` methods:
 
-[!code-csharp[Main](../../../Samples/University/Poly/Teacher.cs#Teacher)]
+[!code-csharp[Main](../../Samples/University/Poly/Teacher.cs#Teacher)]
 
 The `ToDTO` method should not be marked as virtual because automapper generates its own internal virtual methods. To avoid generating a warning from the C# compiler due to the presence of non-virtual ToDTO methodS in both the base class and subclass, the new keyword is used in the subclass's methods to explicitly indicate that they are intended to override the base class's methods. Since these methods only call into internal virtual methods, proper polymorphic behavior is still achieved.
 

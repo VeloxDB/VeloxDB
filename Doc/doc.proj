@@ -14,7 +14,11 @@
 
 		<ItemGroup>
 			<Watch Include="**/*.md" />
-			<Watch Include="articles/**/*.yml" />
+			<Watch Include="**/*.yml" />
+			<Watch Include="**/*.js" />
+			<Watch Include="**/*.css" />
+			<Watch Include="**/*.partial" />
+			<Watch Include="**/*.tmpl" />
 			<Watch Include="filter.yml" />
 			<Watch Include="../bin/vlx.xml" />
 			<Watch Include="../bin/vlxdb.xml" />
@@ -26,6 +30,13 @@
 			<MSBuild Projects="@(ProjectReference)" Properties="Configuration=Release"/>
 			<Exec Command="docfx metadata"/>
 			<Exec Command="docfx build"/>
+		</Target>
+
+		<Target Name="ReplaceVersion" AfterTargets="Build">
+				<WriteLinesToFile	File="../bin/_site/download.html"
+				Lines="$([System.IO.File]::ReadAllText(../bin/_site/download.html).Replace('__vlxversion__','$(Version)'))"
+				Overwrite="true"
+				Encoding="UTF-8"/>
 		</Target>
 
 		<Target Name="Pack" DependsOnTargets="Build">

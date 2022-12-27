@@ -1,9 +1,134 @@
-.hljs-comment
-{
+body {
+	overflow-y: scroll;
+ }
+ 
+.hljs-comment {
 	color: green;
 }
 
-h5.exceptions, h5.remarks, h5.seealso
-{
+h5.exceptions, h5.remarks, h5.seealso {
 	font-weight: bold;
+}
+.navbar {
+    background-color: black;
+}
+.subnav {
+    background-color: #f8f8f8;
+    border-color: #e7e7e7;
+}
+.fit-image {
+	max-height: 248px;
+	max-width:100%;
+}
+.py-5 {
+	padding-top: 24px;
+	padding-bottom: 24px;
+}
+.pt-5 {
+	padding-top: 24px;
+}
+.px-lg-4 {
+	padding-right: 1.2rem !important;
+	padding-left: 1.2rem !important;
+}
+.p-3 {
+	padding: 16px;
+}
+.px-2 {
+	padding-left: 36px;
+	padding-right: 36px;
+}
+.btn-clr {
+	color: #212529;
+}
+.sepfooter {
+	margin: 40px;
+}
+.display-4 {
+	font-size: 30px;
+    font-weight: 250;
+}
+.weight-200 {
+	font-weight: 200;
+}
+.weight-300 {
+	font-weight: 300;
+}
+.weight-400 {
+	font-weight: 400;
+}
+.container-maxwidth {
+	max-width: 1024px;
+	margin: auto;
+}
+.aaaalign-items-center {
+	align-items: center;
+}
+p {
+	font-size: 16px;
+}
+.vlxfont {
+	font-family: 'Times New Roman', Times, serif;
+	letter-spacing: -0.05em;
+	font-size: 82px!important;
+	margin-bottom: 0px;
+	line-height: 67px;
+}
+.subtitle {
+	font-weight: 400!important;
+	margin-bottom: 5px!important;
+}
+.jumbotron {
+	padding-bottom: 15px;
+	background-color: #f1f1f1;
+}
+#definition {
+	margin-bottom: 20px;
+	font-family: 'Times New Roman', Times, serif;
+}
+.color-1 {
+	color: #205d6f;
+}
+.color-2 {
+	color: #a36e64;
+}
+.color-3 {
+	color: #9d9d9d;
+}
+.headlink {
+	font-weight: 200;
+	padding-top: 5px;
+	padding-bottom: 5px;
+}
+.note {
+	font-weight: 200;
+    font-size: 14px;
+	text-align: justify;
+}
+
+.align-items-center {
+	display: flex;
+	align-items: center;
+}
+
+@media only screen and (max-width: 768px) {
+    .align-items-center {
+		flex-direction: column;
+	}
+}
+
+@media only screen and (max-width: 992px) and (min-width: 720px){
+	#navbar form{
+		width: 150px;
+	}
+}
+
+.img-center {
+	vertical-align: middle;
+}
+
+.sidetoc.shiftup
+{
+   bottom:97px;
+   padding-bottom: 4px;
 }
