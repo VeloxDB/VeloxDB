@@ -20,7 +20,7 @@
 		"MaxQueuedChunkCount": 64
 	},
 	"Database": {
-		"SystemDatabasePath": "$${Base}/data"
+		"SystemDatabasePath": "${Base}/data"
 	},
 	"Logging": {
 		"Path": "${Base}/log",
