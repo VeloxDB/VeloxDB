@@ -21,8 +21,7 @@
     <PackageTags>Database;RDBMS;ORM</PackageTags>
 		<PackageProjectUrl>https://www.vlxdb.com</PackageProjectUrl>
 		<Description>
-			The VeloxDB Protocol Library is a package that provides classes and methods 
-			for communication between VeloxDB Server and client applications.
+			The VeloxDB Protocol Library is a package that provides classes and methods for communication between VeloxDB Server and client applications.
 		</Description>
 	</PropertyGroup>
 
