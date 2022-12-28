@@ -8,68 +8,69 @@ namespace VeloxDB.SourceGenerator
 	{
 		public static readonly DiagnosticDescriptor ClassMustBeBothDesc = CreateDesc(
 			"Missing attribute or wrong base type",
-			"{0} must be marked with DatabaseClassAttribute and must inherit from DatabaseObject");
+			"The class {0} must be marked with the DatabaseClassAttribute and must inherit from the DatabaseObject class");
 
 		public static readonly DiagnosticDescriptor ClassWithoutNamespaceDesc = CreateDesc(
 			"Class without namespace",
-			"Class {0} is not defined in a namespace");
+			"The class {0} is not defined in a namespace");
 
 		public static readonly DiagnosticDescriptor InvalidPropertyTypeDesc = CreateDesc(
 			"Database property has an invalid type",
-			"Property {0} of class {1} has an invalid type");
+			"The property {0} of class {1} has an invalid type");
 
 		public static readonly DiagnosticDescriptor InvalidArrayTypeDesc = CreateDesc(
 			"Invalid Array Type",
-			"Database Array type can only be simple type");
+			"The DatabaseArray type can only be a simple type");
 
 		public static readonly DiagnosticDescriptor FailedToMatchPropertyDesc = CreateDesc(
 			"Failed to match DTO and DatabaseObject property",
-			"Property {0} of class {1} couldn't be matched to any database object's property." +
-			"Maybe the database property is not marked with appropriate attribute", DiagnosticSeverity.Warning);
+			"The property {0} of class {1} could not be matched to any database object's property." +
+			" Maybe the database property is not marked with the appropriate attribute",
+			DiagnosticSeverity.Warning);
 
 		public static readonly DiagnosticDescriptor GenericClassNotSupportedDesc = CreateDesc(
 			"Generic classes are not supported as database objects",
-			"Class {0} is generic");
+			"The class {0} is a generic class");
 
 		public static readonly DiagnosticDescriptor PropertyTypeMismatchDesc = CreateDesc(
 			"DTO and DatabaseObject property types don't match",
-			"Type {0} doesn't match database object's type {1}");
+			"The type {0} does not match the database object's type {1}");
 
 		public static readonly DiagnosticDescriptor ReferenceMustBeDatabaseObjectDesc = CreateDesc(
 			"Reference must point to DatabaseObject",
-			"Type {0} doesn't inherit from DatabaseObject");
+			"The type {0} does not inherit from the DatabaseObject class");
 
 		public static readonly DiagnosticDescriptor DatabaseClassIsNotAbstractDesc = CreateDesc(
 			"Class not abstract",
-			"Database class {0} must be declared as abstract");
+			"The database class {0} must be declared as abstract");
 
 		private static readonly DiagnosticDescriptor InvalidFromArgumentDesc = CreateDesc(
 			"Invalid argument type for From method",
-			"Method {0} must have {1} as {2} argument");
+			"The argument at position {2} of method {0} must be of type {1}");
 
 		public static readonly DiagnosticDescriptor ReturnTypeMustBeTheSameDesc = CreateDesc(
 			"Return type of the method must be the same as containing class",
-			"Method {0} must have {1} as return type");
+			"The method {0} must have the {1} type as its return type");
 
 		public static readonly DiagnosticDescriptor InvalidArgumentsForFromMethodDesc = CreateDesc(
 			"From method takes two arguments",
-			"Method {0} must take exactly two arguments, ObjectModel and type to convert");
+			"The method {0} must take exactly two arguments: an ObjectModel and the type to convert");
 
 		public static readonly DiagnosticDescriptor FromMethodMustBeStaticDesc = CreateDesc(
 			"From method must be static",
-			"Method {0} must have be static");
+			"The method {0} must be static");
 
 		public static readonly DiagnosticDescriptor InvalidRefArrayTypeDesc = CreateDesc(
 			"Invalid reference array type",
-			"Reference array type can only be of type that inherits from DatabaseObject");
+			"The ReferenceArray type can only be of a type that inherits from the DatabaseObject class");
 
 		public static readonly DiagnosticDescriptor NotYetSupportedDesc = CreateDesc(
 			"Feature not supported",
-			"{0} is not yet supported");
+			"The feature {0} is not yet supported");
 
 		public static readonly DiagnosticDescriptor InvalidInverseReferenceTypeDesc = CreateDesc(
 			"Invalid inverse reference property type",
-			"Inverse reference property {0} must be of InverseReferenceSet<T> type");
+			"The inverse reference property {0} must be of the InverseReferenceSet<T> type");
 
 		public static readonly DiagnosticDescriptor InvalidInverseReferencePropertyDesc = CreateDesc(
 			"Invalid inverse reference property",
@@ -77,73 +78,79 @@ namespace VeloxDB.SourceGenerator
 
 		public static readonly DiagnosticDescriptor InvalidDTOTypeDesc = CreateDesc(
 			"Invalid DTO Type",
-			"From method has invalid DTO type, only classes are allowed");
+			"The From method has an invalid DTO type. Only classes are allowed");
 
 		public static readonly DiagnosticDescriptor ToMethodHasArgumentsDesc = CreateDesc(
 			"To method has arguments",
-			"To method mustn't take any arguments");
+			"The To method must not take any arguments");
 		public static readonly DiagnosticDescriptor ToMethodCantBeVirtualDesc = CreateDesc(
 			"To method can not be virtual",
-			"To method can not be virtual, if you need polymorphic behavior consider using SupportPolymorphismAttribute");
+			"The To method cannot be virtual. If you need polymorphic behavior, consider using the SupportPolymorphismAttribute");
 
 		public static readonly DiagnosticDescriptor ToMethodCantBeStaticDesc = CreateDesc(
 			"To method can not be static",
-			"Only instance methods are allowed for to methods");
+			"Only instance methods are allowed for To methods");
 
 		public static readonly DiagnosticDescriptor MissingSupportPolymorphismDesc = CreateDesc(
 			"Missing SupportPolymorphismAttribute",
-			"Method {0} is not marked with SupportPolymorphismAttribute.",
+			"The method {0} is not marked with the SupportPolymorphismAttribute",
 			DiagnosticSeverity.Error
 		);
 
 		public static readonly DiagnosticDescriptor MissingPolymorphicMethodDesc = CreateDesc(
 			"Missing polymorphic method",
-			"Type {0} does not declare partial method {1} declared in {2}");
+			"The type {0} does not declare the partial method {1} declared in {2}");
 
 		public static readonly DiagnosticDescriptor SupportPolymorphismAlreadyDeclaredDesc = CreateDesc(
 			"SupportPolymorphismAttribute already declared",
-			"Method {0} has SupportPolymorphismAttribute attribute, when it is already declared for {1}"
+			"The method {0} has the SupportPolymorphismAttribute attribute, but it is already declared for {1}"
 		);
 
 		public static readonly DiagnosticDescriptor InvalidDTOInheritanceDesc = CreateDesc(
 			"Invalid DTO inheritance",
-			"DTO Type {0} does not inherit from DTO Type {1}"
+			"The DTO type {0} does not inherit from the DTO type {1}"
 		);
 
 		public static readonly DiagnosticDescriptor DuplicateDTOTypeDesc = CreateDesc(
 			"Duplicate DTO Type",
-			"Mapping for type {0} is already defined with method {1}"
+			"A mapping for type {0} is already defined with the method {1}"
 		);
 
 		public static readonly DiagnosticDescriptor ReferencedTypeMissingMethodDesc = CreateDesc(
 			"Referenced type is missing a method",
-			"Referenced Type {0} is missing method {1} with return type {2}"
+			"The referenced type {0} is missing the method {1} with the return type {2}"
 		);
 
 		public static readonly DiagnosticDescriptor MethodTypeMismatchDesc = CreateDesc(
 			"Method return type mismatch",
-			"{0} method of type {1} returns {2} but {3} was expected"
+			"The {0} method of type {1} returns {2}, but {3} was expected"
 		);
 
 		public static readonly DiagnosticDescriptor InaccessibleReferencedTypeDesc = CreateDesc(
 			"Inaccessible referenced type",
-			"{0} method of type {1} is not accessible from {2}"
+			"The {0} method of type {1} is not accessible from {2}"
 		);
 
 		public static readonly DiagnosticDescriptor OverloadNotSupportedDesc = CreateDesc(
 			"Overload of automapper methods is not supported",
-			"Method {0} is already declared, overloading is not supported, use default arguments where appropriate"
+			"The method {0} is already declared. Overloading is not supported. Use default arguments where appropriate"
 		);
 
 		public static readonly DiagnosticDescriptor PropertyAlreadyMatchedDesc = CreateDesc(
 			"DTO property already matched",
-			"DTO property {0} has already been matched to database property, only one DTO property is allowed"
+			"The DTO property {0} has already been matched to a database property. Only one DTO property is allowed to be matched to a database property"
 		);
 
 		public static readonly DiagnosticDescriptor UnexpectedReferenceDesc = CreateDesc(
 			"Unexpected reference",
-			"Property {0} is marked as DatabasePropertyAttribute, but it is of reference type. Mark it with DatabaseReferenceAttribute instead"
+			"The property {0} is marked as a DatabasePropertyAttribute, but it is of a reference type. Mark it with the DatabaseReferenceAttribute instead"
 		);
+
+		public static readonly DiagnosticDescriptor NullableReturnTypeDesc = CreateDesc(
+			"Nullable return type",
+			"The method {0} has a nullable return type. From/To methods never return null"
+		);
+
 
 		static int errorId = 0;
 
@@ -319,6 +326,11 @@ namespace VeloxDB.SourceGenerator
 		public static void UnexpectedReference(Context context, IPropertySymbol property)
 		{
 			context.Report(UnexpectedReferenceDesc, property, property.Name);
+		}
+
+		public static void NullableReturnType(Context context, IMethodSymbol methodSym)
+		{
+			context.Report(NullableReturnTypeDesc, methodSym, methodSym.Name);
 		}
 	}
 }

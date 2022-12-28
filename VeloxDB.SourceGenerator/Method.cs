@@ -65,6 +65,13 @@ namespace VeloxDB.SourceGenerator
 		private static Method CreateFromSymbol(Context context, IMethodSymbol methodSym, DBOType type)
 		{
 			Polymorphism polymorphism = GetPolymorphism(context, methodSym);
+
+			if(methodSym.ReturnType.NullableAnnotation == NullableAnnotation.Annotated)
+			{
+				Report.NullableReturnType(context, methodSym);
+				return null;
+			}
+
 			Method result = ToDTOMethod.Create(context, methodSym, type, polymorphism);
 
 			if(result == null)
