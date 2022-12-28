@@ -78,11 +78,15 @@ internal class Program
 			commandFinishedEvent?.Set();
 
 			string[] args = ReadArgs(out string error);
+
+			if (args == null)
+				break;
+
 			if (error != null)
 			{
 				ConsoleHelper.ShowError(error);
 			}
-			else
+			else 
 			{
 				RunCommand(args);
 			}
@@ -112,6 +116,13 @@ internal class Program
 	private string[] ReadArgs(out string error)
 	{
 		string s = ReadLine.Read();
+
+		if (s == null)
+		{
+			error = "";
+			return null;
+		}
+
 		List<string> args = new List<string>();
 		StringBuilder word = new StringBuilder(16);
 
@@ -163,7 +174,7 @@ internal class Program
 				sb.Append('/');
 		}
 
-		sb.Append('>');
+		sb.Append("> ");
 		return sb.ToString();
 	}
 

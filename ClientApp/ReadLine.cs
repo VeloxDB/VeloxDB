@@ -70,16 +70,17 @@ internal static class ReadLine
 	private static string GetText(KeyHandler keyHandler)
 	{
 		ConsoleKeyInfo keyInfo;
+		bool success = true;
 		if (Console.IsInputRedirected || IsAlternateInput)
 		{
-			keyInfo = ReadKeyRedirected();
+			(success, keyInfo) = ReadKeyRedirected();
 
-			while (keyInfo.KeyChar != '\n')
+			while (keyInfo.KeyChar != '\n' && success)
 			{
 				if (keyInfo.Key != ConsoleKey.Enter)
 					keyHandler.Handle(keyInfo);
 
-				keyInfo = ReadKeyRedirected();
+				(success, keyInfo) = ReadKeyRedirected();
 			}
 		}
 		else
@@ -93,19 +94,23 @@ internal static class ReadLine
 		}
 
 		Console.WriteLine();
-		return keyHandler.Text;
+		return (success || keyHandler.Text.Length != 0)?keyHandler.Text:null;
 	}
 
-	private static ConsoleKeyInfo ReadKeyRedirected()
+	private static (bool, ConsoleKeyInfo) ReadKeyRedirected()
 	{
-		char ch = (char)Console.Read();
+		int cnum = Console.Read();
+		if (cnum == -1)
+			return (false, new ConsoleKeyInfo());
+
+		char ch = (char)cnum;
 		if (ch == '\r')
 			ch = (char)Console.Read();
 
 		if (ch == '\n')
-			return new ConsoleKeyInfo(ch, ConsoleKey.Enter, false, false, false);
+			return (true, new ConsoleKeyInfo(ch, ConsoleKey.Enter, false, false, false));
 		else
-			return new ConsoleKeyInfo(ch, ConsoleKey.Oem8, false, false, false);
+			return (true, new ConsoleKeyInfo(ch, ConsoleKey.Oem8, false, false, false));
 	}
 }
 

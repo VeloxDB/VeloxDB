@@ -21,6 +21,9 @@ internal sealed class ClusterStatusCommand : BindableCommand
 	protected override bool OnExecute(Program program)
 	{
 		ClusterConfiguration clusterConfig = ((InitialMode)program.Mode).ClusterConfig;
+		if(!CheckClusterBinding(program))
+			return false;
+
 		if (clusterConfig.Cluster == null)
 		{
 			Console.WriteLine("Cluster is empty.");

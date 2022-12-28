@@ -287,13 +287,15 @@ internal abstract class ReplicationElement
 
 		if (Name == null)
 		{
-			helper.AddError($"Node {helper.GetCurrentPath()} doesn't have name set.");
-			if (!nameRegex.Match(Name).Success)
-				helper.AddError($"Node {helper.GetCurrentPath()} has an invalid name (invalid characters detected).");
+			helper.AddError($"Node {helper.GetCurrentPath()} doesn't have a name set.");
 		}
 		else
 		{
 			string collision;
+
+			if (!nameRegex.Match(Name).Success)
+				helper.AddError($"Node {helper.GetCurrentPath()} has an invalid name (invalid characters detected).");
+
 			if (!helper.TryAddElementByName(this, out collision))
 			{
 				helper.AddError($"Name is not unique. {collision} has the same name.");

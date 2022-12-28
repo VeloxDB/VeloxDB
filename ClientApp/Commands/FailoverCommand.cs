@@ -12,7 +12,7 @@ namespace VeloxDB.ClientApp.Commands;
 	ProgramMode = ProgramMode.Both)]
 internal sealed class FailoverCommand : BindableCommand
 {
-	[Param("name", "Name of the HA cluster on which a failover operation should be executed.", ShortName = "n")]
+	[Param("name", "Name of the HA cluster on which a failover operation should be executed.", ShortName = "n", IsMandatory = true)]
 	public string Name { get; set; }
 
 	public override bool IsModeValid(Mode mode)
@@ -26,6 +26,7 @@ internal sealed class FailoverCommand : BindableCommand
 			return false;
 
 		InitialMode initMode = (InitialMode)program.Mode;
+
 		if (!initMode.ClusterConfig.TryGetElementByName(Name, out ReplicationElement element) || element.Type != ElementType.LocalWrite)
 		{
 			ConsoleHelper.ShowError("HA Cluster with a given name could not be found.");

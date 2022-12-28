@@ -113,7 +113,7 @@ internal sealed class ShowClusterConfigurationCommand : BindableCommand
 			});
 
 			StandaloneNode snode = element as StandaloneNode;
-			if (snode != null)
+			if (snode != null && snode.Children != null)
 			{
 				for (int i = 0; i < snode.Children.Length; i++)
 				{

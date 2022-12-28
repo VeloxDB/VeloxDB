@@ -102,7 +102,9 @@ internal abstract class Command
 		foreach (string propName in mandatoryParams)
 		{
 			PropertyInfo pi = this.GetType().GetProperty(propName, BindingFlags.Public | BindingFlags.Instance | BindingFlags.FlattenHierarchy);
-			sb.Append("--").Append(pi.Name).Append(' ');
+			ParamAttribute pa = pi.GetCustomAttribute<ParamAttribute>();
+
+			sb.Append("--").Append(pa.Name).Append(' ');
 		}
 
 		sb.Length--;
