@@ -61,6 +61,7 @@ internal sealed class Server : IDisposable
 
 	public void Run()
 	{
+		LogVersion();
 		if (!LoadClusterConfiguration())
 			return;
 
@@ -93,6 +94,13 @@ internal sealed class Server : IDisposable
 			terminateEvent.WaitOne();
 			Tracing.Info("Server shutting down...");
 		}
+	}
+
+	private static void LogVersion()
+	{
+		Version? version = Assembly.GetExecutingAssembly().GetName().Version;
+		Checker.AssertNotNull(version);
+		Tracing.Info("Starting VeloxDB {0}", version.ToString());
 	}
 
 	private bool InitPersistance(string persistenceDir)
