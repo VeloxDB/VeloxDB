@@ -11,7 +11,7 @@ namespace VeloxDB.ClientApp.Commands;
 [Command("standby", "Instructs a given write HA cluster to become the standby site.", ProgramMode = ProgramMode.Both)]
 internal sealed class StandbySiteCommand : BindableCommand
 {
-	[Param("name", "Name of the HA cluster to become the primary site.", ShortName = "n")]
+	[Param("name", "Name of the HA cluster to become the primary site.", ShortName = "n", IsMandatory = true)]
 	public string Name { get; set; }
 
 	public override bool IsModeValid(Mode mode)

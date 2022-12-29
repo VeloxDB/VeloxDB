@@ -12,7 +12,7 @@ namespace VeloxDB.ClientApp.Commands;
 [Command("primary", "Instructs a given write HA cluster to become the primary site.", ProgramMode = ProgramMode.Both)]
 internal sealed class PrimarySiteCommand : BindableCommand
 {
-	[Param("name", "Name of the HA cluster to become the primary site.", ShortName = "n")]
+	[Param("name", "Name of the HA cluster to become the primary site.", ShortName = "n", IsMandatory = true)]
 	public string Name { get; set; }
 
 	public override bool IsModeValid(Mode mode)

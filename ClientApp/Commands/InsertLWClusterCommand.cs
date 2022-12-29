@@ -1,4 +1,4 @@
-﻿using System;
+﻿﻿using System;
 using VeloxDB.ClientApp.Modes;
 using VeloxDB.Common;
 using VeloxDB.Config;
@@ -75,14 +75,6 @@ internal sealed class InsertLWClusterCommand : Command
 	public override bool IsModeValid(Mode mode)
 	{
 		return mode is ClusterConfigMode;
-	}
-
-	public override string ValidateParams(HashSet<string> missingParams)
-	{
-		if (missingParams.Contains(nameof(Host1)) && missingParams.Contains(nameof(NodeName1)))
-			return "Either --host1 or --node-name1 parameter must be provided.";
-
-		return null;
 	}
 
 	protected override bool OnExecute(Program program)
@@ -265,6 +257,12 @@ internal sealed class InsertLWClusterCommand : Command
 			existingNode = (StandaloneNode)elem;
 		}
 
+		if (existingNode == null && Host1 == null)
+		{
+			ConsoleHelper.ShowError("host1 parameter is required when a new node is being created HA cluster.");
+			return false;
+		}
+
 		if (SourceName != null)
 		{
 			if (existingNode != null)
@@ -297,6 +295,12 @@ internal sealed class InsertLWClusterCommand : Command
 
 	private bool ValidateParams()
 	{
+		if (Host1 == null && NodeName1 == null)
+		{
+			ConsoleHelper.ShowError("Either host1 or node-name1 must be provided.");
+			return false;
+		}
+
 		if (ElectorPort <= 0 || ElectorPort > ushort.MaxValue)
 		{
 			ConsoleHelper.ShowError("Invalid value for --elector-port parameter.");

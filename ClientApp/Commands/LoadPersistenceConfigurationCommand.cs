@@ -6,7 +6,7 @@ namespace VeloxDB.ClientApp.Commands;
 [Command("load", "Loads the persistence configuration for editing.")]
 internal sealed class LoadPersistenceConfigurationCommand : Command
 {
-	[Param("file", "Persistence configuration file to load.", ShortName = "f")]
+	[Param("file", "Persistence configuration file to load.", ShortName = "f", IsMandatory = true)]
 	public string FileName { get; set; }
 
 	public override bool IsModeValid(Mode mode)
