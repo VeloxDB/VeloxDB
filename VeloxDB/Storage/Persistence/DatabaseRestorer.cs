@@ -249,7 +249,7 @@ internal unsafe sealed class DatabaseRestorer
 		File.Delete(tempFileName);
 	}
 
-	private void SetLogRestoreActions(int logIndex, ulong stoppingLogSeqNum,
+	private void SetLogRestoreActions(int logIndex, ulong stoppingLogSeqNum, DatabaseVersions snapshotVersions,
 		out PendingRestoreOperations pendingOperations, out DatabaseVersions[] versions)
 	{
 		PendingRestoreOperations pendingOps = pendingOperations =
@@ -259,7 +259,11 @@ internal unsafe sealed class DatabaseRestorer
 		Action<CommonWorkerParam>[] actions = new Action<CommonWorkerParam>[workers.WorkerCount];
 		for (int i = 0; i < actions.Length; i++)
 		{
-			versions[i] = new DatabaseVersions(database);
+			// It is very important that the snapshot version is used by the first worker (while others get clones).
+			// When a rewind occurs, all version sets need to be affected (including the snapshot versions) so that
+			// the final merge of all versions is correct.
+			versions[i] = i == 0 ? snapshotVersions : snapshotVersions.Clone();
+
 			LogWorkerParam p = new LogWorkerParam()
 			{
 				LogIndex = logIndex,
@@ -352,7 +356,8 @@ internal unsafe sealed class DatabaseRestorer
 
 		trace.Debug("Restoring log file, logIndex={0}.", logIndex);
 
-		SetLogRestoreActions(logIndex, stoppingLogSeqNum, out PendingRestoreOperations restoreOps, out DatabaseVersions[] perWorkerVersions);
+		SetLogRestoreActions(logIndex, stoppingLogSeqNum, versions,
+			out PendingRestoreOperations restoreOps, out DatabaseVersions[] perWorkerVersions);
 
 		List<LogItem> logItems = new List<LogItem>(8);
 		filePosition = 0;
@@ -392,7 +397,9 @@ internal unsafe sealed class DatabaseRestorer
 
 		restoreOps.ValidateEmpty();
 
-		for (int i = 0; i < perWorkerVersions.Length; i++)
+		TTTrace.Write(database.TraceId, database.Id, logIndex);
+		Checker.AssertTrue(object.ReferenceEquals(versions, perWorkerVersions[0]));
+		for (int i = 1; i < perWorkerVersions.Length; i++)
 		{
 			versions.MergeFrom(perWorkerVersions[i]);
 		}

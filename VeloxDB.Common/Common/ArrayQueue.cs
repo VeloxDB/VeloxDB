@@ -70,8 +70,8 @@ internal sealed class ArrayQueue<T> : IEnumerable<T>
 		if (count == items.Length)
 			Resize();
 
-		items[first] = item;
 		first = (first - 1) & capacityMask;
+		items[first] = item;
 		count++;
 	}
 

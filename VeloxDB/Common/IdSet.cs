@@ -25,6 +25,15 @@ internal unsafe sealed class IdSet
 	{
 	}
 
+	~IdSet()
+	{
+#if DEBUG
+		throw new CriticalDatabaseException();
+#else
+		Dispose();	
+#endif
+	}
+
 	public void Add(long id)
 	{
 		long bucket = GetBucket(id);
@@ -49,6 +58,8 @@ internal unsafe sealed class IdSet
 
 	public bool Contains(long id)
 	{
+		Checker.AssertTrue(buckets != null);
+
 		long bucket = GetBucket(id);
 		while (true)
 		{
@@ -112,6 +123,11 @@ internal unsafe sealed class IdSet
 
 	public void Dispose()
 	{
-		NativeAllocator.Free((IntPtr)buckets);
+		GC.SuppressFinalize(this);
+		if (buckets != null)            // Can be null if deserialize failed due to closed connection
+		{
+			NativeAllocator.Free((IntPtr)buckets);
+			buckets = null;
+		}
 	}
 }

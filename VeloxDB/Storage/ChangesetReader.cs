@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
 using System.Runtime.CompilerServices;
 using VeloxDB.Common;
@@ -163,6 +164,7 @@ internal unsafe sealed class ChangesetReader
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public OperationHeader GetOperationHeader()
 	{
+		EnsureSpace(1);
 		if (offset + 8 <= bufferLength)
 		{
 			ulong* p = ((ulong*)(buffer + offset));
@@ -489,7 +491,7 @@ internal unsafe sealed class ChangesetReader
 		head = ch.Buffers;
 
 		buffer = ch.Buffers;
-		bufferLength = (int)((ChangesetBufferHeader*)buffer)->size;
+		bufferLength = ((ChangesetBufferHeader*)buffer)->size;
 		offset = ChangesetBufferHeader.Size;
 	}
 

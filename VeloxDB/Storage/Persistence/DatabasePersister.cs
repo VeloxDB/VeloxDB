@@ -192,6 +192,11 @@ internal unsafe sealed class DatabasePersister : IDisposable
 		}
 	}
 
+	public void InitSequence(ulong logSeqNum)
+	{
+		orderer.ResetNextId(logSeqNum + 1);
+	}
+
 	public void Dispose()
 	{
 		for (int i = 0; i < logPersisters.Length; i++)

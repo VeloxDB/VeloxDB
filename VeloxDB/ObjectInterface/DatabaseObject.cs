@@ -108,6 +108,8 @@ public unsafe abstract class DatabaseObject
 	/// </remarks>
 	public long Id => id;
 
+	internal bool IsInsertedOrModified => (state & (DatabaseObjectState.Inserted | DatabaseObjectState.Modified)) != DatabaseObjectState.None;
+
 	internal abstract void CreateInsertBlock(ChangesetWriter writer);
 	internal abstract void CreateUpdateBlock(ChangesetWriter writer);
 	internal abstract void InvalidateInverseReferences();

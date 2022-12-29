@@ -239,6 +239,7 @@ internal unsafe sealed class TransactionContext : IDisposable
 
 	public void AddChangeset(Changeset changeset)
 	{
+		TTTrace.Write(engine.TraceId, database.Id, this.changeset != null);
 		changeset.TakeRef();
 
 		if (this.changeset == null)
@@ -619,9 +620,11 @@ internal unsafe sealed class TransactionContext : IDisposable
 		globalTerm.Low = 0;
 		globalTerm.Hight = 0;
 
-		Checker.AssertTrue(changeset == null || changeset.Next == null);
-		changeset?.ReleaseRef();
-		changeset = null;
+		while (changeset != null)
+		{
+			changeset.ReleaseRef();
+			changeset = changeset.Next;
+		}
 
 		for (int i = 0; i < nextPersisted.Length; i++)
 		{

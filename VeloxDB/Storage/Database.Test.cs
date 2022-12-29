@@ -78,14 +78,10 @@ internal unsafe sealed partial class Database
 
 #if TEST_BUILD
 	[Conditional("TEST_BUILD")]
-	internal void WaitSnapshotFinished()
+	internal void DrainPersistenceSnapshot()
 	{
-		snapshotController.Block();
-
 		if (persister != null)
 			persister.WaitSnapshotFinished();
-
-		snapshotController.Unblock();
 	}
 
 	internal void ValidateGarbage(int allowedTranCount = 0)

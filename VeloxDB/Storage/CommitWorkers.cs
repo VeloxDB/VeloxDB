@@ -87,7 +87,7 @@ internal sealed class CommitWorkers
 			{
 				lock (globalSync)
 				{
-					if (globalCount > 0)
+					if (globalCount > 0 || activeExecuteCount > 0)
 					{
 						TTTrace.Write(engine.TraceId, globalCount);
 						return true;
@@ -461,7 +461,7 @@ internal sealed class CommitWorkers
 				head = null;
 				operationCount = 0;
 				transactionCount = 0;
-				sync.Exit();
+				sync.ExitAndRemoveFlag();
 				commitWorkers.EnqueueGlobal(publishTran);
 				return;
 			}
@@ -477,7 +477,7 @@ internal sealed class CommitWorkers
 			if (publishTran != null)
 				commitWorkers.EnqueueGlobal(publishTran);
 
-			sync.Exit();
+			sync.ExitAndRemoveFlag();
 		}
 
 		public Transaction TryTake()
@@ -495,7 +495,7 @@ internal sealed class CommitWorkers
 				else
 				{
 					TTTrace.Write(res.Engine.TraceId, res.Id);
-					sync.Exit();
+					sync.ExitAndRemoveFlag();
 				}
 
 				return res;
@@ -550,6 +550,9 @@ internal sealed class CommitWorkers
 				}
 				else
 				{
+					if ((s & flagged) != 0)
+						return false;
+
 					if (Interlocked.CompareExchange(ref state, (s | flagged), s) == s)
 						return false;
 				}
@@ -572,13 +575,25 @@ internal sealed class CommitWorkers
 		}
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public void Exit()
+		public void ExitAndRemoveFlag()
 		{
 			while (true)
 			{
 				int s = state;
 				Checker.AssertTrue((s & taken) != 0);
 				if (Interlocked.CompareExchange(ref state, 0, s) == s)
+					return;
+			}
+		}
+
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		public void Exit()
+		{
+			while (true)
+			{
+				int s = state;
+				Checker.AssertTrue((s & taken) != 0);
+				if (Interlocked.CompareExchange(ref state, s & (~taken), s) == s)
 					return;
 			}
 		}

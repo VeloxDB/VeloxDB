@@ -1,7 +1,8 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Reflection.Emit;
+using System.Reflection.Metadata;
 using System.Runtime.CompilerServices;
 using VeloxDB.Common;
 using VeloxDB.Descriptor;
@@ -51,6 +52,7 @@ internal sealed class ClassData
 	static MethodInfo invalidateInvRefsHandleMethod = typeof(ObjectModel).GetMethod(nameof(ObjectModel.InvalidateInverseReferencesFromHandle), BindingFlags.Instance | BindingFlags.NonPublic);
 	static MethodInfo getObjectIdMethod = typeof(DatabaseObject).GetMethod(nameof(DatabaseObject.GetId), BindingFlags.Static | BindingFlags.NonPublic);
 	static MethodInfo getIdMethod = typeof(DatabaseObject).GetProperty(nameof(DatabaseObject.Id), BindingFlags.Instance | BindingFlags.Public).GetGetMethod();
+	static MethodInfo isInsertedOrModifiedMethod = typeof(DatabaseObject).GetProperty(nameof(DatabaseObject.IsInsertedOrModified), BindingFlags.Instance | BindingFlags.NonPublic).GetGetMethod(true);
 	static MethodInfo takeRefArrayOwnershipMethod = typeof(DatabaseObject).GetMethod(nameof(DatabaseObject.TakeReferenceArrayOwnersip), BindingFlags.Instance | BindingFlags.NonPublic);
 	static MethodInfo writeRefArrayMethod = typeof(ReferenceArray).GetMethod(nameof(ReferenceArray.WriteToChangesetWriter), BindingFlags.Static | BindingFlags.NonPublic);
 	static MethodInfo refreshRefArrayMethod = typeof(ReferenceArray).GetMethod(nameof(ReferenceArray.Refresh), BindingFlags.Static | BindingFlags.NonPublic);
@@ -1059,6 +1061,34 @@ internal sealed class ClassData
 		il.Emit(OpCodes.Ldarg_0);
 		il.Emit(OpCodes.Call, verifyAccessMethod);
 
+		// Determine whether the string is modified
+		LocalBuilder isModifiedVar = il.DeclareLocal(typeof(bool));
+		il.Emit(OpCodes.Ldc_I4_0);
+		il.Emit(OpCodes.Stloc, isModifiedVar);
+
+		// Check if object has been modified
+		il.Emit(OpCodes.Ldarg_0);
+		il.Emit(OpCodes.Call, isInsertedOrModifiedMethod);
+
+		Label notModifiedLabel = il.DefineLabel();
+
+		il.Emit(OpCodes.Brfalse, notModifiedLabel);
+
+		// Object has been modified, load bool indicating whether the property has been modified
+		int fieldIndex = (propertyIndex - 2) / 8;
+		int bitIndex = (propertyIndex - 2) % 8;
+		int mask = (byte)(1 << bitIndex);
+		il.Emit(OpCodes.Ldarg_0);
+		il.Emit(OpCodes.Ldfld, bufferField);
+		il.Emit(OpCodes.Ldc_I4, CalculateBitFiledSize(classDesc) - fieldIndex);
+		il.Emit(OpCodes.Sub);
+		il.Emit(OpCodes.Ldind_U1);
+		il.Emit(OpCodes.Ldc_I4, mask);
+		il.Emit(OpCodes.And);
+		il.Emit(OpCodes.Stloc, isModifiedVar);
+		il.MarkLabel(notModifiedLabel);
+
+
 		// Load object model onto the stack to later call GetString
 		il.Emit(OpCodes.Ldarg_0);
 		il.Emit(OpCodes.Ldfld, ownerField);
@@ -1070,17 +1100,7 @@ internal sealed class ClassData
 		il.Emit(OpCodes.Add);
 		il.Emit(OpCodes.Ldind_I8);
 
-		// Load bool indicating whether the property has been modified
-		int fieldIndex = (propertyIndex - 2) / 8;
-		int bitIndex = (propertyIndex - 2) % 8;
-		int mask = (byte)(1 << bitIndex);
-		il.Emit(OpCodes.Ldarg_0);
-		il.Emit(OpCodes.Ldfld, bufferField);
-		il.Emit(OpCodes.Ldc_I4, CalculateBitFiledSize(classDesc) - fieldIndex);
-		il.Emit(OpCodes.Sub);
-		il.Emit(OpCodes.Ldind_U1);
-		il.Emit(OpCodes.Ldc_I4, mask);
-		il.Emit(OpCodes.And);
+		il.Emit(OpCodes.Ldloc, isModifiedVar);
 
 		// Call GetString
 		il.Emit(OpCodes.Call, getStringMethod);

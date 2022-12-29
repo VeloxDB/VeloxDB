@@ -31,7 +31,7 @@ internal unsafe sealed partial class InverseReferenceMap
 #if TEST_BUILD
 	public void ValidateGarbage(ulong readVersion, bool checkEmpty)
 	{
-		TTTrace.Write(database.TraceId);
+		TTTrace.Write(database.TraceId, readVersion);
 
 		List<uint> res = new List<uint>();
 		for (int i = 0; i < capacity; i++)

@@ -114,7 +114,7 @@ internal unsafe class ChangesetWriterPool
 
 internal unsafe sealed class ChangesetWriter
 {
-	const int maxLogCount = 8;
+	const int maxLogCount = 4;
 
 	int procNum;
 	int maxLogSeqNum;
@@ -141,9 +141,17 @@ internal unsafe sealed class ChangesetWriter
 
 	public void TurnLargeInitSizeOn()
 	{
-		for (int i = 0; i <= maxLogSeqNum; i++)
+		for (int i = 0; i < logWriters.Length; i++)
 		{
 			logWriters[i].TurnLargeInitSizeOn();
+		}
+	}
+
+	public void TurnLargeInitSizeOff()
+	{
+		for (int i = 0; i < logWriters.Length; i++)
+		{
+			logWriters[i].TurnLargeInitSizeOff();
 		}
 	}
 
@@ -249,14 +257,11 @@ internal unsafe sealed class ChangesetWriter
 		currWriter.StartDeleteBlockUnsafe(classDesc);
 	}
 
-	public void RewindToVersion(DataModelDescriptor modelDesc, ulong version)
+	public void RewindToVersion(int? logCount, ulong version)
 	{
-		int logCount = 1;
-		if (modelDesc.LogCount != 0) // When no persistence is present in the database write everything in a single writer
-			logCount = modelDesc.LogCount;
-
-		maxLogSeqNum = logCount - 1;
-		for (int i = 0; i < logCount; i++)
+		int lc = logCount.HasValue ? logCount.Value : 1;
+		maxLogSeqNum = lc - 1;
+		for (int i = 0; i < lc; i++)
 		{
 			logWriters[i].CreateRewindBlock(version);
 		}
@@ -734,6 +739,8 @@ internal unsafe sealed class LogChangesetWriter
 	int blockOperationCount;
 	BytePlaceholder blockCountPlaceholder;
 
+	bool largeBufferSizeMode;
+
 	public LogChangesetWriter(MemoryManager memoryManager, int logIndex)
 	{
 		this.memoryManager = memoryManager;
@@ -752,7 +759,12 @@ internal unsafe sealed class LogChangesetWriter
 
 	public void TurnLargeInitSizeOn()
 	{
-		activeBufferSize = largeBuferSize;
+		largeBufferSizeMode = true;
+	}
+
+	public void TurnLargeInitSizeOff()
+	{
+		largeBufferSizeMode = false;
 	}
 
 	public LogChangeset FinishWriting()
@@ -1041,7 +1053,7 @@ internal unsafe sealed class LogChangesetWriter
 	{
 		blockOperationCount++;
 
-		if (blockOperationCount == ushort.MaxValue)
+		if (blockOperationCount == byte.MaxValue)
 		{
 			ClassDescriptor cd = classDesc;
 			OperationType opType = operationType;
@@ -1307,7 +1319,9 @@ internal unsafe sealed class LogChangesetWriter
 	[MethodImpl(MethodImplOptions.NoInlining)]
 	private void AllocateNewBuffer()
 	{
-		if (activeBufferSize != largeBuferSize)
+		if (largeBufferSizeMode)
+			activeBufferSize = largeBuferSize;
+		else
 			activeBufferSize = Min(endBufferSize, Max(startBufferSize, activeBufferSize * 2));
 
 		ulong handle = memoryManager.Allocate(activeBufferSize);

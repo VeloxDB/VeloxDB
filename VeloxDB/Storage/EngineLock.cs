@@ -149,7 +149,7 @@ internal sealed class EngineLock
 	{
 		if (ownershipCount == 0)
 		{
-			engine.PreventPersistanceSnapshots();
+			engine.PreventPersistenceSnapshots();
 
 			if (drainTransactions)
 				EnterDraining();
@@ -179,7 +179,7 @@ internal sealed class EngineLock
 			if (enteredWithDraining)
 				ExitDraining();
 
-			engine.AllowPersistanceSnapshots();
+			engine.AllowPersistenceSnapshots();
 		}
 	}
 

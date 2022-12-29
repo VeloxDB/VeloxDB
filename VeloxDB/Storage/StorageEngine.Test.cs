@@ -18,12 +18,15 @@ internal unsafe sealed partial class StorageEngine
 		}
 	}
 
-	internal void WaitSnapshotFinished()
+	internal void DrainPersistenceSnapshots()
 	{
+		snapshotController.Block();
 		for (int i = 0; i < databases.Length; i++)
 		{
-			databases[i].WaitSnapshotFinished();
+			databases[i].DrainPersistenceSnapshot();
 		}
+
+		snapshotController.Unblock();
 	}
 
 	internal void CreateSnapshot(long databaseId, int logIndex)
@@ -54,7 +57,7 @@ internal unsafe sealed partial class StorageEngine
 			TTTrace.Write(traceId, tran.Id);
 		}
 
-		WaitSnapshotFinished();
+		DrainPersistenceSnapshots();
 		for (int i = 0; i < databases.Length; i++)
 		{
 			databases[i].ValidateGarbage(1);

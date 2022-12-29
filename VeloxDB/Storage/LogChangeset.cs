@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Security.Cryptography;
 using VeloxDB.Common;
 using VeloxDB.Networking;
 
@@ -257,13 +256,13 @@ internal sealed unsafe class LogChangeset : IDisposable
 		ChangesetBufferHeader* curr = (ChangesetBufferHeader*)buffers;
 		for (int i = 0; i < bufferCount; i++)
 		{
-			int size = (int)curr->size;
+			int size = curr->size;
 			size -= ChangesetBufferHeader.Size;
 
 			writer.WriteInt(size);
 			writer.WriteBuffer((byte*)curr + ChangesetBufferHeader.Size, size);
 
-			curr = (ChangesetBufferHeader*)curr->next;
+			curr = curr->next;
 		}
 	}
 
@@ -298,8 +297,8 @@ internal sealed unsafe class LogChangeset : IDisposable
 					prev->next = (ChangesetBufferHeader*)buffer;
 
 				prev = (ChangesetBufferHeader*)buffer;
-				prev->size = size + ChangesetBufferHeader.Size; // This is total buffer size including the header
-				prev->bufferSize = size;
+				prev->size = size + ChangesetBufferHeader.Size;
+				prev->bufferSize = prev->size;
 				prev->handle = handle;
 				prev->next = null;
 			}

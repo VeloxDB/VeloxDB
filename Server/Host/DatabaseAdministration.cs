@@ -72,7 +72,7 @@ public sealed class DatabaseAdministration
 		lock (sync)
 		{
 			Check(persistenceDescriptor);
-			engine.UpdatePersistanceConfiguration(Convert(persistenceDescriptor));
+			engine.UpdatePersistenceConfiguration(Convert(persistenceDescriptor));
 		}
 	}
 

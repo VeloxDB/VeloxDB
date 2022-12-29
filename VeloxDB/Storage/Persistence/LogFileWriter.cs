@@ -236,6 +236,7 @@ internal unsafe sealed class LogFileWriter : IDisposable
 		{
 			TransactionContext tc = transactions[i].Context;
 			LogChangeset lc = tc.Changeset?.GetLogChangeset(logIndex);
+			TTTrace.Write(tc.Database.TraceId, tc.Database.Id, lc != null, tc.Alignment != null, LogItem.CanLogRunParallel(lc));
 			if (tc.Alignment != null || !LogItem.CanLogRunParallel(lc))
 				phead->type = LogBlockType.NonParallel;
 

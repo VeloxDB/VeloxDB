@@ -171,6 +171,7 @@ internal sealed unsafe partial class Changeset : IDisposable
 				for (int i = 0; i < logChangesets.Length; i++)
 				{
 					logChangesets[i]?.Dispose();
+					logChangesets[i] = null;
 				}
 			}
 

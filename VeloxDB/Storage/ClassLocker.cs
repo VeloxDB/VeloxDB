@@ -38,7 +38,10 @@ internal unsafe sealed class ClassLocker : IDisposable
 		TransactionContext tc = tran.Context;
 
 		if (ClassIndexMultiSet.Contains(tc.LockedClasses, classIndex))
+		{
+			TTTrace.Write(classIndex);
 			return true;
+		}
 
 		int count = ProcessorNumber.CoreCount;
 		long writerCount = 0;
@@ -46,6 +49,7 @@ internal unsafe sealed class ClassLocker : IDisposable
 		{
 			WriterState* state = GetWriter(i);
 			writerCount += state->count;
+			TTTrace.Write(tran.Id, state->count, state->commitedVersion, tran.ReadVersion);
 			if ((ulong)state->commitedVersion > tran.ReadVersion)
 				return false;
 		}
@@ -57,6 +61,7 @@ internal unsafe sealed class ClassLocker : IDisposable
 			return false;
 
 		readerCount++;
+		TTTrace.Write(tran.Id, readerCount);
 		ClassIndexMultiSet* tis = tc.LockedClasses;
 		ClassIndexMultiSet.TryAdd(memoryManager, ref tis, classIndex);
 		if (tis != tc.LockedClasses)
@@ -70,6 +75,8 @@ internal unsafe sealed class ClassLocker : IDisposable
 	/// </summary>
 	public bool TryAddWriter(Transaction tran)
 	{
+		TTTrace.Write(tran.Id, commitedReadLockVer, tran.ReadVersion, readerCount);
+
 		TransactionContext tc = tran.Context;
 		if (commitedReadLockVer > tran.ReadVersion || readerCount > 1 ||
 			(readerCount > 0 && !ClassIndexMultiSet.Contains(tc.LockedClasses, classIndex)))
@@ -94,6 +101,8 @@ internal unsafe sealed class ClassLocker : IDisposable
 	/// </summary>
 	public void CommitReadLock(ulong commitVersion)
 	{
+		TTTrace.Write(commitVersion, readerCount);
+
 		readerCount--;
 		Checker.AssertTrue(readerCount >= 0);
 		if (commitVersion > commitedReadLockVer)
@@ -105,6 +114,8 @@ internal unsafe sealed class ClassLocker : IDisposable
 	/// </summary>
 	public void RollbackReadLock()
 	{
+		TTTrace.Write(readerCount);
+
 		readerCount--;
 		Checker.AssertTrue(readerCount >= 0);
 	}

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
@@ -29,15 +29,9 @@ internal sealed class DataModelDescriptor : ModelItemDescriptor
 	Dictionary<string, HashIndexDescriptor> nameToHashIndex;
 	Dictionary<short, HashIndexDescriptor> idToHashIndex;
 
-	int logCount;
-
 	// While the model is being built different types of descriptors need to store temporary data
 	// so this generic map is used for that.
 	Dictionary<object, object> loadingTempData;
-
-	private DataModelDescriptor(bool dummy)
-	{
-	}
 
 	public DataModelDescriptor(short lastUsedClassId = 0, int lastUsedPropertyId = 0, short lastUsedHashIndexId = 0)
 	{
@@ -62,7 +56,6 @@ internal sealed class DataModelDescriptor : ModelItemDescriptor
 	public short LastUsedClassId => lastUsedClassId;
 	public int LastUsedPropertyId => lastUsedPropertyId;
 	public short LastUsedHashIndexId => lastUsedHashIndexId;
-	public int LogCount => logCount;
 	public Dictionary<object, object> LoadingTempData => loadingTempData;
 
 	public static DataModelDescriptor CreateEmpty(PersistenceDescriptor persistenceDescriptor)
@@ -241,8 +234,6 @@ internal sealed class DataModelDescriptor : ModelItemDescriptor
 			return;
 
 		Dictionary<short, Tuple<string, ClassDescriptor>> m = new Dictionary<short, Tuple<string, ClassDescriptor>>(256);
-
-		logCount = persistenceSett.SecondaryLogs.Length + 1;
 
 		foreach (LogSettings ls in persistenceSett.SecondaryLogs)
 		{
@@ -501,17 +492,6 @@ internal sealed class DataModelDescriptor : ModelItemDescriptor
 		}
 	}
 
-	private void CountLogs()
-	{
-		int m = -1;
-		foreach (ClassDescriptor classDesc in GetAllClasses())
-		{
-			m = Math.Max(classDesc.LogIndex, m);
-		}
-
-		logCount = m + 1;
-	}
-
 	public override void Serialize(BinaryWriter writer, ModelDescriptorSerializerContext context)
 	{
 		writer.Write(serializerVersion);
@@ -593,7 +573,5 @@ internal sealed class DataModelDescriptor : ModelItemDescriptor
 		}
 
 		SetClassInverseRefs();
-
-		CountLogs();
 	}
 }

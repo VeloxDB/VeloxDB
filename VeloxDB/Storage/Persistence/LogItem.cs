@@ -207,7 +207,7 @@ internal unsafe struct LogItem
 		}
 	}
 
-	[Conditional("HPTRACE")]
+	[Conditional("TTTRACE")]
 	public void TTTraceState(long traceId)
 	{
 		TTTrace.Write(traceId, commitVersion, globalTerm.Low, globalTerm.Hight, localTerm, affectedLogsMask, logSeqNum);

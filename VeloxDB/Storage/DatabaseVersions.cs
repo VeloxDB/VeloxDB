@@ -158,6 +158,7 @@ internal unsafe sealed class DatabaseVersions
 					globalVersions = new List<GlobalVersion>(alignmentGlobalVersions);
 					globalTerm = globalVersions[globalVersions.Count - 1].GlobalTerm;
 					readVersion = globalVersions[globalVersions.Count - 1].Version;
+					TTTraceState();
 				}
 
 				orderer.TranCommited(tran, publishCallback);
@@ -176,6 +177,9 @@ internal unsafe sealed class DatabaseVersions
 
 	public GlobalVersion[] UnpackClusterVersions(out uint localTerm)
 	{
+		TTTrace.Write(database.TraceId, database.Id);
+		TTTraceState();
+
 		sync.EnterReadLock();
 
 		try
@@ -256,6 +260,8 @@ internal unsafe sealed class DatabaseVersions
 			readVersion = version;
 			commitVersion = version;
 			RefreshLastGlobalVersion();
+
+			TTTraceState();
 
 			return true;
 		}
@@ -373,7 +379,7 @@ internal unsafe sealed class DatabaseVersions
 		commitVersion = readVersion;
 	}
 
-#if TEST_BUILD
+	[Conditional("DEBUG")]
 	internal void ValidateOrderAndUniqueness()
 	{
 		RefreshLastGlobalVersion();
@@ -390,7 +396,6 @@ internal unsafe sealed class DatabaseVersions
 			s.Add(gs[i].GlobalTerm);
 		}
 	}
-#endif
 
 	[Conditional("DEBUG")]
 	private void ValidateGlobalTermUnique(SimpleGuid globalTerm)
@@ -412,5 +417,7 @@ internal unsafe sealed class DatabaseVersions
 			GlobalVersion v = globalVersions[i];
 			TTTrace.Write(database.TraceId, database.Id, v.GlobalTerm.Low, v.GlobalTerm.Hight, v.Version);
 		}
+
+		ValidateOrderAndUniqueness();
 	}
 }

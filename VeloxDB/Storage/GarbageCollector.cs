@@ -15,7 +15,7 @@ internal unsafe sealed class GarbageCollector
 
 	Database database;
 
-	NativeInterlocked64 lastReadVersion;
+	NativeInterlocked64 oldestReadVersion;
 	UncollectedTransactions uncollectedTrans;
 
 	ActiveTransations activeTrans;
@@ -62,7 +62,7 @@ internal unsafe sealed class GarbageCollector
 	{
 		activeTrans.AddTran(tran);
 		Thread.MemoryBarrier();
-		ulong lastReadVersion = (ulong)this.lastReadVersion.state;
+		ulong lastReadVersion = (ulong)this.oldestReadVersion.state;
 		if (lastReadVersion <= tran.ReadVersion)
 		{
 			return true;
@@ -83,33 +83,11 @@ internal unsafe sealed class GarbageCollector
 
 	public void ProcessGarbage(Transaction tran)
 	{
-		Transaction oldestReader = activeTrans.GetOldestReader();
-		ulong lastReadVersion = oldestReader == null ? tran.CommitVersion : oldestReader.ReadVersion;
-		TTTrace.Write(database.TraceId, tran.Id, tran.ReadVersion, tran.CommitVersion, this.lastReadVersion.state, lastReadVersion);
-
-		bool collect = false;
-		while (true)
-		{
-			ulong prevLastReadVersion = (ulong)this.lastReadVersion.state;
-			if (lastReadVersion > prevLastReadVersion)
-			{
-				if (this.lastReadVersion.CompareExchange((long)lastReadVersion, (long)prevLastReadVersion) == (long)prevLastReadVersion)
-				{
-					collect = true;
-					break;
-				}
-			}
-			else
-			{
-				break;
-			}
-		}
+		RefreshOldestReadVersion(tran.CommitVersion, out ulong oldestReadVersion, out bool collect);
+		TTTrace.Write(database.TraceId, tran.Id, tran.ReadVersion, tran.CommitVersion, this.oldestReadVersion.state, oldestReadVersion);
 
 		lock (uncollectedTrans)
 		{
-			if (collect)
-				uncollectedTrans.Collect(lastReadVersion);
-
 			if (tran.Type == TransactionType.ReadWrite)
 			{
 				if (tran.IsAlignment)
@@ -121,13 +99,40 @@ internal unsafe sealed class GarbageCollector
 					uncollectedTrans.Insert(tran);
 				}
 			}
+
+			if (collect)
+				uncollectedTrans.Collect(oldestReadVersion);
+		}
+	}
+
+	private void RefreshOldestReadVersion(ulong referentReadVersion, out ulong oldestReadVersion, out bool collect)
+	{
+		Transaction oldestReader = activeTrans.GetOldestReader();
+		oldestReadVersion = oldestReader == null ? referentReadVersion : oldestReader.ReadVersion;
+
+		collect = false;
+		while (true)
+		{
+			ulong prevOldestReadVersion = (ulong)this.oldestReadVersion.state;
+			if (oldestReadVersion > prevOldestReadVersion)
+			{
+				if (this.oldestReadVersion.CompareExchange((long)oldestReadVersion, (long)prevOldestReadVersion) == (long)prevOldestReadVersion)
+				{
+					collect = true;
+					break;
+				}
+			}
+			else
+			{
+				break;
+			}
 		}
 	}
 
 	public void Rewind(ulong version)
 	{
-		if (version < (ulong)lastReadVersion.state)
-			lastReadVersion.state = (long)version;
+		if (version < (ulong)oldestReadVersion.state)
+			oldestReadVersion.state = (long)version;
 	}
 
 	private void CollectImmediate(Transaction tran, ulong handle)
@@ -146,9 +151,12 @@ internal unsafe sealed class GarbageCollector
 	public void Flush()
 	{
 		TTTrace.Write(database.TraceId);
+
+		RefreshOldestReadVersion(database.ReadVersion, out ulong oldestReadVersion, out bool collect);
+
 		lock (uncollectedTrans)
 		{
-			uncollectedTrans.Flush(database.Versions.ReadVersion);
+			uncollectedTrans.Flush(oldestReadVersion);
 		}
 	}
 

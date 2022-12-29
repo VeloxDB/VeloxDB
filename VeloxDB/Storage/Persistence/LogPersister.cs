@@ -144,7 +144,7 @@ internal unsafe sealed class LogPersister : IDisposable
 	public void CommitTransaction(Transaction tran)
 	{
 		TTTrace.Write(database.TraceId, database.Id, logIndex, tran.Id, tran.CommitVersion, tran.GlobalTerm.Low,
-			tran.GlobalTerm.Hight, tran.LocalTerm);
+			tran.GlobalTerm.Hight, tran.LocalTerm, tran.LogSeqNum);
 
 		pendingItems.Add(tran, logIndex, out bool isFirst);
 		if (isFirst)
@@ -242,6 +242,8 @@ internal unsafe sealed class LogPersister : IDisposable
 			if (snapshot == null)
 				return;
 
+			versions.TTTraceState();
+
 			uint timestamp = fileWriter.Timestamp + 1;
 
 			fileWriter.Dispose();
@@ -302,6 +304,7 @@ internal unsafe sealed class LogPersister : IDisposable
 			snapshotWriteTask = null;
 			Interlocked.Increment(ref snapshotCount);
 
+			TTTrace.Write(database.TraceId, database.Id, logIndex);
 			database.Engine.Trace.Debug("Persisted snapshot created.");
 #if TEST_BUILD
 		}

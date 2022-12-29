@@ -45,7 +45,6 @@ internal unsafe sealed partial class Database
 	HashIndexEntry[] hashIndexes;
 
 	GarbageCollector gc;
-	SnapshotSemaphore snapshotController;
 	DatabasePersister persister;
 	TransactionCommitOrderer tranOrderer;
 	HashReadersCollection hashReaders;
@@ -67,7 +66,6 @@ internal unsafe sealed partial class Database
 		this.modelDesc = model;
 		this.persistenceDesc = persistenceDesc;
 		this.id = id;
-		this.snapshotController = new SnapshotSemaphore();
 
 		primaryAlignCodeCache = new PrimaryAlignCodeCache();
 		standbyAlignCodeCache = new StandbyAlignCodeCache();
@@ -164,7 +162,7 @@ internal unsafe sealed partial class Database
 				TTTrace.Write(engine.TraceId, id, invalidLogSeqNum);
 				versions.TTTraceState();
 				database.versions = versions;
-				database.persister = new DatabasePersister(database, persistenceDesc, database.snapshotController,
+				database.persister = new DatabasePersister(database, persistenceDesc, engine.SnapshotController,
 					versions.CommitVersion, versions.LogSeqNum, logStates);
 
 				break;
@@ -409,7 +407,7 @@ internal unsafe sealed partial class Database
 			logStates[i] = DatabaseRestorer.CreateEmptyLog(this, persistenceDesc.LogDescriptors[i], i);
 		}
 
-		persister = new DatabasePersister(this, persistenceDesc, snapshotController, versions.CommitVersion, versions.LogSeqNum, logStates);
+		persister = new DatabasePersister(this, persistenceDesc, engine.SnapshotController, versions.CommitVersion, versions.LogSeqNum, logStates);
 	}
 
 	public LogState[] ReplacePersister(PersistenceUpdate update)
@@ -423,7 +421,7 @@ internal unsafe sealed partial class Database
 		}
 
 		persister?.Dispose();
-		persister = new DatabasePersister(this, update.PersistenceDescriptor, snapshotController, versions.CommitVersion, versions.LogSeqNum, logStates);
+		persister = new DatabasePersister(this, update.PersistenceDescriptor, engine.SnapshotController, versions.CommitVersion, versions.LogSeqNum, logStates);
 		persister.CreateSnapshots();
 
 		persistenceDesc = update.PersistenceDescriptor;
@@ -561,16 +559,6 @@ internal unsafe sealed partial class Database
 		return context;
 	}
 
-	public void PreventPersistanceSnapshot()
-	{
-		snapshotController.Block();
-	}
-
-	public void AllowPersistanceSnapshot()
-	{
-		snapshotController.Unblock();
-	}
-
 	public Transaction CreateTransaction(TransactionType type, out DatabaseVersions versions)
 	{
 		TTTrace.Write(engine.TraceId, id, (byte)type, this.versions.ReadVersion, this.versions.CommitVersion);
@@ -624,6 +612,18 @@ internal unsafe sealed partial class Database
 	{
 		Checker.AssertTrue(tran.Type == TransactionType.ReadWrite);
 		gc.ProcessGarbage(tran);
+	}
+
+	public void BeginDatabaseAlignment()
+	{
+		DrainGC();
+		Persister?.InitSequence(versions.LogSeqNum);
+	}
+
+	public void EndDatabaseAlignment(ModelUpdateContext modelUpdateContext)
+	{
+		RefillPendingIndexes(modelUpdateContext?.Workers);
+		versions.TTTraceState();
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1114,7 +1114,7 @@ internal unsafe sealed partial class Database
 		}
 	}
 
-	internal struct ClassEntry
+	public struct ClassEntry
 	{
 		ClassBase @class;
 		InverseReferenceMap invRefMap;

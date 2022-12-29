@@ -41,6 +41,8 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 	readonly object commitSync = new object();
 	CommitWorkers commitWorkers;
 
+	SnapshotSemaphore snapshotController;
+
 	ConfigArtifactVersions configVersions;
 
 	bool disposed;
@@ -101,6 +103,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 	public EngineLock EngineLock => engineLock;
 	public bool Disposed => disposed;
 	public string SystemDbPath => systemDbPath;
+	public SnapshotSemaphore SnapshotController => snapshotController;
 
 	private void Initialize(ReplicationSettings replicationSettings, ILeaderElector localElector,
 		ILeaderElector globalElector, Tracing.Source trace)
@@ -124,6 +127,8 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		replicator = CreateReplicator(replicationSettings, localElector, globalElector);
 		contextPool = new TransactionContextPool(this);
 		changesetWriterPool = new ChangesetWriterPool(memoryManager);
+
+		snapshotController = new SnapshotSemaphore();
 	}
 
 	public void SubscribeToStateChanges(Action<DatabaseInfo> handler)
@@ -282,7 +287,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		trace.Debug("User database dropped.");
 	}
 
-	public void UpdatePersistanceConfiguration(LogDescriptor[] logDescriptors)
+	public void UpdatePersistenceConfiguration(LogDescriptor[] logDescriptors)
 	{
 		TTTrace.Write(traceId);
 
@@ -306,7 +311,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 			if (!replicator.IsTransactionAllowed(DatabaseId.User, TransactionSource.Client, null, TransactionType.ReadWrite, out var err))
 				throw new DatabaseException(err);
 
-			ValidatePersistanceUpdate(update);
+			ValidatePersistenceUpdate(update);
 
 			if (update.IsRecreationRequired)
 			{
@@ -344,7 +349,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		Trace.Info("Persistence configuration updated.");
 	}
 
-	public PersistenceUpdate ReplicatedUpdatePersistanceConfiguration(PersistenceDescriptor persistenceDesc, DataModelUpdate modelUpdate)
+	public PersistenceUpdate ReplicatedUpdatePersistenceConfiguration(PersistenceDescriptor persistenceDesc, DataModelUpdate modelUpdate)
 	{
 		TTTrace.Write(traceId, modelUpdate != null);
 
@@ -354,7 +359,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 
 		try
 		{
-			ValidatePersistanceUpdate(persistenceUpdate);
+			ValidatePersistenceUpdate(persistenceUpdate);
 		}
 		catch (DatabaseException e)
 		{
@@ -605,10 +610,13 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		if (tran.Closed)
 			throw new DatabaseException(DatabaseErrorDetail.Create(DatabaseErrorType.CommitClosedTransaction));
 
+		TransactionContext tc = tran.Context;
+
 		if (tran.Type == TransactionType.Read || tran.Source != TransactionSource.Client || tran.Database.Id != DatabaseId.User)
 		{
 			try
 			{
+				tc?.CollapseChangesets();
 				tran.Database.TransactionCompleted(tran);
 				return CommitTransactionInternal(tran, out logSeqNum);
 			}
@@ -618,7 +626,6 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 			}
 		}
 
-		TransactionContext tc = tran.Context;
 		tc.CollapseChangesets();
 
 		tc.PrepareForAsyncCommit();
@@ -641,6 +648,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		try
 		{
 			tran.Database.TransactionCompleted(tran);
+			tran.Context.CollapseChangesets();
 			CommitTransactionInternal(tran, out _);
 		}
 		finally
@@ -815,16 +823,16 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 	public void BeginDatabaseAlignment(long databaseId)
 	{
 		TTTrace.Write(traceId, databaseId);
-		Database database = databases[databaseId];
-		database.DrainGC();
+		databases[databaseId].BeginDatabaseAlignment();
 	}
 
 	public void EndDatabaseAlignment(Database database, ModelUpdateContext modelUpdateContext)
 	{
 		TTTrace.Write(traceId, database.Id);
-		database.RefillPendingIndexes(modelUpdateContext?.Workers);
+		database.EndDatabaseAlignment(modelUpdateContext);
 
-		contextPool.ResetAlignmentMode();
+		if (database.Id == DatabaseId.User)
+			contextPool.ResetAlignmentMode();
 
 		trace.Debug("Database {0} alignment finished.", database.Id);
 	}
@@ -835,9 +843,6 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		PersistenceDescriptor persistenceDescriptor = databases[databaseId].PersistenceDesc;
 		databases[databaseId].Dispose();
 		Database.Restore(this, model, persistenceDescriptor, databaseId, db => databases[databaseId] = db, alignmentLogSeqNum);
-
-		// Since this was already done on the previous database (being inside of the alignment)
-		databases[databaseId].PreventPersistanceSnapshot();
 	}
 
 	public void ReRestoreUserDatabase(PersistenceUpdate persistenceUpdate)
@@ -919,20 +924,14 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		}
 	}
 
-	public void AllowPersistanceSnapshots()
+	public void AllowPersistenceSnapshots()
 	{
-		for (int i = 0; i < databases.Length; i++)
-		{
-			databases[i].AllowPersistanceSnapshot();
-		}
+		snapshotController.Unblock();
 	}
 
-	public void PreventPersistanceSnapshots()
+	public void PreventPersistenceSnapshots()
 	{
-		for (int i = 0; i < databases.Length; i++)
-		{
-			databases[i].PreventPersistanceSnapshot();
-		}
+		snapshotController.Block();
 	}
 
 	public void ApplyChangeset(Transaction tran, Changeset changeset)
@@ -1560,7 +1559,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		}
 	}
 
-	private void ValidatePersistanceUpdate(PersistenceUpdate update)
+	private void ValidatePersistenceUpdate(PersistenceUpdate update)
 	{
 		PersistenceDescriptor persistDesc = update.PersistenceDescriptor;
 		if (persistDesc == null)
@@ -1809,7 +1808,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		}
 	}
 
-	private PersistenceDescriptor LoadSystemPersistanceDescAndModel(long databaseId,
+	private PersistenceDescriptor LoadSystemPersistenceDescAndModel(long databaseId,
 		PersistenceSettings persistanceSettings, out DataModelDescriptor model)
 	{
 		PersistenceDescriptor persDesc = null;
@@ -1945,10 +1944,10 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 
 		DataModelDescriptor userModelDesc = userModelSettings.CreateModel(persistanceSettings, prevModelDesc);
 
-		PersistenceDescriptor locSysPersistDesc = LoadSystemPersistanceDescAndModel(
+		PersistenceDescriptor locSysPersistDesc = LoadSystemPersistenceDescAndModel(
 			DatabaseId.SystemLocal, persistanceSettings, out DataModelDescriptor sysLocModel);
 
-		PersistenceDescriptor globSysPersistDesc = LoadSystemPersistanceDescAndModel(
+		PersistenceDescriptor globSysPersistDesc = LoadSystemPersistenceDescAndModel(
 			DatabaseId.SystemGlobal, persistanceSettings, out DataModelDescriptor sysGlobModel);
 
 		userModelDesc.AssignLogIndexes(userPersistDesc);
