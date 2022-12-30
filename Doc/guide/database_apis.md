@@ -1,8 +1,23 @@
 ---
-uid: automapper
+uid: database_apis
 ---
+# Database APIs
 
-# Automapper
+## Server and Client Side Definitions
+
+## Transaction Management
+
+## ObjectModel
+
+## API Consumption
+
+## Exception Handling
+
+## Async Operations
+
+## Serialization and Deserialization
+
+## Automapper
 
 Since moving data between DTOs and DBOs is a common operation, VeloxDB comes bundled with automapper. Automapper automatically generates methods that copy data between DTO and DBO saving you from typing boilerplate code. The use of automapper is optional, you can write your own object copying code, or use 3rd party automapper like [AutoMapper][1] or [Mapster][2].
 
@@ -19,7 +34,7 @@ Throughout this guide, we will be using the following model:
 
 [!code-csharp[Main](../../Samples/University/Model/University.cs)]
 
-## Simple mapping
+### Simple mapping
 
 The core feature of the automapper is mapping properties from one object to another. VeloxDB automapper supports mapping properties from database object to DTO and from DTO to database object. Lets consider a simple DTO class for `Course` class:
 
@@ -41,14 +56,14 @@ public static partial Course FromDTO(ObjectModel om, CourseDTO dto);
 
 Note that the method takes <xref:VeloxDB.ObjectInterface.ObjectModel> as an argument. This is because it needs ObjectModel in order to create a new object in the database. In this case the id property is ignored and a new object is always created, if you need update functionality see[update](#update) part of this guide.
 
-## Mapping arrays
+### Mapping arrays
 
 Automapper supports mapping arrays. It has full support for both arrays of simple types and reference arrays. VeloxDB represents arrays with either <xref:VeloxDB.ObjectInterface.DatabaseArray> or <xref:VeloxDB.ObjectInterface.ReferenceArray>. These classes are not available on client side and should be mapped to either an array or [List][4]. Here is an example of `StudentDTO` DTO class that includes arrays:
 [!code-csharp[Main](../../Samples/University/NoPoly/Student.cs#StudentDTO)]
 
 If the value of array in database object is null, automapper will also produce null in the mapped object.
 
-## Mapping references
+### Mapping references
 
 There are two ways to map a reference property, by mapping by id, or by mapping to DTO.
 
@@ -80,7 +95,7 @@ It is also possible to map inverse references to DTOs. They are treated in the s
 
 VeloxDB automapper is aware of object identity, if two objects point to the same object, the same will be true after mapping, it will not create two objects. It is also capable of handling circular references.
 
-## Polymorphism
+### Polymorphism
 
 Polymorphism is a key feature of object-oriented programming languages, and it is supported by VeloxDB's automapper. Polymorphism allows for objects of different types to be treated as if they were of a common base type. This can be useful in many situations, such as when working with collections of objects or when creating methods that operate on objects of multiple types.
 
@@ -98,7 +113,7 @@ Here is an example of `Teacher` class note its `To` and `From` methods:
 
 The `ToDTO` method should not be marked as virtual because automapper generates its own internal virtual methods. To avoid generating a warning from the C# compiler due to the presence of non-virtual ToDTO methodS in both the base class and subclass, the new keyword is used in the subclass's methods to explicitly indicate that they are intended to override the base class's methods. Since these methods only call into internal virtual methods, proper polymorphic behavior is still achieved.
 
-## Update
+### Update
 
 By default `From` method ignores Id field in DTO and always creates a new object. However, the `From` method can have an additional `allowUpdate` boolean parameter that tells it to operate in update mode. In update mode, if the DTO object has an `Id` field, the `From` method will use it to fetch the corresponding object from the database. The object that is fetched will then have its fields updated by overwriting them with the fields provided in the DTO. Any fields that are not defined in the DTO will be skipped. If the object with the given Id does not exist, an ArgumentException will be thrown. If the Id is set to 0, then a new object will be created.
 
@@ -119,6 +134,8 @@ For example, if a `Course` object has a reference to a `Teacher` object, and the
 To avoid this pitfall, it is recommended to use DTOs that model references to other objects using only the Id field, rather than using objects. This way, the update feature will only update the object that is being updated, and will not affect any related objects. This can help prevent unintended changes and improve the reliability and predictability of the update feature.
 
 Because of all these pitfalls it is important to use update functionality with great care.
+
+## API Deployment
 
 
 [1]: https://automapper.org/

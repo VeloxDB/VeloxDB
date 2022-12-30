@@ -1,7 +1,13 @@
 # Persistence
 
-## Introduction
-## Log files
+## Logging and Snapshots
+
+## Multiple Logs
+
 ## Configuration
-## Size estimation
-## Backup and restore
+
+### Configuration Update
+
+## Size Estimation
+
+## Backup and Restore

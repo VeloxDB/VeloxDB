@@ -1079,12 +1079,21 @@ public unsafe sealed partial class ObjectModel
 		}
 	}
 
+	/// <summary>
+	/// Rollbacks the transaction associated with this instance of ObjectModel class. ObjectModel instance is no longer usable after this.
+	/// </summary>
+	public void Rollback()
+	{
+		ValidateThread();
+		engine.RollbackTransaction(transaction);
+	}
+
 	internal void CommitAndDispose()
 	{
 		ValidateThread();
 
 		if (disposed)
-			throw new ObjectDisposedException(nameof(ObjectModel));
+			return;
 
 		ApplyChanges(true);
 
@@ -1106,7 +1115,7 @@ public unsafe sealed partial class ObjectModel
 		ValidateThread();
 
 		if (disposed)
-			throw new ObjectDisposedException(nameof(ObjectModel));
+			return;
 
 		ApplyChanges(true);
 

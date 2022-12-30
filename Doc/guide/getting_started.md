@@ -93,13 +93,13 @@ Automapper is implemented using [C# Source Generators][6]. The partial methods y
 | To            | Copies DBO to DTO     | No        | No arguments     | DTO         |
 | From          | Creates DBO from DTO  | Yes       | ObjectModel, DTO | DBO         |
 
-For more detailed information see [Automapper](automapper.md) section of the guide.
+For more detailed information see [Automapper](database_apis.md##automapper) section of the guide.
 
 #### Create database API
 All business logic is defined in server side methods, we call these methods database operations. By keeping the business logic and the data in the same process, VeloxDB avoids multiple round trips to the Database. Create BlogApi.cs file with the following content:
 [!code-csharp[Main](../../Samples/GetStarted/VlxBlog/BlogApi.cs)]
 
-The methods described in this file can be called from the client using VeloxDB.Protocol library. This will be covered in the next chapter. To define a database API operation you need to create a class marked with the <xref:VeloxDB.Protocol.DbAPIAttribute>. Each method should be decorated with the <xref:VeloxDB.Protocol.DbAPIOperationAttribute>.
+The methods described in this file can be called from the client using VeloxDB.Protocol library. This will be covered in the next section. To define a database API operation you need to create a class marked with the <xref:VeloxDB.Protocol.DbAPIAttribute>. Each method should be decorated with the <xref:VeloxDB.Protocol.DbAPIOperationAttribute>.
 
 <!-- For more information see [VeloxDB Protocol](../tech.md#veloxdb-protocol).-->
 
@@ -247,27 +247,27 @@ Deleting blog success: True
 Congartulations! You have just written your first VeloxDB app.
 
 ## Database Model and APIs
-Lets take another look at the application we just created. The first step required is to define the data model, represented by a set of .NET classes. VeloxDB is an object database, meaning that the model defined using these classes is the exact model stored in the database. Unlike typical ORM frameworks that need to map object models to relational schemas, VeloxDB performs no such transformation, what you see is what you get. VeloxDB, however, does not store .NET objects internally, it uses an internal data representation which is optimized for other operations a database needs to perform (such as transaction isolation, replication and persistence). Detailed information on how to define database models is provided in TODO.
+Lets take another look at the application we just created. The first step required is to define the data model, represented by a set of .NET classes. VeloxDB is an object database, meaning that the model defined using these classes is the exact model stored in the database. Unlike typical ORM frameworks that need to map object models to relational schemas, VeloxDB performs no such transformation, what you see is what you get. VeloxDB, however, does not store .NET objects internally, it uses an internal data representation which is optimized for other operations a database needs to perform (such as transaction isolation, replication and persistence). Detailed information on how to define database models is provided in chapter [Data Model](data_model.md).
 
-After the data model is defined, VeloxDB requires that the data is manipulated using .NET code (in the future, there will be a possibility to perform read-only operations using SQL). This is done in the form of database APIs, a set of publicly exposed APIs that clients can consume. A single database API represents a set of logically grouped operations that transactionally manipulate the data.
+After the data model is defined, VeloxDB requires that the data is manipulated using .NET code (in the future, there will be a possibility to perform read operations using SQL Select statement). This is done in the form of database APIs, a set of publicly exposed APIs that clients can consume. A single database API represents a set of logically grouped operations that transactionally manipulate the data.
 
 >[!NOTE]
 >Logical grouping of database operations into database APIs is just a recommendation. The way you group your operations is completely up to you. You can store all operations in a single API or split them in as many APIs as needed. The APIs themselves can reside in a single .NET assembly or multiple assemblies. There are no specific limitations imposed by the database itself.
 
 >[!NOTE]
->Term Database API should not be confused with the term Web API. Database APIs you define in VeloxDB are not based on the same technology (do not use HTTP) and use an internal protocol.
+>Term Database API should not be confused with the term Web API (or REST API). Database APIs you define in VeloxDB are not based on the same technology (do not use HTTP) and use an internal protocol.
 
-The way you define an API is by creating a .NET class that is decorated with the DbAPIAttribute. Operations inside the API class are represented by the class methods decorated with the DbAPIOperationAttribute. Each database operation has to have a first parameter of type ObjectModel. The remaining parameters represent input values for the operation (provided by the client). The operations may not contain out/ref parameters and can only return a single result as a return value of the method. The actual model classes may not be used as parameters of the operations. This would introduce tight coupling between public APIs and internal data representation so VeloxDB strictly forbids it. If you want to transfer entire entities from the client to the server (or vice versa), define separate classes from the ones defined in the data model. These classes are usually called DTOs (Data Transfer Objects) since their sole purpose is to transfer data between the client and the server. Tools that automatically map DTOs to model classes and vice versa are available out of the box as part of the VeloxDB to reduce the amount of boiler plate code. Auto-mapping capabilities were briefly demonstrated in the sample application and are covered in mode details in TODO.
+The way you define an API is by creating a .NET class that is decorated with the DbAPIAttribute. Operations inside the API class are represented by the class methods decorated with the DbAPIOperationAttribute. Each database operation has to have a first parameter of type ObjectModel. The remaining parameters represent input values for the operation (provided by the client). The operations may not contain out/ref parameters and can only return a single result as a return value of the method. The actual model classes may not be used as parameters of the operations. This would introduce tight coupling between public APIs and internal data representation so VeloxDB strictly forbids it. If you want to transfer entire entities from the client to the server (or vice versa), you should define separate classes from the ones defined in the data model. These classes are usually called DTOs (Data Transfer Objects) since their sole purpose is to transfer data between the client and the server. Tools that automatically map DTOs to model classes and vice versa are available out of the box as part of the VeloxDB to reduce the amount of boiler plate code. Auto-mapping capabilities were briefly demonstrated in the sample application and are covered in mode details in chapter [Database APIs](database_apis.md##automapper).
 
 Each operation can either be a Read operation or a ReadWrite operation (ReadWrite is the default). GetBlog operation in the sample application is an example of a read operation. Read operations, as the name implies, are limited to only reading the data from the database. Attempting to modify the data in any way will result in an exception being thrown.
 
 The major difference between VeloxDB and most other databases is that VeloxDB requires for the application logic (database APIs) to be deployed to the database itself. Keeping the logic close to the data allows for extremely low latency when executing actions against the database. This is especially true for workloads that do not know an entire affected dataset in advance (the dataset is  discovered during the execution of the application logic itself). Databases that offer these capabilities (e.g. stored procedures in relational databases) do not offer object oriented interface for accessing the data and still execute at significantly higher latencies than what VeloxDB can achieve.
 
 >[!NOTE]
->You might think that there is nothing stopping you from creating two database operations, one reading the data for outside processing and one for writing back the results. However, transaction scope in VeloxDB is tied to a single execution of a database operation, meaning you would read the data in one transaction and then write the results in another transaction, thus loosing  transaction isolation provided by the database. VeloxDB transactions are covered in TODO.
+>You might think that there is nothing stopping you from creating two database operations, one reading the data for outside processing and one for writing back the results. However, transaction scope in VeloxDB is tied to a single execution of a database operation, meaning you would read the data in one transaction and then write the results in another transaction, thus loosing  transaction isolation provided by the database. VeloxDB transactions are covered in chapter [Architecture](architecture.md##transactions).
 
 ## Downloading and Configuring the Database
-VeloxDB requires Microsoft [.NET 6](https://dotnet.microsoft.com/en-us/download/dotnet/6.0) to run. After installing .NET, you can download the free version of [VeloxDB](https://TODO) binaries or download the source code from our [GitHub repository](https://TODO) and compile it yourself. The free version includes all VeloxDB functionalities except cluster support (ability to create a database cluster). After downloading, unpack the archive file to a desired directory. Notice the file vlxdbcfg.json in the unpacked directory. This file contains configuration parameters of the database server grouped into several sections. When specifying file system paths, you can use any of the following templates to point to well known locations:
+VeloxDB requires Microsoft [.NET 6](https://dotnet.microsoft.com/en-us/download/dotnet/6.0) to run. After installing .NET, you can download the free version of [VeloxDB](https://TODO) binaries or download the source code from our [GitHub repository](https://TODO) to compile it yourself. The free version includes all VeloxDB functionalities except cluster support (ability to create a database cluster). After downloading, unpack the archive file to a desired directory. Notice the file vlxdbcfg.json in the unpacked directory. This file contains configuration parameters of the database server grouped into several sections. When specifying file system paths, you can use any of the following templates to point to well known locations:
 
 | Template                | Windows                         | Linux                           |
 |-------------------------|---------------------------------|---------------------------------|
@@ -283,7 +283,7 @@ Following table summarizes available configuration parameters:
 |----------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------|
 | ExecutionEndpoint/<br>BacklogSize                  | TCP backlog queue size. VeloxDB client APIs use persistent connections to the database server so this number can remain low.                                                                                                                                                                                       | 20                                                                 |
 | ExecutionEndpoint/<br>MaxOpenConnCount             | Maximum number of open client connections.                                                                                                                                                                                                                                                                         | 10                                                                 |
-| ExecutionEndpoint/<br>BufferPoolSize               | Amount of pooled memory (in bytes) per each client connection. VeloxDB protocol requires memory to serve client requests. This memory is used to accept input data as well as to send response data. Increase this value if you regularly send or receive large amounts of data.                                  | 128KB                                                              |
+| ExecutionEndpoint/<br>BufferPoolSize               | Amount of pooled memory (in bytes) per each client connection. VeloxDB protocol requires memory to serve client requests. This memory is used to accept input data as well as to send response data. Increase this value if you regularly send or receive large amounts of data.                                  | 8MB                                                              |
 | ExecutionEndpoint/<br>InactivityInterval           | If no requests have been executed by the connection during this time (in seconds), VeloxDB sends a keep-alive message to the client to verify that the connection is still alive. This is a decimal value.                                                                                                         | 2 sec                                                              |
 | ExecutionEndpoint/<br>InactivityTimeout            | Amount of time (in seconds) a client has to respond to a keep-alive message. If no response is received in this time, connection is closed by the server.                                                                                                                                                          | 1 sec                                                              |
 | ExecutionEndpoint/<br>MaxQueuedChunkCount          | Determines maximum amount of unprocessed client request data that can be queued by the server before server stops accepting more data. This number needs to be multiplied by 64KB. Increasing this number might lead to faster processing of very large requests but will increase the memory usage of the server. | 64                                                                 |
@@ -291,13 +291,13 @@ Following table summarizes available configuration parameters:
 | Logging/<br>Path                                   | Path to a directory where the trace files will be stored.                                                                                                                                                                                                                                                           | ${LocalApplicationData}<br>/vlxdb/log                              |
 | Logging/<br>Level                                  | Initial trace level. Possible values include None, Error, Warning, Info, Debug, Verbose.                                                                                                                                                                                                                 | Info                                                               |
 | Logging/<br>UserLevel                                  | Initial user trace level. Possible values include None, Error, Warning, Info, Debug, Verbose.                                                                                                                                                                                                                 | None                                                               |
-| Replication/<br>ThisNodeName                       | Name of the node. When deploying the node inside a database cluster, this name should be the name of one of the nodes available inside cluster configuration file. Cluster configuration is covered in TODO.                                                                                                                                             | Node                                                               |
+| Replication/<br>ThisNodeName                       | Name of the node. When deploying the node inside a database cluster, this name should be the name of one of the nodes available inside cluster configuration file. Cluster configuration is covered in chapter [Database Cluster](database_cluster.md##configuration).                                                                                                                         | Node                                                               |
 | Replication/<br>ClusterConfigFile                  | Path to a file containing the configuration of the database cluster. This value is not needed if the database cluster is not used.                                                                                                                                                                                  | ${Base}/<br>config.cluster.json                                    |
 | Replication/<br>PrimaryWorkerCount                 | Number of worker threads dedicated to sending the replication data to other nodes in the cluster (per replica).                                                                                                                                                                                                 | 4                                                                  |
 | Replication/<br>StandbyWorkerCount                 | Number of worker threads dedicated for receiving replicated data from other nodes in the cluster.                                                                                                                                                                                                                  | 0 (Means proportional<br>to the number of<br>available CPU cores). |
 | Replication/<br>UseSeparate<br>ConnectionPerWorker | Indicates whether each primary worker should use its own separate TCP connection to replicate data.                                                                                                                                                                                                                | true                                                               |
 
-You do not need to edit any of these parameters. The default values were chosen to fit most needs. However, you might want to configure directory paths. To start the VeloxDB database server on Windows, run the vlxdbsrv.exe. On Linux run the following command:
+You do not need to edit any of these parameters. The default values were chosen to fit most needs. However, you might want to configure directory paths. To start the VeloxDB database server, run the following command:
 ```sh
 ./vlxdbsrv
 ```
@@ -316,16 +316,16 @@ The last config file can be provided as a command line argument when starting th
 Since VeloxDB only allows a single database per running server instance, this allows you to run multiple server instances from a single installation directory.
 
 ## Client Tool
-Once a database server has been configured and started you need to administer the database. For this purpose vlx client tool is used. This tool is a command line application which can be used in one of two modes, interactive or direct mode. You run the direct mode the following way:
+Once a database server has been configured and started you need to administer the database. For this purpose vlx client tool is used. This tool is a command line application which can be used in one of two modes, interactive or direct mode. You run direct mode the following way:
 
 ```sh
-vlx command [parameters]
+./vlx command [parameters]
 ```
 
-This is the typical way of using the tool, which can also be used to automate many aspects of configuration and administration. Interactive mode, on the other hand, once entered, keeps the application running, allowing you to execute multiple commands manually. Entering interactive mode is easy, just run:
+This is the typical way of using the tool, which can also be used to automate many aspects of configuration and administration. Interactive mode, on the other hand, once entered, keeps the application running, allowing you to execute multiple commands manually. Entering interactive mode is accomplished by running the following command:
 
 ```sh
-vlx
+./vlx
 ```
 Interactive mode has additional sub-modes that are used to administer some specific areas of the database. For example, if you want to configure database persistence parameters, you need to enter persistence configuration mode by executing:
 
@@ -343,11 +343,11 @@ exit
 ```
 to exit the sub-mode. This command will exit the application if no sub-mode is active.
 
-Let's see how you can display the list of all available commands:
+Let's see how you can display a list of all available commands:
 
 #### [Direct](#tab/net-cli)
 ```sh
-vlx help
+./vlx help
 ```
 
 #### [Interactive](#tab/visual-studio)
@@ -362,7 +362,7 @@ You can also show help for a single command together with a detailed description
 
 #### [Direct](#tab/net-cli)
 ```sh
-vlx status --help
+./vlx status --help
 ```
 
 #### [Interactive](#tab/visual-studio)
@@ -376,13 +376,13 @@ status --help
 >[!NOTE]
 >Most parameters, besides having u full name, also have a short name. Full name is specified by using double hyphens while short name is specified with a single hyphen. For example bind parameter can either be specified with --bind or -b.
 
-Vlx tool works by connecting to the database. This process is called binding. To bind to a database you need to provide the endpoint (hostname:port of address:port) of one or more nodes from the cluster. If no address is provided, vlx will try to bind to a database running on the local machine (localhost) and default VeloxDB administration port (7569). Providing the endpoint for more than one node is useful if some node in a cluster is not available when the command is executed. In interactive mode, binding is established only once, before running any other commands, while in direct mode each command requires you to provide the --bind parameter (with one or more endpoints).
+Vlx tool works by connecting to the database. This process is called binding. To bind to a database you need to provide the endpoint (hostname:port or address:port) of one or more nodes from the cluster. If no address is provided, vlx will try to bind to a database running on the local machine (localhost) and default VeloxDB administration port (7569). Providing the endpoint for more than one node is useful if one or more nodes in the cluster are unavailable when the command is executed. In interactive mode, binding is established only once, before running any other commands, while in direct mode each command requires you to provide the --bind parameter (with one or more endpoints).
 
 In this chapter we will quickly demonstrate a handful of commands, to get you started. Detailed explanations for most of the commands will be given throughout the remaining chapters of this guide. Let's now see how to display the current status of the database cluster. Since we currently only have a single node configured, the command will show the status of that single node.
 
 #### [Direct](#tab/net-cli)
 ```sh
-vlx status --bind localhost:7569
+./vlx status --bind localhost:7569
 ```
 
 #### [Interactive](#tab/visual-studio)
@@ -400,15 +400,15 @@ You should see the following output (provided you didn't change the name of the 
 Node (Running)
 ```
 
-There aren't any additional information (other than the information that the node is running) because we did not set up a cluster. For a running cluster, much more information is displayed. VeloxDB clusters are covered in TODO.
+There aren't much information displayed (other than the information that the node is running) because we did not set up a cluster. For a running cluster, much more information is displayed. VeloxDB clusters are covered in chapter [Database Cluster](database_cluster.md).
 
-In direct mode, most commands require you to provide binding endpoint (as discussed previously) using the --bind parameter. This is not needed when binding to a database on a local machine (on default port) but was provided in this example for demonstration purposes. In interactive mode, you only need to execute bind command once (usually as a first command). Once a binding has been established, all commands will continue to use that binding.
+In direct mode, most commands require you to provide binding endpoint (as discussed previously) using the --bind parameter. This is not needed when binding to a database on a local machine (on default port) but was provided in the previous example for demonstration purposes. In interactive mode, you only need to execute bind command once (usually as a first command). Once a binding has been established, all commands will continue to use that binding.
 
-In the sample application that we've built at the beginning of this chapter, you only needed to define the data model and create a single API to manipulate the model. No configuration and/or administration of the database server was necessary. This was possible due to the fact that VeloxDB package (that you added to your project) comes bundled with an instance of a VeloxDB server. When you "run" the server side logic, what happens under the hood is the server gets started for you and configured with some default parameters. This server is limited to a single node (no database cluster is possible). Other than starting the server, the run command also automatically deploys your data model and database APIs to the database. This makes it as simple as possible to quickly write and test your code (including Samples throughout this guide). In production, however, you need to perform several steps before you can start issuing requests to you APIs. Fir you need to configure the database persistence. This is discussed in details in TODO. Here we are just going to create a single log file. This is done using the vlx tool:
+In the sample application that we've built at the beginning of this chapter, you only needed to define the data model and create a single API to manipulate the model. No configuration and/or administration of the database server was necessary. This was possible due to the fact that VeloxDB package (that you added to your project) comes bundled with an instance of a VeloxDB server. When you "run" the server side logic, what happens under the hood is the server gets started for you and configured with some default parameters. This server is limited to a single node (no database cluster is possible). Other than starting the server, the run command also automatically deploys your data model and database APIs to the database. This makes it as simple as possible to quickly write and test your code (including Samples throughout this guide). In production, however, you need to perform several steps before you can start issuing requests to you APIs. First you need to configure the database persistence. This is discussed in details in chapter [Persistence](persistence.md). Here we are going to create just a single log file. This is done using the vlx tool:
 
 #### [Direct](#tab/net-cli)
 ```sh
-vlx create-log --bind localhost:7569 --name MyLog --dir log_path --snapshot-dir log_path --size 5
+./vlx create-log --bind localhost:7569 --name MyLog --dir log_path --snapshot-dir log_path --size 5
 ```
 
 #### [Interactive](#tab/visual-studio)
@@ -424,16 +424,14 @@ exit
 &nbsp;
 &nbsp;
 
-log_path is the absolute path to a directory where database will store persistence files. This directory must exist on every node of the database cluster and needs to be accessible to the database process. Once persistence has been configured, we need to deploy the data model and APIs to the database:
+log_path is the absolute path to a directory where database will store persistence files. This directory must exist on every node of the database cluster and needs to be accessible to the database process. Once persistence has been configured, we need to deploy the data model and APIs to the database. Copy data model and API assemblies (in our sample application there is just a single server assembly) to some directory and then execute command:
 
 #### [Direct](#tab/net-cli)
-Copy data model and API assemblies (in our sample application there is just a single server assembly) to some directory and then execute command
 ```sh
-vlx update-assemblies --bind localhost:7569 --dir assemblies_directory_path
+./vlx update-assemblies --bind localhost:7569 --dir assemblies_directory_path
 ```
 
 #### [Interactive](#tab/visual-studio)
-Copy data model and API assemblies (in our sample application there is just a single server assembly) to some directory and then execute command
 ```sh
 update-assemblies --dir assemblies_directory_path
 ```
@@ -449,7 +447,7 @@ Do you want to proceed (Y/N)?Y
 ```
 
 ## Tracing and Debugging
-Given that VeloxDB executes application logic inside the database server process, there needs to be a way for developers to debug their APIs. For this, VeloxDB offers couple of options. First, as demonstrated with the sample application, you can use development deployment of the VeloxDB server that comes bundled with the VeloxDB package. When running your APIs this way, debug information (PDB files) also get loaded allowing you to easily debug your code with the debugger. When deploying the APIs to a standalone database server, PDB files are not deployed to the database. However, VeloxDB provides an option to load the PDB files by using the command line option. TODO
+Given that VeloxDB executes application logic inside the database server process, there needs to be a way for developers to debug their APIs. For this, VeloxDB offers couple of options. First, as demonstrated with the sample application, you can use development deployment of the VeloxDB server that comes bundled with the VeloxDB package. When running your APIs this way, debug information (PDB files) also get loaded allowing you to easily debug your code with the debugger. When deploying the APIs to a standalone database server, PDB files are not deployed to the database.
 
 Besides debugging your APIs with the debugger, VeloxDB provides a tracing library which allows you to trace the execution of your APIs. VeloxDB internally uses the same mechanism to trace its own execution. You can access the tracing library through a static class <xref:VeloxDB.Common.APITrace>. This class has many overloaded methods that allow you to write formatted trace messages of different trace levels. Available trace levels include Error, Warning, Info, Debug and Verbose. Following example demonstrates an API operation from the sample application modified to use tracing:
 
@@ -486,11 +484,10 @@ With default configuration, user trace messages are not collected. You need to c
 
 #### [Direct](#tab/net-cli)
 ```sh
-vlx user-trace-level --bind localhost:7569 --node Node --level Verbose
+./vlx user-trace-level --bind localhost:7569 --node Node --level Verbose
 ```
 
 #### [Interactive](#tab/visual-studio)
-Copy data model and API assemblies (in our sample application there is just a single server assembly) to some directory and then execute command
 ```sh
 bind --node localhost:7569
 user-trace-level --node Node --level Verbose
@@ -503,7 +500,7 @@ Sometimes it might be useful to increase the trace level of the internal VeloxDB
 
 #### [Direct](#tab/net-cli)
 ```sh
-vlx trace-level --bind localhost:7569 --node Node --level Verbose
+./vlx trace-level --bind localhost:7569 --node Node --level Verbose
 ```
 
 #### [Interactive](#tab/visual-studio)

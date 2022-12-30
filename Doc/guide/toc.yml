@@ -4,11 +4,13 @@
     href: introduction.md
   - name: Getting Started
     href: getting_started.md
-  - name: Automapper
-    href: automapper.md
   - name: Architecture
     href: architecture.md
   - name: Data Model
     href: data_model.md
+  - name: Database APIs
+    href: database_apis.md
   - name: Persistance
     href: persistence.md
+  - name: Model and API Updates
+    href: model_api_update.md

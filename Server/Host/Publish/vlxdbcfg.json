@@ -14,7 +14,7 @@
 	"ExecutionEndpoint": {
 		"BacklogSize": 20,
 		"MaxOpenConnCount": 10,
-		"BufferPoolSize": 131072,
+		"BufferPoolSize": 8388608,
 		"InactivityInterval": 2,
 		"InactivityTimeout": 1,
 		"MaxQueuedChunkCount": 64
