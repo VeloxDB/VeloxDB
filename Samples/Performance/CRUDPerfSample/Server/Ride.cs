@@ -1,4 +1,4 @@
-﻿using API;
+using API;
 using VeloxDB.Descriptor;
 using VeloxDB.ObjectInterface;
 

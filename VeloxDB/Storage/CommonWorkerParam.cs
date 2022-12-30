@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using VeloxDB.Storage.Persistence;
 
 namespace VeloxDB.Storage;

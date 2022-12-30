@@ -1,4 +1,4 @@
-﻿using VeloxDB.Config;
+using VeloxDB.Config;
 using VeloxDB.Storage.Replication.HighAvailability;
 
 namespace VeloxDB.Server;

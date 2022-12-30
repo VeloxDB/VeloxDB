@@ -1,4 +1,4 @@
-﻿How to run the sample (with a single node):
+How to run the sample (with a single node):
 1. Build all three sample projects (API, Client and Server), preferably in Release configuration.
 	This should yield you API.dll, Client.dll and Server.dll files (in their respective bin folders).
 3. Copy API.dll and Server.dll to a new empty directory

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using VeloxDB.Networking;
 
 namespace VeloxDB.Storage.Replication.HighAvailability;

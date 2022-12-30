@@ -1,4 +1,4 @@
-﻿using VeloxDB.Client;
+using VeloxDB.Client;
 using VeloxDB.Protocol;
 
 namespace VeloxDB.Server;

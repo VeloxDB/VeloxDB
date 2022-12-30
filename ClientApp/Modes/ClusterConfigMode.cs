@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using VeloxDB.Config;
 
 namespace VeloxDB.ClientApp.Modes;

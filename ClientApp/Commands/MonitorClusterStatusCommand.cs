@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using VeloxDB.Client;
 using VeloxDB.ClientApp.Modes;

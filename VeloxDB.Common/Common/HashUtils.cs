@@ -1,4 +1,4 @@
-﻿/*
+/*
 xxHash's License follows:
 """
   Copyright (C) 2012-2015, Yann Collet. (https://github.com/Cyan4973/xxHash)

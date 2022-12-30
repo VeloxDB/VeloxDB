@@ -1,4 +1,4 @@
-﻿namespace VeloxDB.Server;
+namespace VeloxDB.Server;
 
 public class AdminAPIServiceNames
 {

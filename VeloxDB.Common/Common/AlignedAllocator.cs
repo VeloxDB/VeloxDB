@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using VeloxDB.Common;
 
 namespace VeloxDB.Common;

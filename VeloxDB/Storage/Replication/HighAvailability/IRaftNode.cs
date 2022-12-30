@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.ServiceModel;
 
 namespace VeloxDB.Storage.Replication.HighAvailability;

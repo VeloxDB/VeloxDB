@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using VeloxDB.ClientApp.Modes;
