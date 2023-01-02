@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Xml;
 using System.IO;
 using System.Reflection;
@@ -17,15 +17,15 @@ internal enum PropertyType : byte
 	Bool = 7,
 	DateTime = 8,
 	String = 9,
-	ByteArray = 20,
-	ShortArray = 21,
-	IntArray = 22,
-	LongArray = 23,
-	FloatArray = 24,
-	DoubleArray = 25,
-	BoolArray = 26,
-	DateTimeArray = 27,
-	StringArray = 28,
+	ByteArray = 50,
+	ShortArray = 51,
+	IntArray = 52,
+	LongArray = 53,
+	FloatArray = 54,
+	DoubleArray = 55,
+	BoolArray = 56,
+	DateTimeArray = 57,
+	StringArray = 58,
 }
 
 internal enum PropertyKind

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using VeloxDB.Common;
@@ -22,7 +22,7 @@ internal enum DatabaseObjectState : byte
 }
 
 /// <summary>
-/// The ultimate base class of all VeloxDB database objects. Derive this class to implement a database class.
+/// The ultimate base class of all VeloxDB database classes. Derive this class to implement a database class.
 /// </summary>
 public unsafe abstract class DatabaseObject
 {
