@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using VeloxDB.Common;
@@ -15,12 +15,13 @@ internal class ClassUpdate
 	bool isAbstractModified;
 	bool isHierarchyTypeModified;
 	bool hashedPropertiesModified;
+	bool isBaseClassModified;
 	ReadOnlyArray<PropertyInsert> insertedProperties;
 	ReadOnlyArray<PropertyDelete> deletedProperties;
 	ReadOnlyArray<PropertyUpdate> updatedProperties;
 
 	public ClassUpdate(ClassDescriptor prevClassDesc, ClassDescriptor classDesc, bool isAbstractModified, bool isLogModified,
-		bool isHierarchyTypeModified, bool hashedPropertiesModified, List<PropertyInsert> insertedProperties,
+		bool isHierarchyTypeModified, bool hashedPropertiesModified, bool isBaseClassModified, List<PropertyInsert> insertedProperties,
 		List<PropertyDelete> deletedProperties, List<PropertyUpdate> updatedProperties)
 	{
 		this.prevClassDesc = prevClassDesc;
@@ -29,6 +30,7 @@ internal class ClassUpdate
 		this.isLogModified = isLogModified;
 		this.isHierarchyTypeModified = isHierarchyTypeModified;
 		this.hashedPropertiesModified = hashedPropertiesModified;
+		this.isBaseClassModified = isBaseClassModified;
 		this.insertedProperties = ReadOnlyArray<PropertyInsert>.FromNullable(insertedProperties);
 		this.deletedProperties = ReadOnlyArray<PropertyDelete>.FromNullable(deletedProperties);
 		this.updatedProperties = ReadOnlyArray<PropertyUpdate>.FromNullable(updatedProperties);
@@ -42,6 +44,7 @@ internal class ClassUpdate
 	public bool IsAbstractModified => isAbstractModified;
 	public bool IsLogModified => isLogModified;
 	public bool IsHierarchyTypeModified => isHierarchyTypeModified;
+	public bool IsBaseClassModified => isBaseClassModified;
 	public bool PropertyListModified => deletedProperties.Length > 0 || insertedProperties.Length > 0;
 	public bool HashedPropertiesModified => hashedPropertiesModified;
 	public bool ReferenceTrackingModified => updatedProperties.Any(x => x.InvRefTrackingModified);
@@ -60,34 +63,5 @@ internal class ClassUpdate
 		}
 	}
 
-	public bool RequiresDefaultValueWrite
-	{
-		get
-		{
-			if (classDesc.IsAbstract)
-				return false;
-
-			for (int i = 0; i < insertedProperties.Length; i++)
-			{
-				PropertyDescriptor propDesc = insertedProperties[i].PropDesc;
-				if (propDesc.Kind == PropertyKind.Simple && propDesc.PropertyType != PropertyType.String)
-					return true;
-			}
-
-			return false;
-		}
-	}
-
-	public IEnumerable<PropertyDescriptor> DefaultValueRequireingProperties
-	{
-		get
-		{
-			for (int i = 0; i < insertedProperties.Length; i++)
-			{
-				PropertyDescriptor propDesc = insertedProperties[i].PropDesc;
-				if (propDesc.Kind == PropertyKind.Simple && propDesc.PropertyType != PropertyType.String)
-					yield return propDesc;
-			}
-		}
-	}
+	public bool RequiresDefaultValueWrite => !classDesc.IsAbstract && insertedProperties.Length > 0;
 }

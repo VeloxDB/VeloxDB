@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
@@ -27,6 +27,7 @@ internal sealed class DataModelDescriptor : ModelItemDescriptor
 	Dictionary<string, NamespaceDescriptor> nameToNamespace;
 
 	Dictionary<string, HashIndexDescriptor> nameToHashIndex;
+	Dictionary<SplitName, HashIndexDescriptor> splitNameToHashIndex;
 	Dictionary<short, HashIndexDescriptor> idToHashIndex;
 
 	// While the model is being built different types of descriptors need to store temporary data
@@ -42,6 +43,7 @@ internal sealed class DataModelDescriptor : ModelItemDescriptor
 		nameToClass = new Dictionary<string, ClassDescriptor>(1024, StringComparer.Ordinal);
 		idToClass = new Dictionary<short, ClassDescriptor>(1024);
 		nameToHashIndex = new Dictionary<string, HashIndexDescriptor>(4);
+		splitNameToHashIndex = new Dictionary<SplitName, HashIndexDescriptor>(4);
 		idToHashIndex = new Dictionary<short, HashIndexDescriptor>(4);
 		nameToNamespace = new Dictionary<string, NamespaceDescriptor>(64);
 		loadingTempData = new Dictionary<object, object>(1024, ReferenceEqualityComparer<object>.Instance);
@@ -304,6 +306,12 @@ internal sealed class DataModelDescriptor : ModelItemDescriptor
 		return hashIndex;
 	}
 
+	public HashIndexDescriptor GetHashIndex(string namespaceName, string name)
+	{
+		splitNameToHashIndex.TryGetValue(new SplitName(namespaceName, name), out HashIndexDescriptor hashIndex);
+		return hashIndex;
+	}
+
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	internal HashIndexDescriptor GetHashIndexByIndex(int index)
 	{
@@ -414,6 +422,7 @@ internal sealed class DataModelDescriptor : ModelItemDescriptor
 			}
 
 			nameToHashIndex[hashIndex.FullName] = hashIndex;
+			splitNameToHashIndex[new SplitName(hashIndex.NamespaceName, hashIndex.Name)] = hashIndex;
 			idToHashIndex[hashIndex.Id] = hashIndex;
 		}
 	}
@@ -543,11 +552,13 @@ internal sealed class DataModelDescriptor : ModelItemDescriptor
 
 		c = reader.ReadInt32();
 		nameToHashIndex = new Dictionary<string, HashIndexDescriptor>(c);
+		splitNameToHashIndex = new Dictionary<SplitName, HashIndexDescriptor>(c);
 		idToHashIndex = new Dictionary<short, HashIndexDescriptor>(c);
 		for (int i = 0; i < c; i++)
 		{
 			HashIndexDescriptor hi = context.Deserialize<HashIndexDescriptor>(reader);
 			nameToHashIndex.Add(hi.FullName, hi);
+			splitNameToHashIndex.Add(new SplitName(hi.NamespaceName, hi.Name), hi);
 			idToHashIndex.Add(hi.Id, hi);
 		}
 
@@ -573,5 +584,29 @@ internal sealed class DataModelDescriptor : ModelItemDescriptor
 		}
 
 		SetClassInverseRefs();
+	}
+
+	private struct SplitName : IEquatable<SplitName>
+	{
+		public string Name { get; private set; }
+		public string NamespaceName { get; private set; }
+
+		public SplitName(string namespaceName, string name)
+		{
+			this.NamespaceName = namespaceName;
+			this.Name = name;
+		}
+
+		public bool Equals(SplitName other)
+		{
+			return string.Equals(Name, other.Name, StringComparison.Ordinal) &&
+				string.Equals(NamespaceName, other.NamespaceName, StringComparison.Ordinal);
+		}
+
+		public override int GetHashCode()
+		{
+			uint t = HashUtils.PrimeMultiplier32;
+			return Name.GetHashCode() * (int)t + NamespaceName.GetHashCode();
+		}
 	}
 }

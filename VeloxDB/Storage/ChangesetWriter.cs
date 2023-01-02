@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Drawing;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -17,7 +17,8 @@ internal enum OperationType : byte
 	Update = 2,
 	Delete = 3,
 	Rewind = 4,
-	DefaultValue = 5
+	DefaultValue = 5,
+	DropClass = 6
 }
 
 internal struct BlockProperties
@@ -225,16 +226,6 @@ internal unsafe sealed class ChangesetWriter
 		return currWriter.StartUpdateBlock(classDesc);
 	}
 
-	public BlockProperties StartDefaultValueBlock(ClassDescriptor classDesc)
-	{
-		Checker.NotNull(classDesc, "classDesc");
-		if (classDesc.IsAbstract)
-			throw new InvalidOperationException("Abstract class may not be updated.");
-
-		ProvideCurrentChangeset(classDesc);
-		return currWriter.StartDefaultValueBlock(classDesc);
-	}
-
 	public void StartUpdateBlockUnsafe(ClassDescriptor classDesc)
 	{
 		ProvideCurrentChangeset(classDesc);
@@ -255,6 +246,23 @@ internal unsafe sealed class ChangesetWriter
 	{
 		ProvideCurrentChangeset(classDesc);
 		currWriter.StartDeleteBlockUnsafe(classDesc);
+	}
+
+	public BlockProperties StartDefaultValueBlock(ClassDescriptor classDesc)
+	{
+		Checker.NotNull(classDesc, "classDesc");
+		if (classDesc.IsAbstract)
+			throw new InvalidOperationException("Abstract class may not be updated.");
+
+		ProvideCurrentChangeset(classDesc);
+		return currWriter.StartDefaultValueBlock(classDesc);
+	}
+
+	public void CreateDropClassBlock(ClassDescriptor classDesc)
+	{
+		Checker.NotNull(classDesc, "classDesc");
+		ProvideCurrentChangeset(classDesc);
+		currWriter.CreateDropClassBlock(classDesc);
 	}
 
 	public void RewindToVersion(int? logCount, ulong version)
@@ -711,6 +719,8 @@ internal unsafe sealed class LogChangesetWriter
 	const int startBufferSize = 512;
 	const int endBufferSize = 1024 * 1024 * 8;
 
+	static readonly Action<LogChangesetWriter, PropertyDescriptor>[] defaultValueAdders;
+
 	ClassDescriptor classDesc;
 	MemoryManager memoryManager;
 
@@ -740,6 +750,24 @@ internal unsafe sealed class LogChangesetWriter
 	BytePlaceholder blockCountPlaceholder;
 
 	bool largeBufferSizeMode;
+
+	static LogChangesetWriter()
+	{
+		defaultValueAdders = new Action<LogChangesetWriter, PropertyDescriptor>[Utils.MaxEnumValue(typeof(PropertyType)) + 1];
+		defaultValueAdders[(int)PropertyType.Byte] = (w, d) => w.AddByte((byte)d.DefaultValue);
+		defaultValueAdders[(int)PropertyType.Short] = (w, d) => w.AddShort((short)d.DefaultValue);
+		defaultValueAdders[(int)PropertyType.Int] = (w, d) => w.AddInt((int)d.DefaultValue);
+		defaultValueAdders[(int)PropertyType.Long] = (w, d) => w.AddLong((long)d.DefaultValue);
+		defaultValueAdders[(int)PropertyType.Float] = (w, d) => w.AddFloat((float)d.DefaultValue);
+		defaultValueAdders[(int)PropertyType.Double] = (w, d) => w.AddDouble((double)d.DefaultValue);
+		defaultValueAdders[(int)PropertyType.Bool] = (w, d) => w.AddBool((bool)d.DefaultValue);
+		defaultValueAdders[(int)PropertyType.DateTime] = (w, d) => w.AddDateTime((DateTime)d.DefaultValue);
+
+		for (int i = (int)PropertyType.String; i < defaultValueAdders.Length; i++)
+		{
+			defaultValueAdders[i] = (w, d) => w.AddNullArray();
+		}
+	}
 
 	public LogChangesetWriter(MemoryManager memoryManager, int logIndex)
 	{
@@ -878,14 +906,6 @@ internal unsafe sealed class LogChangesetWriter
 		return StartBlock(classDesc, OperationType.Update);
 	}
 
-	public BlockProperties StartDefaultValueBlock(ClassDescriptor classDesc)
-	{
-		if (classDesc.IsAbstract)
-			throw new InvalidOperationException("Abstract classes may not be updated.");
-
-		return StartBlock(classDesc, OperationType.DefaultValue);
-	}
-
 	public void StartUpdateBlockUnsafe(ClassDescriptor classDesc)
 	{
 		StartBlock(classDesc, OperationType.Update);
@@ -917,6 +937,20 @@ internal unsafe sealed class LogChangesetWriter
 		WriteByte((byte)OperationType.Rewind);
 		WriteLong((long)version);
 		blockDefined = true;
+	}
+
+	public BlockProperties StartDefaultValueBlock(ClassDescriptor classDesc)
+	{
+		if (classDesc.IsAbstract)
+			throw new InvalidOperationException("Abstract classes may not be updated.");
+
+		return StartBlock(classDesc, OperationType.DefaultValue);
+	}
+
+	public void CreateDropClassBlock(ClassDescriptor classDesc)
+	{
+		StartBlock(classDesc, OperationType.DropClass);
+		AddLong(0);
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -985,7 +1019,7 @@ internal unsafe sealed class LogChangesetWriter
 	private void DefineMissingProperties()
 	{
 		userPropertyCount = propertyCount;
-		if (propertyCount == classDesc.Properties.Length - 1 || operationType != OperationType.Insert)  // Version is never defined in changeset
+		if (operationType != OperationType.Insert || propertyCount == classDesc.Properties.Length - 1)  // Version is never defined in changeset
 			return;
 
 		for (int i = 2; i < classDesc.Properties.Length; i++)
@@ -1105,7 +1139,7 @@ internal unsafe sealed class LogChangesetWriter
 		{
 			CreatePreviousVersionPlaceHolder();
 
-			if (operationType == OperationType.DefaultValue)
+			if (operationType == OperationType.DefaultValue || operationType == OperationType.DropClass)
 			{
 				if (v != 0)
 					throw new ArgumentException("Invalid id.");
@@ -1181,6 +1215,14 @@ internal unsafe sealed class LogChangesetWriter
 		ComleteBlockDefinition();
 		ValidateValue(PropertyType.String);
 		WriteStringOptional(v);
+		CheckIfOperationComplete();
+	}
+
+	public void AddNullArray()
+	{
+		ComleteBlockDefinition();
+		WriteByte(0);
+		WriteByte(1);
 		CheckIfOperationComplete();
 	}
 
@@ -1931,43 +1973,7 @@ internal unsafe sealed class LogChangesetWriter
 
 	public void AddDefaultValue(PropertyDescriptor propDesc)
 	{
-		switch (propDesc.PropertyType)
-		{
-			case PropertyType.Byte:
-				AddByte((byte)propDesc.DefaultValue);
-				break;
-
-			case PropertyType.Short:
-				AddShort((short)propDesc.DefaultValue);
-				break;
-
-			case PropertyType.Int:
-				AddInt((int)propDesc.DefaultValue);
-				break;
-
-			case PropertyType.Long:
-				AddLong((long)propDesc.DefaultValue);
-				break;
-
-			case PropertyType.Float:
-				AddFloat((float)propDesc.DefaultValue);
-				break;
-
-			case PropertyType.Double:
-				AddDouble((double)propDesc.DefaultValue);
-				break;
-
-			case PropertyType.Bool:
-				AddBool((bool)propDesc.DefaultValue);
-				break;
-
-			case PropertyType.DateTime:
-				AddDateTime((DateTime)propDesc.DefaultValue);
-				break;
-
-			default:
-				throw new ArgumentException();
-		}
+		defaultValueAdders[(int)propDesc.PropertyType](this, propDesc);
 	}
 
 	private struct BytePlaceholder

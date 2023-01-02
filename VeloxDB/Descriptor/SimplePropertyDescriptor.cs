@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Globalization;
 using System.Xml;
 using VeloxDB.Common;
@@ -49,7 +49,17 @@ internal sealed class SimplePropertyDescriptor : PropertyDescriptor
 
 		if (objectModelProperty.DefaultValue != null)
 		{
-			ValidateAndParseDefaultValue(objectModelProperty.DefaultValue);
+			if (objectModelProperty.PropertyInfo.PropertyType.IsEnum)
+			{
+				if (!Enum.TryParse(objectModelProperty.PropertyInfo.PropertyType, objectModelProperty.DefaultValue, out defaultValue))
+				{
+					Throw.InvalidDefaultValue(OwnerClass.FullName, Name);
+				}
+			}
+			else
+			{
+				ValidateAndParseDefaultValue(objectModelProperty.DefaultValue);
+			}
 		}
 		else
 		{

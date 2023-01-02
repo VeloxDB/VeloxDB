@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -381,7 +381,7 @@ internal unsafe sealed class ChangesetReader
 			TakeNextLog();
 
 		OperationType opType = (OperationType)ReadByte();
-		if (opType < OperationType.Insert || opType > OperationType.DefaultValue)
+		if (opType < OperationType.Insert || opType > OperationType.DropClass)
 			throw new DatabaseException(DatabaseErrorDetail.CreateInvalidChangeset());
 
 		if (opType == OperationType.Rewind)

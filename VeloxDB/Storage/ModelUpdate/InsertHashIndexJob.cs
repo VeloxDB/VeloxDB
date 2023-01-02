@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using VeloxDB.Common;
 using VeloxDB.Descriptor;
 
@@ -26,7 +26,8 @@ internal sealed class InsertHashIndexJob : ModelUpdateJob
 					TTTrace.Write(database.TraceId, database.Id, hi.HashIndexDesc.Id, prevClassDesc.Id);
 
 					Class @class = database.GetClass(prevClassDesc.Index).MainClass;
-					capacity += @class.EstimatedObjectCount;
+					if (@class != null)
+						capacity += @class.EstimatedObjectCount;
 				}
 			}
 

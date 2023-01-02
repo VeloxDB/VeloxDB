@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics.SymbolStore;
 using System.Linq;
@@ -10,6 +10,7 @@ using VeloxDB.Common;
 using VeloxDB.Descriptor;
 using VeloxDB.Storage.ModelUpdate;
 using VeloxDB.Storage.Replication;
+using static VeloxDB.Common.SegmentBinaryWriter;
 
 namespace VeloxDB.Storage;
 
@@ -149,21 +150,20 @@ internal unsafe sealed partial class Class : ClassBase
 		classIndex = (ushort)ClassDesc.Index;
 	}
 
-	public void UpdateModelForObject(ulong objectHandle, ObjectCopyDelegate copyDelegate, HashIndexComparerPair[] hashIndexes, ulong commiteVersion)
+	public void UpdateModelForObject(ulong objectHandle, ObjectCopyDelegate copyDelegate, HashIndexComparerPair[] hashIndexes, ulong commitVersion)
 	{
 		ClassObject* obj = GetObjectByHandle(objectHandle);
 		Checker.AssertTrue(obj->nextVersionHandle == 0);
 
-		TTTrace.Write(Database.TraceId, ClassDesc.Id, ClassDesc.Index, obj->id, obj->version, obj->nextVersionHandle, commiteVersion);
+		TTTrace.Write(Database.TraceId, ClassDesc.Id, ClassDesc.Index, obj->id, obj->version, obj->nextVersionHandle, commitVersion);
 
 		ulong newObjHandle = modelUpdateData.Storage.Allocate();
 		ClassObject* newObj = (ClassObject*)ObjectStorage.GetBuffer(newObjHandle);
-		newObj->nextCollisionHandle = obj->nextCollisionHandle;
 		newObj->nextVersionHandle = 0;
 		ReaderInfo.InitWithUnusedBit(&newObj->readerInfo);
 		copyDelegate((IntPtr)(ClassObject.ToDataPointer(obj)), (IntPtr)(ClassObject.ToDataPointer(newObj)), stringStorage, blobStorage);
-		if (commiteVersion != 0)
-			newObj->version = commiteVersion;
+		if (commitVersion != 0)
+			newObj->version = commitVersion;
 
 		ObjectStorage.MarkBufferAsUsed(newObjHandle);
 
@@ -173,6 +173,7 @@ internal unsafe sealed partial class Class : ClassBase
 		RefreshHashIndexHandles(objectHandle, obj, newObjHandle, hashIndexes);
 		FindObject(handlePointer, obj->id, out ulong* pObjPointer);
 
+		newObj->nextCollisionHandle = obj->nextCollisionHandle;
 		*pObjPointer = newObjHandle;
 
 		Bucket.UnlockAccess(bucket);
@@ -1034,10 +1035,32 @@ internal unsafe sealed partial class Class : ClassBase
 		for (int i = 0; i < block.OperationCount; i++)
 		{
 			OperationHeader opHead = reader.GetOperationHeader();
-			RestoreDeleteObject(pendingOps, reader.ReadLong(), commitVersion, opHead, isAlignment);
+			RestoreDeleteObject(pendingOps, reader.ReadLong(), commitVersion, opHead, isAlignment, false);
 		}
 
 		resizeCounter.ExitReadLock(lockHandle);
+	}
+
+	public void RestoreClassDrop(ChangesetBlock block, ChangesetReader reader)
+	{
+		TTTrace.Write(TraceId, ClassDesc.Id);
+
+		resizeCounter.EnterWriteLock();
+
+		reader.GetOperationHeader();
+		long id = reader.ReadLong();
+		Checker.AssertTrue(block.OperationCount == 1 && id == 0);
+
+		using (ClassScan scan = this.GetClassScan(null, false, out _))
+		{
+			foreach (ObjectReader r in scan)
+			{
+				TTTrace.Write(TraceId, ClassDesc.Id, r.GetIdOptimized());
+				RestoreDeleteObject(null, r.GetIdOptimized(), 0, new OperationHeader(), false, true);
+			}
+		}
+
+		resizeCounter.ExitWriteLock();
 	}
 
 	public void RestoreDefaultValue(ChangesetBlock block, ulong commitVersion, ChangesetReader reader)
@@ -1866,7 +1889,7 @@ internal unsafe sealed partial class Class : ClassBase
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private void RestoreDeleteObject(PendingRestoreOperations pendingOps, long id,
-		ulong commitVersion, OperationHeader opHead, bool isAlignment)
+		ulong commitVersion, OperationHeader opHead, bool isAlignment, bool forceRestore)
 	{
 		TTTrace.Write(TraceId, ClassDesc.Id, id, commitVersion, opHead.PreviousVersion,
 			opHead.IsFirstInTransaction, opHead.IsLastInTransaction, isAlignment);
@@ -1877,7 +1900,7 @@ internal unsafe sealed partial class Class : ClassBase
 		ClassObject* existingObj = FindObject(handlePointer, id, out ulong* pObjPointer);
 		Checker.AssertFalse(existingObj == null && isAlignment);
 
-		if (existingObj != null && CanRestoreOperation(existingObj, opHead, commitVersion) || isAlignment)
+		if (forceRestore || existingObj != null && CanRestoreOperation(existingObj, opHead, commitVersion) || isAlignment)
 		{
 			Checker.AssertFalse(existingObj->nextVersionHandle == PendingRestoreObjectHeader.PendingRestore);
 			TTTrace.Write(TraceId, ClassDesc.Id, id, commitVersion, opHead.PreviousVersion, isAlignment);

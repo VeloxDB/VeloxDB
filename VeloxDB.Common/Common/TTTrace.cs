@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -30,6 +30,7 @@ internal unsafe static class TTTrace
 
 	static NativeFile dataFile, metaFile;
 
+	public static long WrittenBytes => writtenBytes;
 
 	static TTTrace()
 	{
@@ -495,6 +496,7 @@ internal unsafe static class TTTrace
 				string mName = Path.Combine(path, $"{Process.GetCurrentProcess().ProcessName}_{fileOrderNum}.trm");
 				metaFile = NativeFile.Create(mName, FileMode.Create, FileAccess.Write, FileShare.None, FileFlags.None);
 
+				writtenBytes = 0;
 				fileOrderNum++;
 			}
 		}
@@ -520,6 +522,17 @@ internal unsafe static class TTTrace
 	public static void FlushAndCloseAsync()
 	{
 		Task.Run(() => FlushAndClose());
+	}
+
+	public static void Flush()
+	{
+		lock (sync)
+		{
+			if (dataFile == null)
+				return;
+
+			FlushBuffer();
+		}
 	}
 
 	public static void FlushAndClose()

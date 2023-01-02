@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using VeloxDB.Common;
@@ -56,6 +56,8 @@ internal unsafe sealed partial class StorageEngine
 
 			TTTrace.Write(traceId, tran.Id);
 		}
+
+		TTTrace.Flush();
 
 		DrainPersistenceSnapshots();
 		for (int i = 0; i < databases.Length; i++)

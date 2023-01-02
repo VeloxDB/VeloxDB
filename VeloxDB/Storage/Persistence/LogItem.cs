@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
@@ -66,7 +66,18 @@ internal unsafe struct LogItem
 	}
 
 	public bool CanRunParallel => ChangesetReader.PeekOperationType(changesetsList) != OperationType.DefaultValue;
-	public static bool CanLogRunParallel(LogChangeset ch) => ch == null || ChangesetReader.PeekOperationType(ch) != OperationType.DefaultValue;
+
+	public static bool CanLogRunParallel(LogChangeset ch)
+	{
+		if (ch == null)
+			return true;
+
+		OperationType opType = ChangesetReader.PeekOperationType(ch);
+		if (opType == OperationType.DefaultValue || opType == OperationType.DropClass)
+			return true;
+
+		return false;
+	}
 
 	public long SerializedSize
 	{

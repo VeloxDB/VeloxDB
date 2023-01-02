@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -33,6 +33,11 @@ internal sealed class ModelUpdateContext : IDisposable
 		newHashIndexes = new Dictionary<short, HashIndexEntry>(2);
 		newClasses = new Dictionary<short, ClassEntry>(2);
 		newInvRefMaps = new Dictionary<short, InverseReferenceMap>(2);
+	}
+
+	~ModelUpdateContext()
+	{
+		throw new CriticalDatabaseException();
 	}
 
 	public JobWorkers<CommonWorkerParam> Workers => workers;
@@ -193,6 +198,7 @@ internal sealed class ModelUpdateContext : IDisposable
 
 	public void Dispose()
 	{
+		GC.SuppressFinalize(this);
 		workers.WaitAndClose();
 	}
 }

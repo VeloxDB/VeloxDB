@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
@@ -372,12 +372,9 @@ public unsafe sealed partial class ObjectModel
 		if (!modelData.TryGetClassByUserType(typeof(T), out ClassData cd))
 			throw new ArgumentException("Invalid object type.");
 
-		string fullName = name;
-		string ns = typeof(T).Namespace;
-		if (!string.IsNullOrEmpty(ns))
-			fullName = $"{ns}.{name}";
+		string namespaceName = cd.ClassDesc.NamespaceName;
+		HashIndexDescriptor hdi = modelData.ModelDesc.GetHashIndex(namespaceName, name);
 
-		HashIndexDescriptor hdi = modelData.ModelDesc.GetHashIndex(fullName);
 		Func<T, TKey1, bool> d = modelData.GetHashIndexComparer(hdi.Id) as Func<T, TKey1, bool>;
 		if (d == null)
 			throw new ArgumentException("Invalid hash index class and/or key types.");
@@ -410,12 +407,9 @@ public unsafe sealed partial class ObjectModel
 		if (!modelData.TryGetClassByUserType(typeof(T), out ClassData cd))
 			throw new ArgumentException("Invalid object type.");
 
-		string fullName = name;
-		string ns = typeof(T).Namespace;
-		if (!string.IsNullOrEmpty(ns))
-			fullName = $"{ns}.{name}";
+		string namespaceName = cd.ClassDesc.NamespaceName;
+		HashIndexDescriptor hdi = modelData.ModelDesc.GetHashIndex(namespaceName, name);
 
-		HashIndexDescriptor hdi = modelData.ModelDesc.GetHashIndex(fullName);
 		Func<T, TKey1, TKey2, bool> d = modelData.GetHashIndexComparer(hdi.Id) as Func<T, TKey1, TKey2, bool>;
 		if (d == null)
 			throw new ArgumentException("Invalid hash index class and/or key types.");
@@ -449,12 +443,9 @@ public unsafe sealed partial class ObjectModel
 		if (!modelData.TryGetClassByUserType(typeof(T), out ClassData cd))
 			throw new ArgumentException("Invalid object type.");
 
-		string fullName = name;
-		string ns = typeof(T).Namespace;
-		if (!string.IsNullOrEmpty(ns))
-			fullName = $"{ns}.{name}";
+		string namespaceName = cd.ClassDesc.NamespaceName;
+		HashIndexDescriptor hdi = modelData.ModelDesc.GetHashIndex(namespaceName, name);
 
-		HashIndexDescriptor hdi = modelData.ModelDesc.GetHashIndex(fullName);
 		Func<T, TKey1, TKey2, TKey3, bool> d = modelData.GetHashIndexComparer(hdi.Id) as Func<T, TKey1, TKey2, TKey3, bool>;
 		if (d == null)
 			throw new ArgumentException("Invalid hash index class and/or key types.");
@@ -489,12 +480,9 @@ public unsafe sealed partial class ObjectModel
 		if (!modelData.TryGetClassByUserType(typeof(T), out ClassData cd))
 			throw new ArgumentException("Invalid object type.");
 
-		string fullName = name;
-		string ns = typeof(T).Namespace;
-		if (!string.IsNullOrEmpty(ns))
-			fullName = $"{ns}.{name}";
+		string namespaceName = cd.ClassDesc.NamespaceName;
+		HashIndexDescriptor hdi = modelData.ModelDesc.GetHashIndex(namespaceName, name);
 
-		HashIndexDescriptor hdi = modelData.ModelDesc.GetHashIndex(fullName);
 		Func<T, TKey1, TKey2, TKey3, TKey4, bool> d = modelData.GetHashIndexComparer(hdi.Id) as Func<T, TKey1, TKey2, TKey3, TKey4, bool>;
 		if (d == null)
 			throw new ArgumentException("Invalid hash index class and/or key types.");

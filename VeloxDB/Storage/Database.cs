@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
@@ -11,6 +11,7 @@ using VeloxDB.Storage.ModelUpdate;
 using static VeloxDB.Storage.Persistence.DatabaseRestorer;
 using System.IO;
 using System.Threading;
+using static VeloxDB.Common.Tracing;
 
 namespace VeloxDB.Storage;
 
@@ -56,6 +57,8 @@ internal unsafe sealed partial class Database
 
 	object currTransIdsHandle;
 	ulong* currTransIds;
+
+	ModelUpdateContext modelUpdateContext;
 
 	private Database(StorageEngine engine, DataModelDescriptor model, PersistenceDescriptor persistenceDesc, long id)
 	{
@@ -460,103 +463,112 @@ internal unsafe sealed partial class Database
 		persister.UpdateConfiguration(update);
 	}
 
-	public ModelUpdateContext ApplyModelUpdate(DataModelUpdate modelUpdate, ulong commitVersion)
+	public void ApplyModelUpdate(DataModelUpdate modelUpdate, ulong commitVersion, bool retainUpdateContext)
 	{
 		TTTrace.Write(engine.TraceId, id);
 
-		ModelUpdateContext context = new ModelUpdateContext(this, modelUpdate);
+		modelUpdateContext = new ModelUpdateContext(this, modelUpdate);
 
-		context.Validate();
-		context.ExecuteUpdate(commitVersion);
-
-		DataModelUpdate update = context.ModelUpdate;
-		modelDesc = update.ModelDesc;
-
-		ClassEntry[] newClasses = new ClassEntry[modelDesc.ClassCount];
-		for (int i = 0; i < modelDesc.ClassCount; i++)
+		try
 		{
-			ClassDescriptor classDesc = modelDesc.GetClassByIndex(i);
-			ClassDescriptor prevClassDesc = update.PrevModelDesc.GetClass(classDesc.Id);
+			modelUpdateContext.Validate();
+			modelUpdateContext.ExecuteUpdate(commitVersion);
 
-			if (!context.TryGetNewClass(classDesc.Id, out ClassBase @class, out ClassLocker locker))
+			DataModelUpdate update = modelUpdateContext.ModelUpdate;
+			modelDesc = update.ModelDesc;
+
+			ClassEntry[] newClasses = new ClassEntry[modelDesc.ClassCount];
+			for (int i = 0; i < modelDesc.ClassCount; i++)
 			{
-				@class = classes[prevClassDesc.Index].Class;
-				locker = classes[prevClassDesc.Index].Locker;
+				ClassDescriptor classDesc = modelDesc.GetClassByIndex(i);
+				ClassDescriptor prevClassDesc = update.PrevModelDesc.GetClass(classDesc.Id);
 
-				if (modelUpdate.UpdatedClasses.TryGetValue(classDesc.Id, out ClassUpdate cu) && cu.IsHierarchyTypeModified)
+				if (!modelUpdateContext.TryGetNewClass(classDesc.Id, out ClassBase @class, out ClassLocker locker))
 				{
-					@class = ClassBase.ChangeHierarchyType(@class);
+					@class = classes[prevClassDesc.Index].Class;
+					locker = classes[prevClassDesc.Index].Locker;
+
+					if (modelUpdate.UpdatedClasses.TryGetValue(classDesc.Id, out ClassUpdate cu) && cu.IsHierarchyTypeModified)
+					{
+						@class = ClassBase.ChangeHierarchyType(@class);
+					}
 				}
+
+				if (!modelUpdateContext.TryGetNewInverseReferenceMap(classDesc.Id, out InverseReferenceMap invRefMap) && prevClassDesc != null)
+				{
+					invRefMap = classes[prevClassDesc.Index].InvRefMap;
+					if (invRefMap != null && invRefMap.Disposed)
+						invRefMap = null;
+				}
+
+				@class.ModelUpdated(classDesc);
+				locker?.ModelUpdated((ushort)classDesc.Index);
+				invRefMap?.ModelUpdated(classDesc);
+				newClasses[i] = new ClassEntry(@class, locker, invRefMap);
 			}
 
-			if (!context.TryGetNewInverseReferenceMap(classDesc.Id, out InverseReferenceMap invRefMap) && prevClassDesc != null)
+			for (int i = 0; i < modelDesc.ClassCount; i++)
 			{
-				invRefMap = classes[prevClassDesc.Index].InvRefMap;
-				if (invRefMap != null && invRefMap.Disposed)
-					invRefMap = null;
+				InheritedClass inhClass = newClasses[i].Class as InheritedClass;
+				if (inhClass != null)
+					inhClass.SetInheritedClasses(newClasses);
 			}
 
-			@class.ModelUpdated(classDesc);
-			locker?.ModelUpdated((ushort)classDesc.Index);
-			invRefMap?.ModelUpdated(classDesc);
-			newClasses[i] = new ClassEntry(@class, locker, invRefMap);
-		}
-
-		for (int i = 0; i < modelDesc.ClassCount; i++)
-		{
-			InheritedClass inhClass = newClasses[i].Class as InheritedClass;
-			if (inhClass != null)
-				inhClass.SetInheritedClasses(newClasses);
-		}
-
-		HashIndexEntry[] newHashIndexes = new HashIndexEntry[modelDesc.HashIndexCount];
-		Dictionary<short, int> newHashIndexesMap = new Dictionary<short, int>(modelDesc.HashIndexCount);
-		HashReadersCollection newHashReaders = context.NewHashReaders ?? hashReaders;
-		for (int i = 0; i < modelDesc.HashIndexCount; i++)
-		{
-			HashIndexDescriptor hindDesc = modelDesc.GetHashIndexByIndex(i);
-			HashIndexDescriptor prevHindDesc = update.PrevModelDesc.GetHashIndex(hindDesc.Id);
-
-			if (!context.TryGetNewHashIndex(hindDesc.Id, out HashIndex hashIndex, out HashKeyReadLocker locker))
+			HashIndexEntry[] newHashIndexes = new HashIndexEntry[modelDesc.HashIndexCount];
+			Dictionary<short, int> newHashIndexesMap = new Dictionary<short, int>(modelDesc.HashIndexCount);
+			HashReadersCollection newHashReaders = modelUpdateContext.NewHashReaders ?? hashReaders;
+			for (int i = 0; i < modelDesc.HashIndexCount; i++)
 			{
-				hashIndex = hashIndexes[prevHindDesc.Index].Index;
-				locker = hashIndexes[prevHindDesc.Index].Locker;
+				HashIndexDescriptor hindDesc = modelDesc.GetHashIndexByIndex(i);
+				HashIndexDescriptor prevHindDesc = update.PrevModelDesc.GetHashIndex(hindDesc.Id);
+
+				if (!modelUpdateContext.TryGetNewHashIndex(hindDesc.Id, out HashIndex hashIndex, out HashKeyReadLocker locker))
+				{
+					hashIndex = hashIndexes[prevHindDesc.Index].Index;
+					locker = hashIndexes[prevHindDesc.Index].Locker;
+				}
+
+				if (locker == null)
+				{
+					locker = hashIndexes[prevHindDesc.Index].Locker;
+				}
+
+				Func<HashIndexReaderBase> creator = newHashReaders.GetReaderFactory(hindDesc.Id);
+				HashIndexReaderBase reader = creator();
+				reader.SetIndex(hashIndex);
+
+				hashIndex.ModelUpdated(hindDesc);
+				locker.ModelUpdated(hindDesc);
+				newHashIndexes[i] = new HashIndexEntry(hashIndex, locker, reader);
+				newHashIndexesMap.Add(hindDesc.Id, hindDesc.Index);
 			}
 
-			if (locker == null)
+			Func<int, HashIndex> finder = x => newHashIndexes[x].Index;
+			for (int i = 0; i < newClasses.Length; i++)
 			{
-				locker = hashIndexes[prevHindDesc.Index].Locker;
+				Class @class = newClasses[i].Class.MainClass;
+				@class?.AssignHashIndexes(finder, newHashReaders);
 			}
 
-			Func<HashIndexReaderBase> creator = newHashReaders.GetReaderFactory(hindDesc.Id);
-			HashIndexReaderBase reader = creator();
-			reader.SetIndex(hashIndex);
+			refValidator.ModelUpdated(modelDesc);
+			classes = newClasses;
+			hashReaders = newHashReaders;
+			hashIndexesMap = newHashIndexesMap;
+			hashIndexes = newHashIndexes;
 
-			hashIndex.ModelUpdated(hindDesc);
-			locker.ModelUpdated(hindDesc);
-			newHashIndexes[i] = new HashIndexEntry(hashIndex, locker, reader);
-			newHashIndexesMap.Add(hindDesc.Id, hindDesc.Index);
+			primaryAlignCodeCache.UpdateCache(modelUpdateContext.ModelUpdate);
+			standbyAlignCodeCache.UpdateCache(modelUpdateContext.ModelUpdate);
+
+			ValidateStructure();
 		}
-
-		Func<int, HashIndex> finder = x => newHashIndexes[x].Index;
-		for (int i = 0; i < newClasses.Length; i++)
+		finally
 		{
-			Class @class = newClasses[i].Class.MainClass;
-			@class?.AssignHashIndexes(finder, newHashReaders);
+			if (!retainUpdateContext)
+			{
+				modelUpdateContext.Dispose();
+				modelUpdateContext = null;
+			}
 		}
-
-		refValidator.ModelUpdated(modelDesc);
-		classes = newClasses;
-		hashReaders = newHashReaders;
-		hashIndexesMap = newHashIndexesMap;
-		hashIndexes = newHashIndexes;
-
-		primaryAlignCodeCache.UpdateCache(context.ModelUpdate);
-		standbyAlignCodeCache.UpdateCache(context.ModelUpdate);
-
-		ValidateStructure();
-
-		return context;
 	}
 
 	public Transaction CreateTransaction(TransactionType type, out DatabaseVersions versions)
@@ -582,6 +594,7 @@ internal unsafe sealed partial class Database
 		IReplica originReplica, bool allowOtherWriteTransactions)
 	{
 		TTTrace.Write(engine.TraceId, id, (byte)type, (byte)source, this.versions.ReadVersion, this.versions.CommitVersion);
+		Checker.AssertFalse(modelUpdateContext != null && source == TransactionSource.Client);
 
 		Transaction tran = new Transaction(this, type);
 
@@ -620,9 +633,15 @@ internal unsafe sealed partial class Database
 		Persister?.InitSequence(versions.LogSeqNum);
 	}
 
-	public void EndDatabaseAlignment(ModelUpdateContext modelUpdateContext)
+	public void EndDatabaseAlignment()
 	{
-		RefillPendingIndexes(modelUpdateContext?.Workers);
+		if (modelUpdateContext != null)
+		{
+			RefillPendingIndexes(modelUpdateContext?.Workers);
+			modelUpdateContext.Dispose();
+			modelUpdateContext = null;
+		}
+
 		versions.TTTraceState();
 	}
 
@@ -1077,6 +1096,8 @@ internal unsafe sealed partial class Database
 	{
 		TTTrace.Write(engine.TraceId);
 		trace.Debug("Disposing database {0}.", id);
+
+		Checker.AssertNull(modelUpdateContext);
 
 		gc.Dispose();
 

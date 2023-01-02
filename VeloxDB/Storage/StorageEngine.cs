@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -211,12 +211,15 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 
 			ulong commitVersion = UserDatabase.Versions.CommitVersion + 1;
 			if (hasModelChanges)
-				UserDatabase.ApplyModelUpdate(modelUpdate, commitVersion).Dispose();
+				UserDatabase.ApplyModelUpdate(modelUpdate, commitVersion, false);
 
 			using (Transaction tran = CreateTransaction(DatabaseId.User, TransactionType.ReadWrite, TransactionSource.Client, null, true))
 			{
 				if (modelUpdate.RequiresDefaultValueWrites)
 					ApplyDefaultValues(tran, modelUpdate);
+
+				if (modelUpdate.HasClassesBecomingAbstract)
+					ApplyClassDrops(tran, modelUpdate);
 
 				ApplyAssemblyChanges(tran, assemblyUpdate, newModelDesc, hasModelChanges,
 					out SimpleGuid asmVersionGuid, out modelVersionGuid);
@@ -260,7 +263,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		Trace.Info("User assemblies updated.");
 	}
 
-	public ModelUpdateContext ReplicatedUpdateUserModel(DataModelUpdate modelUpdate, ulong commitVersion)
+	public void ReplicatedUpdateUserModel(DataModelUpdate modelUpdate, ulong commitVersion, bool retainUpdateContext)
 	{
 		TTTrace.Write(traceId);
 
@@ -268,7 +271,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 
 		try
 		{
-			return UserDatabase.ApplyModelUpdate(modelUpdate, commitVersion);
+			UserDatabase.ApplyModelUpdate(modelUpdate, commitVersion, retainUpdateContext);
 		}
 		catch (DatabaseException e)
 		{
@@ -826,10 +829,10 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		databases[databaseId].BeginDatabaseAlignment();
 	}
 
-	public void EndDatabaseAlignment(Database database, ModelUpdateContext modelUpdateContext)
+	public void EndDatabaseAlignment(Database database)
 	{
 		TTTrace.Write(traceId, database.Id);
-		database.EndDatabaseAlignment(modelUpdateContext);
+		database.EndDatabaseAlignment();
 
 		if (database.Id == DatabaseId.User)
 			contextPool.ResetAlignmentMode();
@@ -1067,9 +1070,13 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		{
 			@class.RestoreDelete(block, pendingOps, commitVersion, reader, isAlignment);
 		}
-		else
+		else if (opType == OperationType.DefaultValue)
 		{
 			@class.RestoreDefaultValue(block, commitVersion, reader);
+		}
+		else
+		{
+			@class.RestoreClassDrop(block, reader);
 		}
 	}
 
@@ -1131,7 +1138,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 			return DatabaseErrorDetail.Create(DatabaseErrorType.InvalidChangesetFormat);
 
 		// Source model is different from ours model (can happen in non user databases).
-		if (classDesc == null || opType == OperationType.DefaultValue)
+		if (classDesc == null || opType == OperationType.DefaultValue || opType == OperationType.DropClass)
 		{
 			ChangesetReader.SkipBlock(reader, block);
 			return null;
@@ -1692,6 +1699,32 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		}
 	}
 
+	private void ApplyClassDrops(Transaction tran, DataModelUpdate modelUpdate)
+	{
+		TTTrace.Write(traceId, trace.Name);
+
+		ChangesetWriter writer = ChangesetWriterPool.Get();
+		try
+		{
+			foreach (ClassUpdate cu in modelUpdate.UpdatedClasses.Values)
+			{
+				if (!cu.IsAbstractModified || !cu.ClassDesc.IsAbstract)
+					continue;
+
+				writer.CreateDropClassBlock(cu.ClassDesc);
+			}
+
+			using (Changeset changeset = writer.FinishWriting())
+			{
+				ApplyChangeset(tran, changeset);
+			}
+		}
+		finally
+		{
+			ChangesetWriterPool.Put(writer);
+		}
+	}
+
 	private void ApplyDefaultValues(Transaction tran, DataModelUpdate modelUpdate)
 	{
 		TTTrace.Write(traceId, trace.Name);
@@ -1705,13 +1738,13 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 					continue;
 
 				BlockProperties bp = writer.StartDefaultValueBlock(cu.ClassDesc);
-				foreach (PropertyDescriptor propDesc in cu.DefaultValueRequireingProperties)
+				foreach (PropertyDescriptor propDesc in cu.InsertedProperties.Select(x => x.PropDesc))
 				{
 					bp.Add(propDesc.Id);
 				}
 
 				writer.AddLong(0);
-				foreach (PropertyDescriptor propDesc in cu.DefaultValueRequireingProperties)
+				foreach (PropertyDescriptor propDesc in cu.InsertedProperties.Select(x => x.PropDesc))
 				{
 					writer.AddDefaultValue(propDesc);
 				}

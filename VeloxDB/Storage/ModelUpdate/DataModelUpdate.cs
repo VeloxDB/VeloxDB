@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using VeloxDB.Common;
@@ -66,6 +66,20 @@ internal sealed class DataModelUpdate
 			foreach (ClassUpdate cu in updatedClasses.Values)
 			{
 				if (cu.RequiresDefaultValueWrite)
+					return true;
+			}
+
+			return false;
+		}
+	}
+
+	public bool HasClassesBecomingAbstract
+	{
+		get
+		{
+			foreach (ClassUpdate cu in updatedClasses.Values)
+			{
+				if (cu.IsAbstractModified && cu.ClassDesc.IsAbstract)
 					return true;
 			}
 
@@ -474,6 +488,7 @@ internal sealed class DataModelUpdate
 		bool isPrevInherited = prevClassDesc.DescendentClassIds.Length > 0 || prevClassDesc.IsAbstract;
 		bool isInherited = classDesc.DescendentClassIds.Length > 0 || classDesc.IsAbstract;
 		bool isHierarchyTypeModified = isPrevInherited != isInherited;
+		bool isBaseClaseModified = IsBaseClassModified(prevClassDesc, classDesc);
 
 		if (isAbstratModified)
 			database.Engine.Trace.Debug("Modified abstractness of class {0}.", classDesc.FullName);
@@ -483,6 +498,9 @@ internal sealed class DataModelUpdate
 
 		if (hashedPropertiesModified)
 			database.Engine.Trace.Debug("Hashed properties of class {0} modified.", classDesc.FullName);
+
+		if (isBaseClaseModified)
+			database.Engine.Trace.Debug("Base class of class {0} modified.", classDesc.FullName);
 
 		if (!classDesc.IsAbstract)
 		{
@@ -524,18 +542,26 @@ internal sealed class DataModelUpdate
 			}
 		}
 
-		if (isHierarchyTypeModified || isLogModified || isAbstratModified || hashedPropertiesModified ||
+		if (isHierarchyTypeModified || isLogModified || isAbstratModified || isBaseClaseModified || hashedPropertiesModified ||
 			insertedProps != null || deletedProps != null || updatedProps != null)
 		{
-			TTTrace.Write(database.TraceId, database.Id, classDesc.Id, isLogModified, isAbstratModified,
+			TTTrace.Write(database.TraceId, database.Id, classDesc.Id, isLogModified, isAbstratModified, isBaseClaseModified,
 				insertedProps == null ? 0 : insertedProps.Count, deletedProps == null ? 0 : deletedProps.Count,
 				updatedProps == null ? 0 : updatedProps.Count, hashedPropertiesModified);
 
 			ClassUpdate cu = new ClassUpdate(prevClassDesc, classDesc, isAbstratModified,
-				isLogModified, isHierarchyTypeModified, hashedPropertiesModified, insertedProps, deletedProps, updatedProps);
+				isLogModified, isHierarchyTypeModified, hashedPropertiesModified, isBaseClaseModified, insertedProps, deletedProps, updatedProps);
 
 			state.UpdatedClasses.Add(prevClassDesc.Id, cu);
 		}
+	}
+
+	private bool IsBaseClassModified(ClassDescriptor prevClassDesc, ClassDescriptor classDesc)
+	{
+		if (prevClassDesc.BaseClass == null)    // DatabaseObject
+			return false;
+
+		return prevClassDesc.BaseClass.Id != classDesc.BaseClass.Id;
 	}
 
 	private bool HashedPropertiesModified(ReadOnlyArray<ReadOnlyArray<int>> p1, ReadOnlyArray<ReadOnlyArray<int>> p2)
