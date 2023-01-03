@@ -3,9 +3,9 @@
  <footer class="text-center" style="background-color: #f1f1f1;">
         <div class="container">
             <section>
-                <a class="btn btn-clr btn-lg" href="index.html" role="button"><img src = "{{_rel}}images/bi_linkedin.svg" alt = ""></img></a>
-                <a class="btn btn-clr btn-lg" href="index.html" role="button"><img src = "{{_rel}}images/bi_github.svg" alt = ""></img></a>
-                <a class="btn btn-clr btn-lg" href="index.html" role="button"><img src = "{{_rel}}images/bi_discord.svg" alt = ""></img></a>
+                <a class="btn btn-clr btn-lg" href="https://www.linkedin.com/company/veloxdb" role="button"><img src = "{{_rel}}images/bi_linkedin.svg" alt = ""></img></a>
+                <a class="btn btn-clr btn-lg" href="https://github.com/VeloxDB/VeloxDB" role="button"><img src = "{{_rel}}images/bi_github.svg" alt = ""></img></a>
+                <a class="btn btn-clr btn-lg" href="https://discord.gg/E45qUQtrtx" role="button"><img src = "{{_rel}}images/bi_discord.svg" alt = ""></img></a>
             </section>
         </div>
         <div class="text-center btn-clr p-3 weight-200" style="background-color: rgba(0, 0, 0, 0.2);">© 2022 Copyright: 

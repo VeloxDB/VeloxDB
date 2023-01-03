@@ -419,7 +419,7 @@ internal sealed class Server : IDisposable
 								  AdminBufferPoolSize, AdminInactivityInterval, AdminInactivityTimeout, AdminMaxQueuedChunkCount);
 		foreach (IPEndPoint endpoint in endpoints)
 		{
-			Tracing.Info("Administration ednpoint hosted on {0}.", endpoint);
+			Tracing.Info("Administration endpoint hosted on {0}.", endpoint);
 		}
 
 		Checker.AssertNotNull(configuration.ExecutionEndpoint);
@@ -435,7 +435,7 @@ internal sealed class Server : IDisposable
 
 		foreach (IPEndPoint endpoint in endpoints)
 		{
-			Tracing.Info("Execution ednpoint hosted on {0}.", endpoint);
+			Tracing.Info("Execution endpoint hosted on {0}.", endpoint);
 		}
 
 		execHost = new DbAPIHost((int)executionEndpoint.BacklogSize, (int)executionEndpoint.BufferPoolSize,

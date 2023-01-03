@@ -12,11 +12,13 @@ documentType: index
             <h1 class="color-2 weight-300">Professional Services
             </h1>
         </div>
-    </div> 
-    <div class="row py-5">
-        <div class="col-sm-push-2 col-sm-8 text-justify">
-            <h3 class="weight-300">We offer a range of services to help you get the most out of VeloxDB. Whether you're just starting out with the database or are an experienced user looking to optimize your applications, we have something for you.
-            </h3>
+    </div>
+     <div class="row py-5 align-items-center">
+        <div class="col-sm-push-1 col-sm-5  text-center">
+            <img src="./images/solution.svg" alt="" role="presentation" class="img-fluid img-fluid-center fit-image">
+        </div>
+        <div class="col-sm-push-1 col-sm-5 ">
+            <h3 class="weight-300">We offer a range of services to help you get the most out of VeloxDB. Whether you're just starting out with the database or are an experienced user looking to optimize your applications, we have something for you.</h3>
         </div>
     </div>
     <div class="row">

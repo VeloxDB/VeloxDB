@@ -12,8 +12,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="veloxdb" Version="0.1.11" />
-    <PackageReference Include="veloxdb.protocol" Version="0.1.11" />
+    <PackageReference Include="veloxdb" Version="0.2.0" />
+    <PackageReference Include="veloxdb.protocol" Version="0.2.0" />
   </ItemGroup>
 
 </Project>

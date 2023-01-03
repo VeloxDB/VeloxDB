@@ -26,7 +26,7 @@ cd vlxblog
 * Click **Create a new project**
 * Select **Class library** with the **C#** tag and click **Next**
 * Enter **vlxblog** for the name and click **Next**
-* Select **.NET 6.0** for framework and click **Create**.
+* Select **.NET 7.0** for framework and click **Create**.
 ---
 
 #### Change project platform to x64
@@ -120,15 +120,15 @@ dotnet run
 You should see an output similar to this:
 
 ```accesslog
-22-06-24 11:05:13.314 [1B22] [Info] Database 0 restored.
-22-06-24 11:05:13.487 [1B22] [Info] Database 1 restored.
-22-06-24 11:05:13.548 [1B22] [Info] Storage engine started.
-22-06-24 11:05:13.580 [1B22] [Info] Looking for changes in C:\VeloxDB\vlxblog\bin\x64\Debug\net6.0\
-22-06-24 11:05:13.590 [1B22] [Info] New assembly: vlxblog.dll
-22-06-24 11:05:13.797 [1B22] [Info] User assemblies updated.
-22-06-24 11:05:13.805 [1B22] [Info] Initializing persistence to C:\VeloxDB\vlxblog\bin\x64\Debug\net6.0\vlxdata.
-22-06-24 11:05:13.939 [1B22] [Info] Persistence configuration updated.
-22-06-24 11:05:13.941 [1B22] [Info] Server successfully started.
+23-01-01 20:58:32.018 [7C03] [Info] Starting VeloxDB 0.2.0.0
+23-01-01 20:58:32.263 [7C03] [Info] Storage engine started.
+23-01-01 20:58:32.301 [7C03] [Info] Looking for changes in C:\VeloxDB\vlxblog\bin\x64\Debug\net7.0\
+23-01-01 20:58:32.472 [7C03] [Info] User assemblies updated.
+23-01-01 20:58:32.478 [7C03] [Info] Initializing persistence to C:\VeloxDB\vlxblog\bin\x64\Debug\net7.0\vlxdata.
+23-01-01 20:58:32.532 [7C03] [Info] Persistence configuration updated.
+23-01-01 20:58:32.541 [7C03] [Info] Administration endpoint hosted on 127.0.0.1:7569.
+23-01-01 20:58:32.542 [7C03] [Info] Execution endpoint hosted on 127.0.0.1:7568.
+23-01-01 20:58:32.571 [7C03] [Info] Server successfully started.
 ```
 
 VeloxDB NuGet package comes bundled with the VeloxDB server. When you run your project, the server starts, loads the assembly and creates the database if it doesn't already exist. The database files are placed in project's output directory in vlxdata subdirectory. This is the development deployment. For the recommended production deployment please see [Downloading and configuring the database](#downloading-and-configuring-the-database).
@@ -267,7 +267,9 @@ The major difference between VeloxDB and most other databases is that VeloxDB re
 >You might think that there is nothing stopping you from creating two database operations, one reading the data for outside processing and one for writing back the results. However, transaction scope in VeloxDB is tied to a single execution of a database operation, meaning you would read the data in one transaction and then write the results in another transaction, thus loosing  transaction isolation provided by the database. VeloxDB transactions are covered in chapter [Architecture](architecture.md##transactions).
 
 ## Downloading and Configuring the Database
-VeloxDB requires Microsoft [.NET 6](https://dotnet.microsoft.com/en-us/download/dotnet/6.0) to run. After installing .NET, you can download the free version of [VeloxDB](https://TODO) binaries or download the source code from our [GitHub repository](https://TODO) to compile it yourself. The free version includes all VeloxDB functionalities except cluster support (ability to create a database cluster). After downloading, unpack the archive file to a desired directory. Notice the file vlxdbcfg.json in the unpacked directory. This file contains configuration parameters of the database server grouped into several sections. When specifying file system paths, you can use any of the following templates to point to well known locations:
+VeloxDB requires Microsoft [.NET 7](https://dotnet.microsoft.com/en-us/download/dotnet/7.0) to run. After installing .NET, you can download the free version of [VeloxDB](https://www.vlxdb.com/download.html) binaries or download the source code from our [GitHub repository](https://github.com/VeloxDB/VeloxDB) and compile it yourself. The free version includes all VeloxDB functionalities except cluster support (ability to create a database cluster). After downloading, unpack the archive file to a desired directory. There are two configuration files in the unpacked directory, vlxdbcfg.json and config.cluster.json. You can run the server with the default values in these files, however the server will only listen on the localhost (127.0.0.1) address and wont be visible over the network.
+
+config.cluster.json stores the configuration of the VeloxDB cluster. For now we are only going to use a single node deployment. For cluster deployments see [Database Cluster](database_cluster.md) chapter. You can replace the localhost address here with the host name (or IP address) of your server. You can also modify the default port values (if needed). File vlxdbcfg.json contains configuration parameters of the database server grouped into several sections. Some of the parameters represent file system paths. When specifying file system paths, you can use any of the following templates to point to well known locations:
 
 | Template                | Windows                         | Linux                           |
 |-------------------------|---------------------------------|---------------------------------|

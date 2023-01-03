@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Linq;
 using System.Threading;
 using Microsoft.CodeAnalysis;
 
@@ -168,7 +169,9 @@ namespace VeloxDB.SourceGenerator
 				DBProperty dbProperty = type.GetPropertyByName(property.Name);
 
 				if (dbProperty == null)
+				{
 					dbProperty = TryMatch(type, property, "Id");
+				}
 
 				if (dbProperty == null)
 					dbProperty = TryMatch(type, property, "Ids");

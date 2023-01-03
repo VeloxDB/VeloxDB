@@ -88,7 +88,7 @@ documentType: index
     </div>
     <div class="row">
         <div class="col-md-push-2 col-md-8">
-            <p class="note"><img src = "images/bi_info-circle-fill.svg" alt ="" class = "img-center"><span class="img-center"> NOTE: VeloxDB is still in beta and APIs are subject to change. We are in the process of completing the documentation, so some sections may be incomplete or empty at this time. Thank you for your patience.</span>
+            <p class="note"><img src = "images/bi_info-circle-fill.svg" alt ="" class = "img-center"><span class="img-center"> Please note that VeloxDB is still in beta and APIs are subject to change.</span>
             </p>
         </div>
     </div>

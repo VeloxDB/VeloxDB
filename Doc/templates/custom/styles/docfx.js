@@ -1201,7 +1201,7 @@ $(function () {
     /**
      * Attempt to scroll to the current location's hash.
      */
-    function scrollToCurrent() {
+		function scrollToCurrent() {
       scrollIfAnchor(window.location.hash);
     }
 
@@ -1216,12 +1216,13 @@ $(function () {
       }
     }
 
-    $(window).on('hashchange', scrollToCurrent);
+		$(window).on('hashchange', scrollToCurrent);
 
-    $(window).on('load', function () {
-        // scroll to the anchor if present, offset by the header
-        scrollToCurrent();
-    });
+		if (document.readyState === 'loading') {  // Loading hasn't finished yet
+			document.addEventListener('DOMContentLoaded', scrollToCurrent);
+		} else {  // `DOMContentLoaded` has already fired
+			scrollToCurrent();
+		}
 
     $(document).ready(function () {
         // Exclude tabbed content case

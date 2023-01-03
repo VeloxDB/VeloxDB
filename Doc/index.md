@@ -61,10 +61,7 @@ documentType: index
         </div>
         <div class="px-2 col-sm-6 col-md-5 col-md-push-2">
             <h2 class="display-6">Built for Performance</h2>
-            <p class="weight-300">Millions of transactions per second (both read and write) on comodity hardware. Ideal for graph
-                workloads, financial processing, IoT and edge computing, industrial and control systems, you
-                name
-                it.</p>
+            <p class="weight-300">2.5 million write transactions per second, 8 million read transactions per second, all that on 16 cores/32 threads. Ideal for graph workloads, financial processing, IoT and edge computing, industrial and control systems, you name it.</p>
             <p><a class="btn btn-default" role="button"
                     href="guide/introduction.md#performance">See our
                     performance claims</a></p>

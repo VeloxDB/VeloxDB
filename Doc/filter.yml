@@ -3,7 +3,7 @@ apiRules:
     uidRegex: .*.value__
 - include:
     uidRegex: VeloxDB.Protocol.DbAPIObjectGraphSupportType|VeloxDB.Protocol.DbAPIOperationType|VeloxDB.Common.TraceLevel|VeloxDB.DatabaseErrorType|
-              VeloxDB.Descriptor.DeleteTargetAction|VeloxDB.Networking.AbortedPhase|VeloxDB.Protocol.DbAPIDefinitionErrorType
+              |VeloxDB.Descriptor.DeleteTargetAction|VeloxDB.Networking.AbortedPhase|VeloxDB.Protocol.DbAPIDefinitionErrorType
 
 - include:
     type: Method

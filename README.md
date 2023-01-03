@@ -17,11 +17,11 @@ VeloxDB is a high performance, in-memory, object oriented database. It was desig
 
 ## Getting started
 
-[The VeloxDB Getting Started Guide](https://vlxdb.com/vlxdoc/articles/guide/getting_started.html) - the perfect place to begin if you're new to VeloxDB. It covers everything from setting up your development environment to running your first transactions.
+[The VeloxDB Getting Started Guide](https://vlxdb.com/guide/getting_started.html) - the perfect place to begin if you're new to VeloxDB. It covers everything from setting up your development environment to running your first transactions.
 
-[VeloxDB: The Definitive Guide](http://vlxdb.com/vlxdoc/articles/guide/introduction.html) - a comprehensive resource that covers all aspects of using VeloxDB. It includes detailed information about the database's data model, API, as well as best practices for using VeloxDB in your applications.
+[VeloxDB: The Definitive Guide](https://vlxdb.com/guide/introduction.html) - a comprehensive resource that covers all aspects of using VeloxDB. It includes detailed information about the database's data model, API, as well as best practices for using VeloxDB in your applications.
 
-[The VeloxDB API Reference](http://vlxdb.com/vlxdoc/api) - a complete reference for the VeloxDB API, including detailed descriptions of all the available classes, methods, and properties. You can find the API Reference here:
+[The VeloxDB API Reference](https://vlxdb.com/api) - a complete reference for the VeloxDB API, including detailed descriptions of all the available classes, methods, and properties. You can find the API Reference here:
 
 ## Building
 
@@ -32,7 +32,7 @@ dotnet build /p:Platform=x64
 
 ## License
 
-VeloxDB is licensed under [MIT License](LICENSE.txt). 
+VeloxDB is licensed under [MIT License](LICENSE.txt).
 
 ## Contact
 
