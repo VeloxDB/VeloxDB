@@ -13,6 +13,12 @@
     <meta name="viewport" content="width=device-width">
     <meta name="title" content="{{#title}}{{title}}{{/title}}{{^title}}{{>partials/title}}{{/title}} {{#_appTitle}}| {{_appTitle}} {{/_appTitle}}">
     <meta name="generator" content="docfx {{_docfxVersion}}">
+    <meta property="og:title" content="{{#title}}{{title}}{{/title}}{{^title}}{{>partials/title}}{{/title}} {{#_appTitle}}| {{_appTitle}} {{/_appTitle}}" />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="https://vlxdb.com/images/og-image.png" />
+    <meta property="og:description" content="VeloxDB is a high-performance database designed specifically for .NET applications. It offers lightning-fast read and write speeds, support for complex data structures, and easy integration with .NET code." />
+    <meta property="og:site_name" content="VeloxDB" />
+    <meta property="og:locale" content="en_US" />		
     {{#_description}}<meta name="description" content="{{_description}}">{{/_description}}
     <link rel="shortcut icon" href="{{_rel}}{{{_appFaviconPath}}}{{^_appFaviconPath}}favicon.ico{{/_appFaviconPath}}">
     <link rel="stylesheet" href="{{_rel}}styles/docfx.vendor.css">
@@ -23,15 +29,15 @@
     {{#_noindex}}<meta name="searchOption" content="noindex">{{/_noindex}}
     {{#_enableSearch}}<meta property="docfx:rel" content="{{_rel}}">{{/_enableSearch}}
     {{#_enableNewTab}}<meta property="docfx:newtab" content="true">{{/_enableNewTab}}
-	<style>
-		header {
-    			position: static;
-		}
+  <style>
+    header {
+          position: static;
+    }
 
-	</style>
-	<script type="text/javascript">
-		window.vlxIsIndex = true;
-	</script>
+  </style>
+  <script type="text/javascript">
+    window.vlxIsIndex = true;
+  </script>
 
   </head>
   <body data-spy="scroll" data-target="#affix">
@@ -42,9 +48,9 @@
       <div class="container body-content">
         {{>partials/searchResults}}
       </div>
-	  <div class="hide-when-search">
+    <div class="hide-when-search">
       {{{conceptual}}}
-	  </div>
+    </div>
       {{>partials/footer}}
     </div>
     {{>partials/scripts}}

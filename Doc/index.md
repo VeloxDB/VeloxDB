@@ -114,7 +114,7 @@ documentType: index
             <p class="weight-300">Community version of VeloxDB is open source. It features most of the VeloxDB functionality
                 without
                 any limitations on performance or database size.</p>
-            <p><a class="btn btn-default" role="button" href="https://github.com/">Visit our
+            <p><a class="btn btn-default" role="button" href="https://github.com/VeloxDB/VeloxDB">Visit our
                     github page</a></p>
         </div>
     </div>
