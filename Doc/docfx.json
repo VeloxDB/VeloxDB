@@ -15,7 +15,7 @@
       "disableGitFeatures": true,
       "disableDefaultFilter": false,
 			"properties":{
-				"TargetFramework":"net6.0"
+				"TargetFramework":"net7.0"
 			},
 			"filter":"filter.yml"
     }
