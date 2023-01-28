@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using VeloxDB.Common;
 using VeloxDB.Networking;
 
@@ -36,7 +36,7 @@ internal sealed unsafe class LogChangeset : IDisposable
 
 	~LogChangeset()
 	{
-#if DEBUG
+#if HUNT_CHG_LEAKS
 		throw new CriticalDatabaseException();
 #else
 

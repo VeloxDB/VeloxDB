@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -72,8 +72,6 @@ internal unsafe sealed class TransactionContext : IDisposable
 	ushort slot;
 
 	WriteTransactionFlags writeFlags;
-
-	ulong rewindVersion;
 
 	AlignmentData alignment;
 	bool userAssembliesModified;
@@ -159,7 +157,6 @@ internal unsafe sealed class TransactionContext : IDisposable
 		ReplicationDescriptor replicationDesc = engine.ReplicationDesc;
 
 		totalMergedCount = 1;
-		rewindVersion = IReplicator.NoRewindVersion;
 	}
 
 	public Database Database => database;
@@ -183,7 +180,6 @@ internal unsafe sealed class TransactionContext : IDisposable
 	public bool IsTransactionEmpty => changeset == null;
 	public byte AffectedLogGroups { get => affectedLogGroups; set => affectedLogGroups = value; }
 	public WriteTransactionFlags WriteFlags { get => writeFlags; set => writeFlags = value; }
-	public ulong RewindVersion => rewindVersion;
 	public AlignmentData Alignment { get => alignment; set => alignment = value; }
 	public uint LocalTerm { get => localTerm; set => localTerm = value; }
 	public SimpleGuid GlobalTerm { get => globalTerm; set => globalTerm = value; }
@@ -369,9 +365,7 @@ internal unsafe sealed class TransactionContext : IDisposable
 	public void RewindPerformed(ulong version)
 	{
 		TTTrace.Write(database.TraceId, tranId, version);
-		rewindVersion = version;
 		affectedLogGroups = database.PersistenceDesc.CompleteLogMask;
-
 		ClearInvRefChanges();
 	}
 
@@ -609,7 +603,6 @@ internal unsafe sealed class TransactionContext : IDisposable
 		asyncCommitResult = true;
 		writeFlags = WriteTransactionFlags.None;
 		affectedLogGroups = 0;
-		rewindVersion = IReplicator.NoRewindVersion;
 		originReplica = null;
 		alignment = null;
 		standbyOrderNum = ulong.MaxValue;

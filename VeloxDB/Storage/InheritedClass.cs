@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using VeloxDB.Common;
@@ -121,20 +121,22 @@ internal unsafe sealed partial class InheritedClass : ClassBase
 
 	protected override void OnModelUpdated()
 	{
-		if (MainClass != null)
-			MainClass.ModelUpdated(ClassDesc);
+		MainClass?.ModelUpdated(ClassDesc);
 	}
 
 	protected override void OnStartPropertyUpdate(ClassDescriptor newClassDesc, bool propertyListModified)
 	{
-		if (MainClass != null)
-			MainClass.StartPropertyUpdate(newClassDesc, propertyListModified);
+		MainClass?.StartPropertyUpdate(newClassDesc, propertyListModified);
 	}
 
 	protected override void OnFinishPropertyUpdate()
 	{
-		if (MainClass != null)
-			MainClass.FinishPropertyUpdate();
+		MainClass?.FinishPropertyUpdate();
+	}
+
+	public override void Drop()
+	{
+		MainClass?.Drop();
 	}
 
 	public override void Dispose(JobWorkers<CommonWorkerParam> workers)

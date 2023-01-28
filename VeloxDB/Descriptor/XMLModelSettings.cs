@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
@@ -58,6 +58,8 @@ internal sealed class XMLModelSettings : ModelSettings, IDisposable
 		}
 
 		model.Prepare(persistenceSettings);
+		if (previousModel != null)
+			model.UpdateLastUsedIds(previousModel.LastUsedClassId, previousModel.LastUsedPropertyId, previousModel.LastUsedHashIndexId);
 
 		usedUp = true;
 		Dispose();

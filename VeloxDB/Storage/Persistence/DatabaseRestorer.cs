@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.CompilerServices;
@@ -340,7 +340,7 @@ internal unsafe sealed class DatabaseRestorer
 				{
 					p.Reader.Init(database.ModelDesc, curr);
 					database.Engine.RestoreChangeset(database, p.Block, pendingOps,
-						p.Reader, logItem.CommitVersion, item.IsAlignment);
+						p.Reader, logItem.CommitVersion, item.IsAlignment, p.LogIndex);
 				}
 
 				curr = curr.Next;
@@ -351,7 +351,7 @@ internal unsafe sealed class DatabaseRestorer
 	private unsafe ulong RestoreLogFile(LogFileReader reader, int logIndex,
 		ulong stoppingLogSeqNum, DatabaseVersions versions, out long filePosition)
 	{
-		TTTrace.Write(database.TraceId, logIndex, stoppingLogSeqNum);
+		TTTrace.Write(database.TraceId, database.Id, logIndex, stoppingLogSeqNum);
 		versions.TTTraceState();
 
 		trace.Debug("Restoring log file, logIndex={0}.", logIndex);
@@ -449,8 +449,10 @@ internal unsafe sealed class DatabaseRestorer
 	{
 		LogItem beginLogItem = logItems[0];
 
-		TTTrace.Write(database.TraceId, database.Id, logIndex, beginLogItem.CommitVersion, beginLogItem.ChangesetCount);
+		TTTrace.Write(database.TraceId, database.Id, logIndex, beginLogItem.CommitVersion,
+			beginLogItem.ChangesetCount, (int)logItems[0].Alignment.Type);
 		logItems[0].TTTraceState(database.TraceId);
+
 		Checker.AssertTrue(logItems[0].Alignment.Type == AlignmentTransactionType.Beginning);
 
 		// We must not interleave alignment restoration with regular transactions since alignment might
@@ -460,24 +462,12 @@ internal unsafe sealed class DatabaseRestorer
 		workers.Drain();
 
 		// Extract and process rewind if present
-		if (beginLogItem.ChangesetsList != null)
-		{
-			ChangesetReader chr = new ChangesetReader();
-			chr.Init(database.ModelDesc, beginLogItem.ChangesetsList);
-			if (chr.TryReadRewindBlock(out ulong rewindVersion))
-			{
-				perWorkerVersions.ForEach(x => x.TryRewind(rewindVersion));
-				TTTrace.Write(database.TraceId, logIndex, rewindVersion, beginLogItem.CommitVersion,
-					beginLogItem.LogSeqNum, beginLogItem.AffectedLogsMask, beginLogItem.ChangesetCount);
-
-				beginLogItem.DisposeFirstChangeset();
-				logItems[0] = beginLogItem;
-			}
-		}
+		ProcessAlignmentAction(logIndex, logItems, perWorkerVersions, beginLogItem);
 
 		perWorkerVersions.ForEach(x => x.AlignmentRestored(logItems[0].Alignment.GlobalVersions));
 
 		// Load all alignment log items until we encounter End
+		bool beginAlign = true;
 		while (true)
 		{
 			for (int i = 0; i < logItems.Count; i++)
@@ -493,12 +483,18 @@ internal unsafe sealed class DatabaseRestorer
 				});
 
 				TTTrace.Write(database.TraceId, database.Id, logItems[i].GlobalTerm.Low, logItems[i].GlobalTerm.Hight,
-					logItems[i].LocalTerm, logItems[i].CommitVersion, logItems[i].LogSeqNum);
+					logItems[i].LocalTerm, logItems[i].CommitVersion, logItems[i].LogSeqNum, logItems[i].AffectedLogsMask);
 
 				perWorkerVersions.ForEach(x => x.TransactionRestored(logItems[i].GlobalTerm, logItems[i].LocalTerm,
 					logItems[i].CommitVersion, logItems[i].LogSeqNum));
 
 				UpdateSplitTransaction(logItems[i], logIndex);
+			}
+
+			if (beginAlign)
+			{
+				workers.Drain();
+				beginAlign = false;
 			}
 
 			if (logItems[0].Alignment != null && logItems[0].Alignment.Type == AlignmentTransactionType.End)
@@ -526,6 +522,30 @@ internal unsafe sealed class DatabaseRestorer
 		workers.Drain();
 
 		return true;
+	}
+
+	private void ProcessAlignmentAction(int logIndex, List<LogItem> logItems, DatabaseVersions[] perWorkerVersions, LogItem beginLogItem)
+	{
+		if (beginLogItem.ChangesetsList != null)
+		{
+			ChangesetReader reader = new ChangesetReader();
+			reader.Init(database.ModelDesc, beginLogItem.ChangesetsList);
+			if (reader.TryReadRewindBlock(out ulong rewindVersion))
+			{
+				perWorkerVersions.ForEach(x => x.TryRewind(rewindVersion));
+				TTTrace.Write(database.TraceId, logIndex, rewindVersion, beginLogItem.CommitVersion,
+					beginLogItem.LogSeqNum, beginLogItem.AffectedLogsMask, beginLogItem.ChangesetCount);
+
+				beginLogItem.DisposeFirstChangeset();
+				logItems[0] = beginLogItem;
+			}
+			else if (reader.TryReadDropDatabaseBlock())
+			{
+				perWorkerVersions.ForEach(x => x.Reset());
+				TTTrace.Write(database.TraceId, database.Id, logIndex, beginLogItem.CommitVersion,
+					beginLogItem.LogSeqNum, beginLogItem.AffectedLogsMask, beginLogItem.ChangesetCount);
+			}
+		}
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]

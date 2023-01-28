@@ -1,5 +1,6 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
@@ -33,6 +34,10 @@ internal sealed class Host
 	int maxOpenConnCount;
 
 	JobWorkers<Action> priorityWorkers;
+
+#if HUNT_CHG_LEAKS
+	static HashSet<IPEndPoint> activeEndpoints = new HashSet<IPEndPoint>(ReferenceEqualityComparer<IPEndPoint>.Instance);
+#endif
 
 	public Host(int backlogSize, int maxOpenConnCount, IPEndPoint endpoint, MessageChunkPool chunkPool, TimeSpan inactivityInterval,
 		TimeSpan inactivityTimeout, int maxQueuedChunkCount, bool groupSmallMessages, HandleMessageDelegate messageHandler,
@@ -75,9 +80,17 @@ internal sealed class Host
 			{
 				listenSockets[i].Bind(endpoints[i]);
 				listenSockets[i].Listen(backlogSize);
+				TTTrace.Write((long)listenSockets[i].Handle, endpoints[i].Port, new StackTrace(true).ToString());
+
+#if HUNT_CHG_LEAKS
+				activeEndpoints.Add(endpoints[i]);
+#endif
 			}
 			catch (SocketException e)
 			{
+				listenSockets[i].Close();
+				listenSockets[i] = null;
+
 				Stop();
 				if (NativeSocket.IsAddressAlreadyInUseError(e.ErrorCode))
 					throw new AddressAlreadyInUseException("Address is already in use.", e);
@@ -174,8 +187,17 @@ internal sealed class Host
 
 			for (int i = 0; i < listenSockets.Length; i++)
 			{
-				Tracing.Debug("Host stopped on {0}.", endpoints[i]);
-				listenSockets[i]?.Close();
+				if (listenSockets[i] != null)
+				{
+					Tracing.Debug("Host stopped on {0}.", endpoints[i]);
+					TTTrace.Write((long)listenSockets[i].Handle, endpoints[i].Port, new StackTrace(true).ToString());
+					listenSockets[i].Close();
+
+#if HUNT_CHG_LEAKS
+					bool b = activeEndpoints.Remove(endpoints[i]);
+					Checker.AssertTrue(b);
+#endif
+				}
 			}
 		}
 

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -37,6 +37,10 @@ internal struct DatabaseElectionState
 			if (states2.TryGetValue(states1[i].Id, out DatabaseElectionState s2))
 			{
 				l2.Add(s2);
+			}
+			else
+			{
+				l2.Add(new DatabaseElectionState(states1[i].id, 0, 0));
 			}
 		}
 

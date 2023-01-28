@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
@@ -504,6 +504,12 @@ public enum DatabaseErrorType
 	/// </summary>
 	[ErrorCode("Property {4} of class {5} has an invalid type.")]
 	PropertyTypeInvalid = 76,
+
+	/// <summary>
+	/// Transaction has been closed. It can no longer be used.
+	/// </summary>
+	[ErrorCode("Transaction has been closed. It can no longer be used.")]
+	TransactionClosed = 77,
 
 	/// <summary>
 	/// Base error for all DbAPI errors.

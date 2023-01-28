@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -361,10 +361,13 @@ internal unsafe sealed partial class Transaction : IDisposable
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public void ValidateThread()
+	public void ValidateUsage()
 	{
 		if (!object.ReferenceEquals(managedThread, Thread.CurrentThread))
 			throw new DatabaseException(DatabaseErrorDetail.Create(DatabaseErrorType.InvalidTransactionThread));
+
+		if (Closed)
+			throw new DatabaseException(DatabaseErrorDetail.Create(DatabaseErrorType.TransactionClosed));
 	}
 
 	public void Dispose()

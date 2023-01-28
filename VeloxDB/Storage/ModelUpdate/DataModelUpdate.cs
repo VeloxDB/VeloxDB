@@ -27,6 +27,7 @@ internal sealed class DataModelUpdate
 
 	public DataModelUpdate(Database database, DataModelDescriptor prevModelDesc, DataModelDescriptor modelDesc, bool isAlignment)
 	{
+		Checker.AssertTrue(prevModelDesc.LastUsedClassId <= modelDesc.LastUsedClassId);
 		this.database = database;
 		this.prevModelDesc = prevModelDesc;
 		this.modelDesc = modelDesc;

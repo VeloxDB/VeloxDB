@@ -18,7 +18,8 @@ internal enum OperationType : byte
 	Delete = 3,
 	Rewind = 4,
 	DefaultValue = 5,
-	DropClass = 6
+	DropClass = 6,
+	DropDatabase = 7
 }
 
 internal struct BlockProperties
@@ -272,6 +273,16 @@ internal unsafe sealed class ChangesetWriter
 		for (int i = 0; i < lc; i++)
 		{
 			logWriters[i].CreateRewindBlock(version);
+		}
+	}
+
+	public void DropDatabase(int? logCount)
+	{
+		int lc = logCount.HasValue ? logCount.Value : 1;
+		maxLogSeqNum = lc - 1;
+		for (int i = 0; i < lc; i++)
+		{
+			logWriters[i].CreateDropDatabaseBlock();
 		}
 	}
 
@@ -864,6 +875,15 @@ internal unsafe sealed class LogChangesetWriter
 		propertyCount = 0;
 	}
 
+	public void CreateDropDatabaseBlock()
+	{
+		if (!IsEmpty())
+			throw new InvalidOperationException("Drop database operation is not allowed because changeset already contains other blocks.");
+
+		WriteByte((byte)OperationType.DropDatabase);
+		blockDefined = true;
+	}
+
 	private BlockProperties StartBlock(ClassDescriptor classDesc, OperationType operationType)
 	{
 		if (this.operationType != OperationType.None)
@@ -930,9 +950,6 @@ internal unsafe sealed class LogChangesetWriter
 	{
 		if (!IsEmpty())
 			throw new InvalidOperationException("Rewind operation is not allowed because changeset already contains other blocks.");
-
-		if (operationType != OperationType.None)
-			CloseActiveBlock();
 
 		WriteByte((byte)OperationType.Rewind);
 		WriteLong((long)version);

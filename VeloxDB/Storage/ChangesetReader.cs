@@ -85,6 +85,19 @@ internal unsafe sealed class ChangesetReader
 		return true;
 	}
 
+	public bool TryReadDropDatabaseBlock()
+	{
+		if (EndOfLog())
+			TakeNextLog();
+
+		// Rewind is always the only operation in the changeset
+		if (offset + 1 > bufferLength || buffer[offset] != (byte)OperationType.DropDatabase)
+			return false;
+
+		ReadByte();
+		return true;
+	}
+
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public void ReadSimpleValue(byte* buffer, int size)
 	{
@@ -381,13 +394,18 @@ internal unsafe sealed class ChangesetReader
 			TakeNextLog();
 
 		OperationType opType = (OperationType)ReadByte();
-		if (opType < OperationType.Insert || opType > OperationType.DropClass)
+		if (opType < OperationType.Insert || opType > OperationType.DropDatabase)
 			throw new DatabaseException(DatabaseErrorDetail.CreateInvalidChangeset());
 
 		if (opType == OperationType.Rewind)
 		{
 			block.InitRewind((ulong)ReadLong());
 			return isRestoring || currLog == 0;
+		}
+		else if (opType == OperationType.DropDatabase)
+		{
+			block.InitDropDatabase();
+			return true;
 		}
 
 		short classId = ReadShort();

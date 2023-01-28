@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -22,8 +22,6 @@ internal interface IAsyncCleanup
 
 internal interface IReplicator
 {
-	public const ulong NoRewindVersion = ulong.MaxValue;
-
 	public ReplicationDescriptor ReplicationDesc { get; }
 	void Start();
 	bool IsTransactionAllowed(long databaseId, TransactionSource source, IReplica sourceReplica, TransactionType type, out DatabaseErrorDetail reason);

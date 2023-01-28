@@ -70,6 +70,13 @@ internal sealed class DataModelDescriptor : ModelItemDescriptor
 		return d;
 	}
 
+	public void UpdateLastUsedIds(short classId, int propId, short hindId)
+	{
+		this.lastUsedClassId = Math.Max(lastUsedClassId, classId);
+		this.lastUsedPropertyId = Math.Max(propId, lastUsedPropertyId);
+		this.lastUsedHashIndexId = Math.Max(hindId, lastUsedHashIndexId);
+	}
+
 	public void Register(Stream stream)
 	{
 		if (stream != null)
@@ -609,4 +616,32 @@ internal sealed class DataModelDescriptor : ModelItemDescriptor
 			return Name.GetHashCode() * (int)t + NamespaceName.GetHashCode();
 		}
 	}
+
+#if TEST_BUILD
+	public void ValidateLastUsedId()
+	{
+		long lastUsedClassId = 0;
+		long lastUsedPropertyId = 0;
+		long lastUsedHashIndexId = 0;
+		foreach (ClassDescriptor classDesc in GetAllClasses())
+		{
+			lastUsedClassId = Math.Max(lastUsedClassId, classDesc.Id);
+			foreach (PropertyDescriptor propDesc in classDesc.Properties)
+			{
+				lastUsedPropertyId = Math.Max(lastUsedPropertyId, propDesc.Id);
+			}
+		}
+
+		foreach (HashIndexDescriptor hindDesc in GetAllHashIndexes())
+		{
+			lastUsedHashIndexId = Math.Max(lastUsedHashIndexId, hindDesc.Id);
+		}
+
+		if (this.LastUsedClassId < lastUsedClassId || this.LastUsedPropertyId < lastUsedPropertyId ||
+			this.LastUsedHashIndexId < lastUsedHashIndexId)
+		{
+			throw new InvalidOperationException();
+		}
+	}
+#endif
 }

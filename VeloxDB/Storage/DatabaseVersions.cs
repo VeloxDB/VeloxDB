@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
@@ -95,6 +95,9 @@ internal unsafe sealed class DatabaseVersions
 		else
 		{
 			ulong currLogSeqNum = baseStandbyLogSeqNum + tran.StandbyOrderNum;
+			TTTrace.Write(database.TraceId, database.Id, tran.Id, tran.CommitVersion, tran.StandbyOrderNum,
+				currLogSeqNum, baseStandbyLogSeqNum, commitVersion);
+
 			if (currLogSeqNum > logSeqNum)
 				logSeqNum = currLogSeqNum;
 
@@ -133,7 +136,6 @@ internal unsafe sealed class DatabaseVersions
 		readVersion = tran.CommitVersion;
 		if (tran.IsCommitVersionPreAssigned)
 		{
-			Checker.AssertTrue(tran.CommitVersion >= commitVersion);
 			commitVersion = tran.CommitVersion;
 		}
 	}
@@ -144,7 +146,10 @@ internal unsafe sealed class DatabaseVersions
 		TTTrace.Write(database.TraceId, database.Id, tran.GlobalTerm.Low, tran.GlobalTerm.Hight, tran.LocalTerm, tran.Id, tran.CommitVersion,
 			globalTerm.Low, globalTerm.Hight, localTerm, commitVersion, readVersion);
 
-		Checker.AssertFalse(tran.CommitVersion < readVersion);
+		// Alignment that performs database drop can produce commit version smaller than the current
+		// This is because database drop (which acts as a rewind to the very beggining) is performed after
+		// the transaction is commited.
+		Checker.AssertFalse(tran.CommitVersion < readVersion && !tran.IsAlignment);
 
 		sync.EnterWriteLock();
 		try
@@ -264,6 +269,30 @@ internal unsafe sealed class DatabaseVersions
 			TTTraceState();
 
 			return true;
+		}
+		finally
+		{
+			sync.ExitWriteLock();
+		}
+	}
+
+	public void Reset()
+	{
+		TTTraceState();
+
+		sync.EnterWriteLock();
+
+		try
+		{
+			this.localTerm = 0;
+			this.readVersion = 1;
+			this.commitVersion = 1;
+			this.baseStandbyLogSeqNum = 0;
+			this.logSeqNum = 0;
+
+			globalTerm = new SimpleGuid();
+			globalVersions = new List<GlobalVersion>(256);
+			globalVersions.Add(new GlobalVersion(globalTerm, readVersion));
 		}
 		finally
 		{

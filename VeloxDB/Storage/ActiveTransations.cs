@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using VeloxDB.Common;
@@ -54,8 +54,16 @@ internal sealed class ActiveTransations
 		{
 			for (int i = 0; i < perCPUQueues.Length; i++)
 			{
-				if (perCPUQueues[i] != null && !perCPUQueues[i].isEmpty)
-					return false;
+				sync.Enter(i);
+				try
+				{
+					if (perCPUQueues[i] != null && !perCPUQueues[i].IsEmpty)
+						return false;
+				}
+				finally
+				{
+					sync.Exit(i);
+				}
 			}
 
 			return true;
@@ -109,7 +117,7 @@ internal sealed class ActiveTransations
 		Transaction head;
 		Transaction tail;
 
-		public bool isEmpty => head == null;
+		public bool IsEmpty => head == null;
 		public Transaction Oldest => tail;
 		public int Count
 		{
@@ -133,7 +141,7 @@ internal sealed class ActiveTransations
 
 		public void AddTran(Transaction tran)
 		{
-			TTTrace.Write(tran.Engine.TraceId, tran.Id, tran.ReadVersion);
+			TTTrace.Write(tran.Engine.TraceId, tran.Id, tran.ReadVersion, tran.Database.Id);
 
 			tran.NextActiveTran = head;
 			if (head != null)
@@ -150,7 +158,8 @@ internal sealed class ActiveTransations
 
 		public void Remove(Transaction tran)
 		{
-			TTTrace.Write(tran.Engine.TraceId, tran.Id, tran.ReadVersion, tran.CommitVersion);
+			TTTrace.Write(tran.Engine.TraceId, tran.Id, tran.ReadVersion, tran.CommitVersion, tran.NextActiveTran != null,
+				object.ReferenceEquals(head, tran), object.ReferenceEquals(tran, tran.NextActiveTran), tran.Database.Id);
 
 			if (tran.NextActiveTran == null)
 			{

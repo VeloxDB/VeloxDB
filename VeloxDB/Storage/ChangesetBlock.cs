@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Runtime.CompilerServices;
 using VeloxDB.Common;
 using VeloxDB.Descriptor;
@@ -61,6 +61,14 @@ internal sealed unsafe class ChangesetBlock
 	{
 		this.operationType = OperationType.Rewind;
 		this.rewindVersion = rewindVersion;
+		classDescriptor = null;
+		propertyCount = 0;
+		operationCount = 0;
+	}
+
+	public void InitDropDatabase()
+	{
+		this.operationType = OperationType.DropDatabase;
 		classDescriptor = null;
 		propertyCount = 0;
 		operationCount = 0;

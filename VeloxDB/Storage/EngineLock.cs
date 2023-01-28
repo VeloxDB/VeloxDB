@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using VeloxDB.Common;
@@ -55,10 +55,24 @@ internal sealed class EngineLock
 
 		sync.EnterWriteLock();
 		isDraining = true;
-		sync.ExitWriteLock();
 
-		engine.CancelAllTransactions();
-		SpinWait.SpinUntil(() => !engine.HasTransactions());
+		// Currently this lock, when draining is turned on, allows transaction to be created if the thread owns the lock.
+		// This is needed for alignment that enters the draining mode and than creates alignment transactions. We currently
+		// have no identification who owns the draining mode and until we do, we need to, after cancelling all transaqctions
+		// and aquireing the lock, check again whether transaction were created.
+		do
+		{
+			sync.ExitWriteLock();
+
+			SpinWait.SpinUntil(() =>
+			{
+				engine.CancelAllTransactions();
+				return !engine.HasTransactions();
+			});
+
+			sync.EnterWriteLock();
+		}
+		while (engine.HasTransactions());
 
 		engine.Trace.Verbose("Engine entered draining mode.");
 	}
@@ -67,6 +81,7 @@ internal sealed class EngineLock
 	{
 		TTTrace.Write(engine.TraceId);
 
+		sync.ExitWriteLock();
 		isDraining = false;
 		drainSync.ExitWriteLock();  // Must be thread agnostic
 
@@ -153,8 +168,8 @@ internal sealed class EngineLock
 
 			if (drainTransactions)
 				EnterDraining();
-
-			sync.EnterWriteLock();
+			else
+				sync.EnterWriteLock();
 		}
 
 		ownershipCount++;
@@ -175,9 +190,10 @@ internal sealed class EngineLock
 
 		if (ownershipCount == 0)
 		{
-			sync.ExitWriteLock();
 			if (enteredWithDraining)
 				ExitDraining();
+			else
+				sync.ExitWriteLock();
 
 			engine.AllowPersistenceSnapshots();
 		}

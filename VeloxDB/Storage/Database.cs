@@ -387,13 +387,6 @@ internal unsafe sealed partial class Database
 		return changesets.ToArray();
 	}
 
-	public void DropAndDispose()
-	{
-		TTTrace.Write(engine.TraceId, id);
-		trace.Debug("Dropping database {0}.", id);
-		Dispose(true);
-	}
-
 	public void CreatePersister()
 	{
 		TTTrace.Write(engine.TraceId, id);
@@ -441,9 +434,9 @@ internal unsafe sealed partial class Database
 		persister.CreateSnapshots(logIndexes);
 	}
 
-	public void DeletePersistenceFiles(PersistenceDescriptor persistenceDesc)
+	public static void DeletePersistenceFiles(StorageEngine engine, PersistenceDescriptor persistenceDesc)
 	{
-		TTTrace.Write(engine.TraceId, id);
+		TTTrace.Write(engine.TraceId);
 
 		for (int i = 0; i < persistenceDesc.LogDescriptors.Length; i++)
 		{
@@ -465,7 +458,7 @@ internal unsafe sealed partial class Database
 
 	public void ApplyModelUpdate(DataModelUpdate modelUpdate, ulong commitVersion, bool retainUpdateContext)
 	{
-		TTTrace.Write(engine.TraceId, id);
+		TTTrace.Write(engine.TraceId, id, commitVersion);
 
 		modelUpdateContext = new ModelUpdateContext(this, modelUpdate);
 
@@ -812,8 +805,6 @@ internal unsafe sealed partial class Database
 		TTTrace.Write(engine.TraceId);
 		trace.Debug("Creating hash indexes for database {0}.", id);
 
-		Checker.AssertTrue(hashIndexesMap == null);
-
 		Dictionary<short, long> expectedCapacities = DetermineExpectedHashIndexCapacities();
 
 		hashIndexesMap = new Dictionary<short, int>(ModelDesc.GetHashIndexCount());
@@ -1060,7 +1051,7 @@ internal unsafe sealed partial class Database
 				{
 					for (int k = 0; k < count; k++)
 					{
-						TTTrace.Write(TraceId, commonVersion, objects[k].GetVersionOptimized(), objects[k].GetIdOptimized());
+						TTTrace.Write(TraceId, objects[k].GetIdOptimized(), commonVersion, objects[k].GetVersionOptimized(), objects[k].GetIdOptimized());
 						if (objects[k].GetVersionOptimized() <= commonVersion)
 						{
 							set.Add(objects[k].GetIdOptimized());
@@ -1087,14 +1078,57 @@ internal unsafe sealed partial class Database
 		}
 	}
 
-	public void Dispose()
+	public void DropClasses(byte logMask)
 	{
-		Dispose(false);
+		for (int i = 0; i < classes.Length; i++)
+		{
+			int t = (1 << classes[i].Class.ClassDesc.LogIndex);
+			if ((t & logMask) != 0)
+				classes[i].Class.Drop();
+		}
 	}
 
-	private void Dispose(bool dropData)
+	public void Drop()
 	{
-		TTTrace.Write(engine.TraceId);
+		int workerCount = Engine.Settings.AllowInternalParallelization ? ProcessorNumber.CoreCount : 1;
+		string workerName = string.Format("{0}: vlx-DatabaseDropWorker", Engine.Trace.Name);
+		JobWorkers<CommonWorkerParam> workers = JobWorkers<CommonWorkerParam>.Create(workerName, workerCount);
+
+		for (int i = 0; i < classes.Length; i++)
+		{
+			classes[i].Dispose(workers);
+		}
+
+		if (hashIndexes != null)
+		{
+			foreach (HashIndexEntry item in hashIndexes)
+			{
+				item.Dispose(workers);
+			}
+		}
+
+		workers.WaitAndClose();
+
+		modelDesc = DataModelDescriptor.CreateEmpty(persistenceDesc);
+
+		primaryAlignCodeCache = new PrimaryAlignCodeCache();
+		standbyAlignCodeCache = new StandbyAlignCodeCache();
+
+		hashReaders = new HashReadersCollection(modelDesc);
+
+		CreateClasses();
+
+		primaryAlignCodeCache.InitCache(modelDesc);
+
+		CreateHashIndexes(null);
+		CreateInvRefs(null);
+
+		gc.Rewind(0);
+	}
+
+	public void Dispose()
+	{
+		TTTrace.Write(engine.TraceId, id);
 		trace.Debug("Disposing database {0}.", id);
 
 		Checker.AssertNull(modelUpdateContext);
@@ -1123,16 +1157,7 @@ internal unsafe sealed partial class Database
 		workers.WaitAndClose();
 
 		if (persister != null)
-		{
-			if (dropData)
-			{
-				persister.DropAndDispose();
-			}
-			else
-			{
-				persister.Dispose();
-			}
-		}
+			persister.Dispose();
 	}
 
 	public struct ClassEntry

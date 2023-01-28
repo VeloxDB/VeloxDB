@@ -1,4 +1,5 @@
-using System;
+﻿using System;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using VeloxDB.Common;
@@ -25,9 +26,16 @@ internal unsafe sealed class IdSet
 	{
 	}
 
+	public static IdSet CreateEmpty()
+	{
+		IdSet s = new IdSet();
+		GC.SuppressFinalize(s);
+		return s;
+	}
+
 	~IdSet()
 	{
-#if DEBUG
+#if HUNT_CHG_LEAKS
 		throw new CriticalDatabaseException();
 #else
 		Dispose();	
@@ -58,7 +66,8 @@ internal unsafe sealed class IdSet
 
 	public bool Contains(long id)
 	{
-		Checker.AssertTrue(buckets != null);
+		if (buckets == null)
+			return false;
 
 		long bucket = GetBucket(id);
 		while (true)
@@ -123,6 +132,7 @@ internal unsafe sealed class IdSet
 
 	public void Dispose()
 	{
+		TTTrace.Write();
 		GC.SuppressFinalize(this);
 		if (buckets != null)            // Can be null if deserialize failed due to closed connection
 		{

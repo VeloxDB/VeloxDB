@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using VeloxDB.Common;
 using VeloxDB.Descriptor;
 
@@ -56,6 +56,7 @@ internal unsafe abstract partial class ClassBase
 	public abstract ObjectReader GetObject(Transaction tran, long id, out DatabaseErrorDetail err);
 	public abstract ObjectReader GetObjectNoReadLock(Transaction tran, long id);
 	public abstract DatabaseErrorDetail TakeReadLock(Transaction tran, ClassLocker locker);
+	public abstract void Drop();
 	public abstract void Dispose(JobWorkers<CommonWorkerParam> workers);
 
 	protected virtual void OnModelUpdated()

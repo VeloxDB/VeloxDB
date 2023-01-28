@@ -10,6 +10,8 @@ namespace VeloxDB.Storage;
 #if TEST_BUILD
 internal unsafe sealed partial class StorageEngine
 {
+	public Action<StorageEngine, Transaction, SimpleGuid> UpdateUserModelAction { get; set; }
+
 	internal void WaitGCComplete()
 	{
 		for (int i = 0; i < databases.Length; i++)

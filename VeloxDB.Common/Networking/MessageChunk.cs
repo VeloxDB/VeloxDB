@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
@@ -70,7 +70,7 @@ internal unsafe sealed partial class MessageChunk : IDisposable
 
 	~MessageChunk()
 	{
-#if DEBUG
+#if HUNT_CHG_LEAKS
 		throw new CriticalDatabaseException();
 #else
 		CleanUp(false);

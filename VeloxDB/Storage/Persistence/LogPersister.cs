@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Reflection.PortableExecutable;
 using System.Runtime.CompilerServices;
@@ -157,19 +157,6 @@ internal unsafe sealed class LogPersister : IDisposable
 
 		if (version < maxCommitVersion)
 			maxCommitVersion = version;
-	}
-
-	public void DropAndDispose()
-	{
-		Dispose();
-		for (int i = 0; i < 2; i++)
-		{
-			if (File.Exists(logFileNames[i]))
-				File.Delete(logFileNames[i]);
-
-			if (File.Exists(snapshotFileNames[i]))
-				File.Delete(snapshotFileNames[i]);
-		}
 	}
 
 	private void Worker()
@@ -366,7 +353,7 @@ internal unsafe sealed class LogPersister : IDisposable
 		{
 			for (int i = 0; i < logFileNames.Length; i++)
 			{
-				File.Move(tempLogFileNames[i], logFileNames[i]);
+				File.Move(tempLogFileNames[i], logFileNames[i], true);
 			}
 
 			File.Move(tempSnapshotFileNames[activeFile], snapshotFileNames[activeFile]);

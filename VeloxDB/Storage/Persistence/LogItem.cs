@@ -73,10 +73,7 @@ internal unsafe struct LogItem
 			return true;
 
 		OperationType opType = ChangesetReader.PeekOperationType(ch);
-		if (opType == OperationType.DefaultValue || opType == OperationType.DropClass)
-			return true;
-
-		return false;
+		return opType != OperationType.DefaultValue && opType != OperationType.DropClass;
 	}
 
 	public long SerializedSize

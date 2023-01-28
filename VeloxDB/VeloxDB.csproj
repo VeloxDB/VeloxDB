@@ -36,7 +36,7 @@
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 		<OutputPath>$(VlxRootDir)\bin</OutputPath>
 		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-		<DefineConstants>TRACE;X86_64;TEST_BUILD; TTTRACE</DefineConstants>
+		<DefineConstants>TRACE;X86_64;TEST_BUILD; TTTRACE;</DefineConstants>
 		<NoWarn>$(NoWarn);1701;1702;CA1063;CA1416</NoWarn>
 	</PropertyGroup>
 

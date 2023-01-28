@@ -159,7 +159,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		return result;
 	}
 
-	public void UpdateUserAssemblies(AssemblyUpdate assemblyUpdate, DataModelDescriptor newModelDesc,
+	public ulong UpdateUserAssemblies(AssemblyUpdate assemblyUpdate, DataModelDescriptor newModelDesc,
 		object customObj, out SimpleGuid modelVersionGuid, out SimpleGuid assemblyVersionGuid)
 	{
 		trace.Debug("Updating user assemblies.");
@@ -184,9 +184,11 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 				persistenceUpdate = null;
 		}
 
-		TTTrace.Write(traceId, persistenceUpdate != null);
+		TTTrace.Write(traceId, persistenceUpdate != null, modelUpdate.ModelDesc.LastUsedClassId);
 
 		engineLock.EnterWriteLock(true);
+
+		ulong commitVersion;
 
 		try
 		{
@@ -209,7 +211,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 				ValidateAssemblyUpdate(tran, assemblyUpdate);
 			}
 
-			ulong commitVersion = UserDatabase.Versions.CommitVersion + 1;
+			commitVersion = UserDatabase.Versions.CommitVersion + 1;
 			if (hasModelChanges)
 				UserDatabase.ApplyModelUpdate(modelUpdate, commitVersion, false);
 
@@ -223,6 +225,11 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 
 				ApplyAssemblyChanges(tran, assemblyUpdate, newModelDesc, hasModelChanges,
 					out SimpleGuid asmVersionGuid, out modelVersionGuid);
+
+#if TEST_BUILD
+				UpdateUserModelAction?.Invoke(this, tran, modelVersionGuid);
+#endif
+
 
 				if (persistenceUpdate != null)
 				{
@@ -249,7 +256,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 				persistenceUpdate.UnmarkDirectoriesAsTemp();
 
 				if (persistenceUpdate.PrevPersistenceDescriptor != null)
-					UserDatabase.DeletePersistenceFiles(persistenceUpdate.PrevPersistenceDescriptor);
+					Database.DeletePersistenceFiles(this, persistenceUpdate.PrevPersistenceDescriptor);
 
 				UserDatabase.MovePersistenceFromTempLocation();
 				configVersions.PersistenceVersionGuid = persistenceVersionGuid;
@@ -260,12 +267,14 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 			engineLock.ExitWriteLock(true);
 		}
 
+		TTTrace.Write(TraceId);
 		Trace.Info("User assemblies updated.");
+		return commitVersion;
 	}
 
 	public void ReplicatedUpdateUserModel(DataModelUpdate modelUpdate, ulong commitVersion, bool retainUpdateContext)
 	{
-		TTTrace.Write(traceId);
+		TTTrace.Write(traceId, modelUpdate.ModelDesc.LastUsedClassId);
 
 		UserDatabase.DrainGC();
 
@@ -283,11 +292,8 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 	public void DropUserDatabase()
 	{
 		TTTrace.Write(traceId);
-		DataModelDescriptor modelDesc = UserDatabase.ModelDesc;
-		PersistenceDescriptor persistanceDesc = UserDatabase.PersistenceDesc;
-		UserDatabase.DropAndDispose();
-		Database.Restore(this, modelDesc, persistanceDesc, DatabaseId.User, db => databases[DatabaseId.User] = db);
-		trace.Debug("User database dropped.");
+		UserDatabase.Drop();
+		configVersions = new ConfigArtifactVersions();
 	}
 
 	public void UpdatePersistenceConfiguration(LogDescriptor[] logDescriptors)
@@ -339,7 +345,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 			if (update.IsRecreationRequired)
 			{
 				if (update.PrevPersistenceDescriptor != null)
-					UserDatabase.DeletePersistenceFiles(update.PrevPersistenceDescriptor);
+					Database.DeletePersistenceFiles(this, update.PrevPersistenceDescriptor);
 
 				UserDatabase.MovePersistenceFromTempLocation();
 			}
@@ -395,7 +401,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		if (persistenceUpdate != null && persistenceUpdate.IsRecreationRequired)
 		{
 			if (persistenceUpdate.PrevPersistenceDescriptor != null)
-				UserDatabase.DeletePersistenceFiles(persistenceUpdate.PrevPersistenceDescriptor);
+				Database.DeletePersistenceFiles(this, persistenceUpdate.PrevPersistenceDescriptor);
 
 			UserDatabase.MovePersistenceFromTempLocation();
 		}
@@ -431,7 +437,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 	{
 		TTTrace.Write(traceId, tran.Id, classDesc.Id);
 
-		tran.ValidateThread();
+		tran.ValidateUsage();
 		if (tran.CancelRequested)
 			CheckErrorAndRollback(DatabaseErrorDetail.Create(DatabaseErrorType.TransactionCanceled), tran);
 
@@ -471,7 +477,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		if (!IdHelper.TryGetClassIndex(tran.Model, id, out int typeIndex))
 			return new ObjectReader();
 
-		tran.ValidateThread();
+		tran.ValidateUsage();
 		if (tran.CancelRequested)
 			CheckErrorAndRollback(DatabaseErrorDetail.Create(DatabaseErrorType.TransactionCanceled), tran);
 
@@ -487,7 +493,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 	{
 		TTTrace.Write(traceId, tran.Id, id, propId);
 
-		tran.ValidateThread();
+		tran.ValidateUsage();
 		if (tran.CancelRequested)
 			CheckErrorAndRollback(DatabaseErrorDetail.Create(DatabaseErrorType.TransactionCanceled), tran);
 
@@ -513,7 +519,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 	public void ReadHashIndex(Transaction tran, HashIndex hashIndex, byte* key,
 		HashComparer comparer, ref ObjectReader[] readers, out int count)
 	{
-		tran.ValidateThread();
+		tran.ValidateUsage();
 		if (tran.CancelRequested)
 			CheckErrorAndRollback(DatabaseErrorDetail.Create(DatabaseErrorType.TransactionCanceled), tran);
 
@@ -581,7 +587,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		if (tran.Closed)
 			return;
 
-		tran.ValidateThread();
+		tran.ValidateUsage();
 
 		tran.Database.TransactionCompleted(tran);
 
@@ -606,7 +612,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 	{
 		TTTrace.Write(traceId, tran.Id, tran.CommitVersion, (byte)tran.Type);
 
-		tran.ValidateThread();
+		tran.ValidateUsage();
 		if (tran.HasActiveClassScans)
 			CheckErrorAndRollback(DatabaseErrorDetail.Create(DatabaseErrorType.ClassScansActive), tran);
 
@@ -665,7 +671,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		Checker.AssertTrue(tran.Database.Id == DatabaseId.User &&
 			tran.Type == TransactionType.ReadWrite && tran.Source == TransactionSource.Client);
 
-		tran.ValidateThread();
+		tran.ValidateUsage();
 		if (tran.HasActiveClassScans)
 			CheckErrorAndRollback(DatabaseErrorDetail.Create(DatabaseErrorType.ClassScansActive), tran);
 
@@ -840,29 +846,37 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		trace.Debug("Database {0} alignment finished.", database.Id);
 	}
 
-	public void RollbackDatabaseAlignment(long databaseId, ulong alignmentLogSeqNum)
+	public void ReRestoreDatabase(long databaseId, PersistenceUpdate persistenceUpdate, ulong alignmentLogSeqNum, bool retainConfig)
 	{
-		DataModelDescriptor model = databases[databaseId].ModelDesc;
-		PersistenceDescriptor persistenceDescriptor = databases[databaseId].PersistenceDesc;
-		databases[databaseId].Dispose();
-		Database.Restore(this, model, persistenceDescriptor, databaseId, db => databases[databaseId] = db, alignmentLogSeqNum);
-	}
+		TTTrace.Write(TraceId);
 
-	public void ReRestoreUserDatabase(PersistenceUpdate persistenceUpdate)
-	{
-		UserDatabase.Dispose();
-
-		if (persistenceUpdate != null && persistenceUpdate.PersistenceDescriptor != null && persistenceUpdate.IsRecreationRequired)
-			UserDatabase.DeletePersistenceFiles(persistenceUpdate.PersistenceDescriptor);
-
-		ReadUserConfiguration(out var userModelDesc, out var userPersistDesc);
-		if (userPersistDesc == null)
+		if (!retainConfig)
 		{
-			databases[DatabaseId.User] = Database.CreateEmpty(this, userModelDesc, null, DatabaseId.User);
+			databases[databaseId].Dispose();
+
+			if (persistenceUpdate != null && persistenceUpdate.PersistenceDescriptor != null && persistenceUpdate.IsRecreationRequired)
+			{
+				TTTrace.Write(TraceId);
+				Database.DeletePersistenceFiles(this, persistenceUpdate.PersistenceDescriptor);
+			}
+
+			PersistenceDescriptor sysLogPersistDesc = new PersistenceDescriptor(new LogDescriptor[0], DatabaseId.User);
+			if (!Database.TryPrepareRestoreDirectories(sysLogPersistDesc, this))
+			{
+				databases[databaseId] =
+					Database.CreateEmpty(this, DataModelDescriptor.CreateEmpty(sysLogPersistDesc), sysLogPersistDesc, databaseId);
+			}
+			else
+			{
+				Database.Restore(this, null, sysLogPersistDesc, databaseId, db => databases[databaseId] = db, alignmentLogSeqNum);
+			}
 		}
 		else
 		{
-			Database.Restore(this, userModelDesc, userPersistDesc, DatabaseId.User, db => databases[DatabaseId.User] = db);
+			DataModelDescriptor modelDesc = databases[databaseId].ModelDesc;
+			PersistenceDescriptor persistenceDescriptor = databases[databaseId].PersistenceDesc;
+			databases[databaseId].Dispose();
+			Database.Restore(this, modelDesc, persistenceDescriptor, databaseId, db => databases[databaseId] = db, alignmentLogSeqNum);
 		}
 	}
 
@@ -946,7 +960,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 	{
 		TTTrace.Write(traceId, tran.Id, tran.InternalFlags, tran.Context != null ? (int)tran.Context.WriteFlags : 0);
 
-		tran.ValidateThread();
+		tran.ValidateUsage();
 		if (tran.CancelRequested)
 			CheckErrorAndRollback(DatabaseErrorDetail.Create(DatabaseErrorType.TransactionCanceled), tran);
 
@@ -1030,18 +1044,18 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 	}
 
 	public void RestoreChangeset(Database database, ChangesetBlock block, PendingRestoreOperations pendingOps,
-		ChangesetReader reader, ulong commitVersion, bool isAlignment)
+		ChangesetReader reader, ulong commitVersion, bool isAlignment, int logIndex)
 	{
 		TTTrace.Write(traceId, commitVersion);
 
 		while (!reader.EndOfStream())
 		{
-			RestoreBlock(database, block, pendingOps, commitVersion, reader, isAlignment);
+			RestoreBlock(database, block, pendingOps, commitVersion, reader, isAlignment, logIndex);
 		}
 	}
 
 	private void RestoreBlock(Database database, ChangesetBlock block, PendingRestoreOperations pendingOps,
-		ulong commitVersion, ChangesetReader reader, bool isAlignment)
+		ulong commitVersion, ChangesetReader reader, bool isAlignment, int logIndex)
 	{
 		reader.ReadBlock(false, block, true);
 
@@ -1049,6 +1063,12 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		OperationType opType = block.OperationType;
 
 		TTTrace.Write(traceId, commitVersion, classDesc == null ? 0 : classDesc.Id, (byte)block.OperationType, block.PropertyCount, block.OperationCount);
+
+		if (opType == OperationType.DropDatabase)
+		{
+			database.DropClasses((byte)(1 << logIndex));
+			return;
+		}
 
 		if (classDesc == null || classDesc.IsAbstract)
 		{

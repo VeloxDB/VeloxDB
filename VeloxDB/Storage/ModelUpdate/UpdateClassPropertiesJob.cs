@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -73,7 +73,7 @@ internal sealed class UpdateClassPropertiesJob : ModelUpdateJob
 				}
 
 				ClassScan[] classScans = @class.GetDisposingClassScans(null, false, out long tc);
-				ulong cv = cu.RequiresDefaultValueWrite ? commitVersion : 0;
+				ulong cv = (cu.RequiresDefaultValueWrite && !updateContext.ModelUpdate.IsAlignment) ? commitVersion : 0;
 
 				for (int k = 0; k < classScans.Length; k++)
 				{

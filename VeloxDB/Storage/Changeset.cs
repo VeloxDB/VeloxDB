@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -201,6 +201,9 @@ internal sealed unsafe partial class Changeset : IDisposable
 			return;
 
 		TrackDeallocation();
+
+		if (logChangesets == null)	// Can be null if deserialization failed (due to a broken connection)
+			return;
 
 		for (int i = 0; i < logChangesets.Length; i++)
 		{

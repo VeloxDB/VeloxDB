@@ -659,7 +659,7 @@ internal unsafe sealed partial class Class : ClassBase
 	[SkipLocalsInit]
 	public DatabaseErrorDetail Insert(Transaction tran, ChangesetReader reader)
 	{
-		TTTrace.Write(TraceId, ClassDesc.Id);
+		TTTrace.Write(TraceId, ClassDesc.Id, ClassDesc.LogIndex);
 		Checker.AssertFalse(tran.IsAlignment);
 
 		TransactionContext tc = tran.Context;
@@ -796,7 +796,7 @@ internal unsafe sealed partial class Class : ClassBase
 	[SkipLocalsInit]
 	public DatabaseErrorDetail Update(Transaction tran, ChangesetReader reader)
 	{
-		TTTrace.Write(TraceId, ClassDesc.Id, tran.Id);
+		TTTrace.Write(TraceId, ClassDesc.Id, tran.Id, ClassDesc.LogIndex);
 		Checker.AssertFalse(tran.IsAlignment);
 
 		TransactionContext tc = tran.Context;
@@ -901,7 +901,7 @@ internal unsafe sealed partial class Class : ClassBase
 
 	public void Align(Transaction tran, ChangesetReader reader, ApplyAlignDelegate alignDelegate)
 	{
-		TTTrace.Write(TraceId, ClassDesc.Id, tran.Id);
+		TTTrace.Write(TraceId, ClassDesc.Id, tran.Id, ClassDesc.LogIndex);
 
 		TransactionContext tc = tran.Context;
 
@@ -961,7 +961,7 @@ internal unsafe sealed partial class Class : ClassBase
 	[SkipLocalsInit]
 	public DatabaseErrorDetail Delete(Transaction tran, ChangesetReader reader)
 	{
-		TTTrace.Write(TraceId, ClassDesc.Id, tran.Id);
+		TTTrace.Write(TraceId, ClassDesc.Id, tran.Id, ClassDesc.LogIndex);
 
 		TransactionContext tc = tran.Context;
 
@@ -1495,7 +1495,7 @@ internal unsafe sealed partial class Class : ClassBase
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private DatabaseErrorDetail InsertObject(Transaction tran, Bucket* bucket, ulong* handlePointer, ClassObject* obj, ulong objHandle)
 	{
-		TTTrace.Write(TraceId, ClassDesc.Id, tran.Id, bucket->Handle, obj->id,
+		TTTrace.Write(TraceId, ClassDesc.Id, tran.Id, tran.IsCommitVersionPreAssigned, bucket->Handle, obj->id,
 			obj->IsDeleted, obj->version, obj->readerInfo.CommReadLockVer);
 
 		if (obj->id == 0)
@@ -1700,7 +1700,7 @@ internal unsafe sealed partial class Class : ClassBase
 
 		if (existingObj != null)
 		{
-			TTTrace.Write();
+			TTTrace.Write(existingObj->version);
 			finalObjectHandle = *existingObjPointer;
 			updateResult = UpdateObjectResult.Merged;
 		}
@@ -2326,7 +2326,7 @@ internal unsafe sealed partial class Class : ClassBase
 			int byteOffset = ClassDesc.PropertyByteOffsets[prop.Index];
 			PropertyType propType = pd.PropertyType;
 
-			TTTrace.Write((byte)propType);
+			TTTrace.Write((byte)propType, pd.Id);
 
 			DatabaseErrorDetail tempErr = null;
 			if (propType < PropertyType.String)
@@ -3143,6 +3143,35 @@ internal unsafe sealed partial class Class : ClassBase
 	public override string ToString()
 	{
 		return ClassDesc.FullName;
+	}
+
+	public override void Drop()
+	{
+		for (long i = 0; i < capacity; i++)
+		{
+			Bucket* bucket = buckets + i;
+			if (bucket->Handle != 0)
+			{
+				ulong* pHandle = Bucket.LockAccess(bucket);
+				ulong handle = bucket->Handle;
+
+				while (handle != 0)
+				{
+					ClassObject* obj = (ClassObject*)ObjectStorage.GetBuffer(handle);
+					Checker.AssertTrue(obj->nextVersionHandle == 0);
+					ulong temp = obj->nextCollisionHandle;
+					FreeStringsAndBlobs(obj);
+					ObjectStorage.MarkBufferNotUsed(handle);
+					storage.Free(handle);
+					handle = temp;
+				}
+
+				*pHandle = 0;
+				Bucket.UnlockAccess(bucket);
+			}
+		}
+
+		resizeCounter = new ParallelResizeCounter(countLimit);
 	}
 
 	public override void Dispose(JobWorkers<CommonWorkerParam> workers)

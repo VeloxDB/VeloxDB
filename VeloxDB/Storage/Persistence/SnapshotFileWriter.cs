@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -52,7 +52,8 @@ internal unsafe sealed class SnapshotFileWriter
 
 		using (NativeFile file = NativeFile.Create(fileName, FileMode.Create, FileAccess.Write, FileShare.None, FileFlags.Sequential))
 		{
-			WriteHeader(file, database, logIndex, 0);
+			GlobalVersion[] globalVersions = database.GetGlobalVersions(out uint localTerm);
+			WriteHeader(file, database, localTerm, globalVersions, logIndex, 0);
 			file.Flush();
 		}
 	}
@@ -63,21 +64,19 @@ internal unsafe sealed class SnapshotFileWriter
 
 		using (NativeFile file = NativeFile.Create(fileName, FileMode.Create, FileAccess.Write, FileShare.None, FileFlags.Sequential))
 		{
-			WriteHeader(file, database, logIndex, lastLogSeqNum);
+			WriteHeader(file, database, lastLocalTerm, globalVersions, logIndex, lastLogSeqNum);
 			WriteSnapshots(file);
 			file.Flush();
 		}
 	}
 
-	private static void WriteHeader(NativeFile file, Database database, int logIndex, ulong logSeqNum)
+	private static void WriteHeader(NativeFile file, Database database, uint localTerm, GlobalVersion[] globalVersions, int logIndex, ulong logSeqNum)
 	{
 		using (SegmentBinaryWriter writer = new SegmentBinaryWriter(segmentSize))
 		{
 			SnapshotFileHeader head = new SnapshotFileHeader();
 			head.version = DatabasePersister.FormatVersion;
 			writer.Write((byte*)&head, SnapshotFileHeader.Size);
-
-			GlobalVersion[] globalVersions = database.GetGlobalVersions(out uint localTerm);
 
 			SerializeVersions(writer, globalVersions, localTerm, logSeqNum);
 			SerializeClassList(writer, database, logIndex);
@@ -88,7 +87,7 @@ internal unsafe sealed class SnapshotFileWriter
 
 	private static void SerializeVersions(SegmentBinaryWriter writer, GlobalVersion[] globalVersions, uint localTerm, ulong maxLogSeqNum)
 	{
-		TTTrace.Write(localTerm, maxLogSeqNum);
+		TTTrace.Write(localTerm, maxLogSeqNum, globalVersions.Length);
 
 		SegmentBinaryWriter.Position pos = writer.ReserveSpace(sizeof(long));
 		long size = writer.Size;

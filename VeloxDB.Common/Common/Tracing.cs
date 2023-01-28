@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -669,7 +669,7 @@ internal static class Tracing
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
 		public void Warning<T1, T2, T3>(string format, T1 v1, T2 v2, T3 v3)
 		{
-			if (level < TraceLevel.Error)
+			if (level < TraceLevel.Warning)
 				return;
 
 			TraceAlways(TraceLevel.Error, format, v1, v2, v3);

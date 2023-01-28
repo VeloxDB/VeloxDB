@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Diagnostics;
@@ -24,7 +24,7 @@ internal unsafe sealed class DatabasePersister : IDisposable
 	public DatabasePersister(Database database, PersistenceDescriptor persistenceDesc, SnapshotSemaphore snapshotController,
 		ulong commitVersion, ulong logSeqNum, DatabaseRestorer.LogState[] logStates)
 	{
-		TTTrace.Write(database.TraceId, database.ReadVersion, commitVersion, logSeqNum);
+		TTTrace.Write(database.TraceId, database.Id, database.ReadVersion, commitVersion, logSeqNum);
 		DatabaseRestorer.LogState.TTTraceState(logStates);
 
 		this.engine = database.Engine;
@@ -181,14 +181,6 @@ internal unsafe sealed class DatabasePersister : IDisposable
 		for (int i = 0; i < logPersisters.Length; i++)
 		{
 			logPersisters[i].MovePersistenceFromTempLocation();
-		}
-	}
-
-	public void DropAndDispose()
-	{
-		for (int i = 0; i < logPersisters.Length; i++)
-		{
-			logPersisters[i].DropAndDispose();
 		}
 	}
 

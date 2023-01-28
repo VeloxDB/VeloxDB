@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading;
 
@@ -83,14 +83,14 @@ internal sealed class JobQueue<T> : IDisposable
 				return false;
 		}
 
-		if (onlyIfDequeueAvailable && dequeueCount == 0)
-		{
-			freeSpotCounter?.Release();
-			return false;
-		}
-
 		lock (sync)
 		{
+			if (onlyIfDequeueAvailable && dequeueCount == 0)
+			{
+				freeSpotCounter?.Release();
+				return false;
+			}
+
 			if (count == items.Length)
 				Resize();
 
