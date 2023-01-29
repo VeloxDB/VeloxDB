@@ -151,7 +151,7 @@ internal unsafe abstract class HashIndexReaderBase<TKey1, TKey2, TKey3, TKey4> :
 
 internal struct ComparerPool
 {
-	RWSpinLock sync;
+	RWLock sync;
 	int count;
 	HashComparer[] items;
 
@@ -169,7 +169,7 @@ internal struct ComparerPool
 				stringCount++;
 		}
 
-		sync = new RWSpinLock();
+		sync = new RWLock();
 
 		count = initCapacity;
 		items = new HashComparer[count];

@@ -17,7 +17,7 @@ internal sealed class ItemPool<T>
 {
 	static readonly int borrowProbeCount = Math.Min(ProcessorNumber.CoreCount, 8);
 
-	RWSpinLock sync;
+	RWLock sync;
 	int count;
 	T[] pool;
 

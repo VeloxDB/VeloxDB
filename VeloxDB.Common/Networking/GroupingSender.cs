@@ -306,14 +306,14 @@ internal unsafe sealed class GroupingSender
 
 	private struct PerCPUData
 	{
-		public RWSpinLock sync;
+		public RWLock sync;
 		public IntPtr sendBuffer1;
 		public IntPtr sendBuffer2;
 		public int size;
 
 		public static void Init(PerCPUData* d)
 		{
-			d->sync = new RWSpinLock();
+			d->sync = new RWLock();
 			d->size = 0;
 		}
 	}

@@ -123,7 +123,7 @@ internal unsafe class LogBufferPool
 
 	private struct PerCPUPool
 	{
-		public RWSpinLock sync;
+		public RWLock sync;
 		public int count;
 		public IntPtr* pool;
 	}

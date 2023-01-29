@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
@@ -146,14 +146,14 @@ internal unsafe sealed partial class StringStorage : IDisposable
 	[StructLayout(LayoutKind.Sequential, Pack = 1, Size = 1)]
 	private unsafe partial struct PerCPUData
 	{
-		public const int Size = StringSlotList.Size + 4;
+		public const int Size = StringSlotList.Size + 8;
 
 		StringSlotList freeList;
-		RWSpinLock sync;
+		RWLock sync;
 
 		public PerCPUData(RefCountedStringArray values)
 		{
-			sync = new RWSpinLock();
+			sync = new RWLock();
 			freeList = StringSlotList.Empty;
 			AllocSlots(values);
 		}

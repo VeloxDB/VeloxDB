@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Runtime.CompilerServices;
 using System.Threading;
 
@@ -10,7 +10,7 @@ internal unsafe sealed class ParallelResizeCounter : IDisposable
 
 	object bufferHandle;
 	long* deltaCounts;
-	RWSpinLockFair* syncs;
+	RWLock* syncs;
 
 	long totalCount;
 	long triggerLimit;
@@ -23,8 +23,8 @@ internal unsafe sealed class ParallelResizeCounter : IDisposable
 		this.countLimit = countLimit;
 		Prepare();
 
-		deltaCounts = (long*)CacheLineMemoryManager.Allocate(sizeof(long) + sizeof(RWSpinLockFair), out bufferHandle);
-		syncs = (RWSpinLockFair*)(deltaCounts + 1);
+		deltaCounts = (long*)CacheLineMemoryManager.Allocate(sizeof(long) + sizeof(RWLock), out bufferHandle);
+		syncs = (RWLock*)(deltaCounts + 1);
 	}
 
 	public long Count
@@ -46,7 +46,7 @@ internal unsafe sealed class ParallelResizeCounter : IDisposable
 	public int EnterReadLock()
 	{
 		int handle = ProcessorNumber.GetCore();
-		RWSpinLockFair* rw = (RWSpinLockFair*)CacheLineMemoryManager.GetBuffer(syncs, handle);
+		RWLock* rw = (RWLock*)CacheLineMemoryManager.GetBuffer(syncs, handle);
 		rw->EnterReadLock();
 		return handle;
 	}
@@ -54,7 +54,7 @@ internal unsafe sealed class ParallelResizeCounter : IDisposable
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public void ExitReadLock(int handle)
 	{
-		RWSpinLockFair* rw = (RWSpinLockFair*)CacheLineMemoryManager.GetBuffer(syncs, handle);
+		RWLock* rw = (RWLock*)CacheLineMemoryManager.GetBuffer(syncs, handle);
 		rw->ExitReadLock();
 	}
 
@@ -63,7 +63,7 @@ internal unsafe sealed class ParallelResizeCounter : IDisposable
 	{
 		for (int i = 0; i < ProcessorNumber.CoreCount; i++)
 		{
-			RWSpinLockFair* rw = (RWSpinLockFair*)CacheLineMemoryManager.GetBuffer(syncs, i);
+			RWLock* rw = (RWLock*)CacheLineMemoryManager.GetBuffer(syncs, i);
 			rw->EnterWriteLock();
 		}
 	}
@@ -73,7 +73,7 @@ internal unsafe sealed class ParallelResizeCounter : IDisposable
 	{
 		for (int i = 0; i < ProcessorNumber.CoreCount; i++)
 		{
-			RWSpinLockFair* rw = (RWSpinLockFair*)CacheLineMemoryManager.GetBuffer(syncs, i);
+			RWLock* rw = (RWLock*)CacheLineMemoryManager.GetBuffer(syncs, i);
 			rw->ExitWriteLock();
 		}
 	}

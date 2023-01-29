@@ -7,17 +7,17 @@ namespace VeloxDB.Common;
 internal unsafe sealed class MultiSpinLock : IDisposable
 {
 	readonly object bufferHandle;
-	readonly RWSpinLock* syncs;
+	readonly RWLock* syncs;
 
 	public MultiSpinLock()
 	{
-		syncs = (RWSpinLock*)CacheLineMemoryManager.Allocate(sizeof(RWSpinLock), out bufferHandle);
+		syncs = (RWLock*)CacheLineMemoryManager.Allocate(sizeof(RWLock), out bufferHandle);
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public void Enter(int index)
 	{
-		RWSpinLock* rw = (RWSpinLock*)CacheLineMemoryManager.GetBuffer(syncs, index);
+		RWLock* rw = (RWLock*)CacheLineMemoryManager.GetBuffer(syncs, index);
 		rw->EnterWriteLock();
 		return;
 	}
@@ -26,7 +26,7 @@ internal unsafe sealed class MultiSpinLock : IDisposable
 	public int Enter()
 	{
 		int procNum = ProcessorNumber.GetCore();
-		RWSpinLock* rw = (RWSpinLock*)CacheLineMemoryManager.GetBuffer(syncs, procNum);
+		RWLock* rw = (RWLock*)CacheLineMemoryManager.GetBuffer(syncs, procNum);
 		rw->EnterWriteLock();
 		return procNum;
 	}
@@ -34,7 +34,7 @@ internal unsafe sealed class MultiSpinLock : IDisposable
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public void Exit(int index)
 	{
-		RWSpinLock* rw = (RWSpinLock*)CacheLineMemoryManager.GetBuffer(syncs, index);
+		RWLock* rw = (RWLock*)CacheLineMemoryManager.GetBuffer(syncs, index);
 		rw->ExitWriteLock();
 		return;
 	}

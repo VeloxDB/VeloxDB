@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Reflection;
 using System.Reflection.Metadata;
 using System.Runtime.CompilerServices;
@@ -10,18 +10,18 @@ internal unsafe sealed class MultiSpinRWLock : IDisposable
 	const int singleThreadedLimit = 1024 * 32;
 
 	object bufferHandle;
-	RWSpinLockFair* syncs;
+	RWLock* syncs;
 
 	public MultiSpinRWLock()
 	{
-		syncs = (RWSpinLockFair*)CacheLineMemoryManager.Allocate(sizeof(RWSpinLockFair), out bufferHandle);
+		syncs = (RWLock*)CacheLineMemoryManager.Allocate(sizeof(RWLock), out bufferHandle);
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public int EnterReadLock()
 	{
 		int handle = ProcessorNumber.GetCore();
-		RWSpinLockFair* rw = (RWSpinLockFair*)CacheLineMemoryManager.GetBuffer(syncs, handle);
+		RWLock* rw = (RWLock*)CacheLineMemoryManager.GetBuffer(syncs, handle);
 		rw->EnterReadLock();
 		return handle;
 	}
@@ -29,7 +29,7 @@ internal unsafe sealed class MultiSpinRWLock : IDisposable
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public void EnterReadLock(int handle)
 	{
-		RWSpinLockFair* rw = (RWSpinLockFair*)CacheLineMemoryManager.GetBuffer(syncs, handle);
+		RWLock* rw = (RWLock*)CacheLineMemoryManager.GetBuffer(syncs, handle);
 		rw->EnterReadLock();
 	}
 
@@ -43,14 +43,14 @@ internal unsafe sealed class MultiSpinRWLock : IDisposable
 		}
 
 		handle = ProcessorNumber.GetCore();
-		RWSpinLockFair* rw = (RWSpinLockFair*)CacheLineMemoryManager.GetBuffer(syncs, handle);
-		return rw->TryEnterReadLock(timeout);
+		RWLock* rw = (RWLock*)CacheLineMemoryManager.GetBuffer(syncs, handle);
+		return RWLock.TryEnterReadLock(rw, timeout);
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public void ExitReadLock(int handle)
 	{
-		RWSpinLockFair* rw = (RWSpinLockFair*)CacheLineMemoryManager.GetBuffer(syncs, handle);
+		RWLock* rw = (RWLock*)CacheLineMemoryManager.GetBuffer(syncs, handle);
 		rw->ExitReadLock();
 	}
 
@@ -59,7 +59,7 @@ internal unsafe sealed class MultiSpinRWLock : IDisposable
 	{
 		for (int i = 0; i < ProcessorNumber.CoreCount; i++)
 		{
-			RWSpinLockFair* rw = (RWSpinLockFair*)CacheLineMemoryManager.GetBuffer(syncs, i);
+			RWLock* rw = (RWLock*)CacheLineMemoryManager.GetBuffer(syncs, i);
 			rw->EnterWriteLock();
 		}
 	}
@@ -69,7 +69,7 @@ internal unsafe sealed class MultiSpinRWLock : IDisposable
 	{
 		for (int i = 0; i < ProcessorNumber.CoreCount; i++)
 		{
-			RWSpinLockFair* rw = (RWSpinLockFair*)CacheLineMemoryManager.GetBuffer(syncs, i);
+			RWLock* rw = (RWLock*)CacheLineMemoryManager.GetBuffer(syncs, i);
 			rw->ExitWriteLock();
 		}
 	}

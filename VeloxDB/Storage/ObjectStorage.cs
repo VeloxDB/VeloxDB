@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -311,19 +311,19 @@ internal unsafe sealed partial class ObjectStorage
 	[StructLayout(LayoutKind.Sequential, Pack = 1, Size = 1)]
 	private unsafe struct PerCPUData
 	{
-		public const int Size = 32;
+		public const int Size = 36;
 
 		byte* allocBlock;
 		BufferHeader* freeList;
 		int allocOffset;
-		RWSpinLock sync;
+		RWLock sync;
 		int bufferSize;
 		int freeCount;
 
 		public void Init(int bufferSize)
 		{
 			this.bufferSize = bufferSize;
-			sync = new RWSpinLock();
+			sync = new RWLock();
 			allocBlock = null;
 			allocOffset = blockSize;    // So that new block is allocated the first time
 			freeList = null;

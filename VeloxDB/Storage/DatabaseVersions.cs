@@ -9,7 +9,7 @@ namespace VeloxDB.Storage;
 
 internal unsafe sealed class DatabaseVersions
 {
-	RWSpinLock sync;
+	RWLock sync;
 
 	Database database;
 

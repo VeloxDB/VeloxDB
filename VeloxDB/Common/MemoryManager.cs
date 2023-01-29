@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -331,17 +331,17 @@ internal unsafe sealed partial class MemoryManager : IDisposable
 	{
 		public const int BlockSize = 1024 * 1024;
 
-		public const int HeaderSize = 24;
+		public const int HeaderSize = 28;
 		public const int Size = bufferSizesCount * BufferList.Size + HeaderSize;
 
 		byte* allocBlock;
 		BufferList* perSizeFreeLists;
 		int allocOffset;
-		RWSpinLock sync;
+		RWLock sync;
 
 		public void Init(BufferList* perSizeFreeLists)
 		{
-			sync = new RWSpinLock();
+			sync = new RWLock();
 			allocBlock = null;
 			allocOffset = BlockSize;    // So that new block is allocated the first time
 			this.perSizeFreeLists = perSizeFreeLists;

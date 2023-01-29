@@ -100,7 +100,7 @@ internal sealed unsafe class MessageChunkPool
 			{
 				PoolData* pd = (PoolData*)CacheLineMemoryManager.GetBuffer(poolData, i);
 				pd->count = perCoreCapacity;
-				pd->sync = new RWSpinLock();
+				pd->sync = new RWLock();
 			}
 		}
 
@@ -292,7 +292,7 @@ internal sealed unsafe class MessageChunkPool
 
 		private struct PoolData
 		{
-			public RWSpinLock sync;
+			public RWLock sync;
 			public int count;
 		}
 	}

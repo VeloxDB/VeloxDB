@@ -13,7 +13,7 @@ internal sealed class EngineLock
 	StorageEngine engine;
 	MultiSpinRWLock sync;
 
-	RWSpinLock drainSync;
+	RWLock drainSync;
 	bool isDraining;
 
 	public EngineLock(StorageEngine engine)
