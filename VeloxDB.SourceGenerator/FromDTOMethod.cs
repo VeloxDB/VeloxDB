@@ -429,7 +429,7 @@ namespace VeloxDB.SourceGenerator
 				}
 
 				ITypeSymbol dtoType = methodSym.Parameters[1].Type;
-				if(!CheckDTOType(context, dtoType, methodSym))
+				if(!CheckDTOType(context, dtoType, methodSym, type))
 				{
 					return null;
 				}

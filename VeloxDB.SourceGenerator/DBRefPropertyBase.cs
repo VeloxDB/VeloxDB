@@ -70,7 +70,7 @@ namespace VeloxDB.SourceGenerator
 			refMethod = DBReferencedType.GetMethodByName(method.Name);
 			if (refMethod == null)
 			{
-				Report.ReferencedTypeMissingMethod(context, Symbol, method.Name, dtoNamedType);
+				Report.ReferencedTypeMissingMethod(context, Symbol, ReferencedType, method.Name, dtoNamedType);
 				return false;
 			}
 

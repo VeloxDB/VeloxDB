@@ -109,6 +109,9 @@ namespace VeloxDB.SourceGenerator
 
 				IMethodSymbol methodSym = (IMethodSymbol)memberSym;
 
+				if(HasAttribute(methodSym, context.Types.AutomapperIgnoreAttribute))
+					continue;
+
 				if(!ShouldGenerate(methodSym))
 					continue;
 
@@ -165,6 +168,9 @@ namespace VeloxDB.SourceGenerator
 					continue;
 
 				IPropertySymbol property = (IPropertySymbol)member;
+
+				if(HasAttribute(property, context.Types.AutomapperIgnoreAttribute))
+					continue;
 
 				DBProperty dbProperty = type.GetPropertyByName(property.Name);
 
@@ -225,11 +231,17 @@ namespace VeloxDB.SourceGenerator
 			return methodSym.IsPartialDefinition && methodSym.PartialImplementationPart == null && !methodSym.IsGenericMethod;
 		}
 
-		protected static bool CheckDTOType(Context context, ITypeSymbol dtoType, IMethodSymbol methodSym)
+		protected static bool CheckDTOType(Context context, ITypeSymbol dtoType, IMethodSymbol methodSym, DBOType type)
 		{
 			if(dtoType.Kind != SymbolKind.NamedType || ((INamedTypeSymbol)dtoType).TypeKind != TypeKind.Class)
 			{
 				Report.InvalidDTOType(context, methodSym);
+				return false;
+			}
+
+			if(((INamedTypeSymbol)dtoType).IsAbstract != type.IsAbstract)
+			{
+				Report.DBOAndDTOAbstractMismatch(context, dtoType, type.Symbol);
 				return false;
 			}
 

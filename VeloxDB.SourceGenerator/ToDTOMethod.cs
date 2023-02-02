@@ -138,7 +138,13 @@ namespace VeloxDB.SourceGenerator
 
 		private void GenerateCopyBody(Context context, SourceWriter writer, out List<PropMatch> objRefProps)
 		{
-			CancellationToken token = context.CancellationToken;
+			if(Type.IsAbstract)
+			{
+				writer.AppendFormat("throw new System.InvalidOperationException(\"Class {0} is abstract.\");\n", Type.FullName);
+				objRefProps = new List<PropMatch>();
+				return;
+			}
+
 			writer.AppendFormat("{0} {1} = new {0}();\n", Symbol.ReturnType, SourceWriter.ResultVar);
 
 			if (NeedsInternalMethod)
@@ -227,7 +233,7 @@ namespace VeloxDB.SourceGenerator
 			}
 
 			ITypeSymbol dtoType = methodSym.ReturnType;
-			if(!CheckDTOType(context, dtoType, methodSym))
+			if(!CheckDTOType(context, dtoType, methodSym, type))
 			{
 				return null;
 			}

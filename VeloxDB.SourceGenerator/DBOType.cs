@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -22,7 +23,7 @@ namespace VeloxDB.SourceGenerator
 
 		bool prepared;
 
-		private DBOType(string ns, string fullName, bool partial, ImmutableArray<DBProperty> properties, ImmutableArray<DBProperty> refProps, INamedTypeSymbol type)
+		private DBOType(string ns, string fullName, bool partial, bool isAbstract, ImmutableArray<DBProperty> properties, ImmutableArray<DBProperty> refProps, INamedTypeSymbol type)
 		{
 			prepared = false;
 			Namespace = ns;
@@ -31,6 +32,7 @@ namespace VeloxDB.SourceGenerator
 			ReferencingProperties = refProps;
 			Symbol = type;
 			IsPartial = partial;
+			IsAbstract = isAbstract;
 
 			propByName = properties.ToImmutableDictionary(prop => prop.Name, prop => prop);
 		}
@@ -38,6 +40,7 @@ namespace VeloxDB.SourceGenerator
 		public string FullName { get; }
 		public string Namespace { get; }
 		public bool IsPartial { get; }
+		public bool IsAbstract { get; }
 		public ImmutableArray<DBProperty> Properties { get; }
 		public ImmutableArray<DBProperty> ReferencingProperties { get; }
 		public INamedTypeSymbol Symbol { get; }
@@ -62,7 +65,8 @@ namespace VeloxDB.SourceGenerator
 			if(type.DeclaringSyntaxReferences.Length == 0)
 				return null;
 
-			bool isDatabaseClass = IsDatabaseClass(type, context);
+			bool isAbstractDBO;
+			bool isDatabaseClass = IsDatabaseClass(type, context, out isAbstractDBO);
 			if (isDatabaseClass != context.Types.IsDatabaseObject(type))
 			{
 				Report.ClassMustBeBoth(context, type);
@@ -84,6 +88,7 @@ namespace VeloxDB.SourceGenerator
 				return null;
 			}
 
+			// All DBO classes must be declared as abstract
 			if(!type.IsAbstract)
 			{
 				Report.DatabaseClassIsNotAbstract(context, type);
@@ -96,7 +101,7 @@ namespace VeloxDB.SourceGenerator
 
 			var properties = CreateProperties(context, type);
 
-			DBOType result = new DBOType(ns, fullName, partial, properties.Properties, properties.ReferencingProperties, type);
+			DBOType result = new DBOType(ns, fullName, partial, isAbstractDBO, properties.Properties, properties.ReferencingProperties, type);
 			ImmutableArray<Method> methods = Method.CreatePartialMethods(context, result);
 
 			result.PartialMethods = methods;
@@ -111,7 +116,20 @@ namespace VeloxDB.SourceGenerator
 			prepared = true;
 
 			if (Parent != null)
+			{
 				Parent.PreparePolymorphism(context);
+
+				if (IsAbstract && !Parent.IsAbstract)
+				{
+					Report.ParentIsNotAbstract(context, Symbol);
+				}
+			}
+
+			// This is root abstract class, all its To/From methods must be marked with SupportPolymorphism
+			if(Parent == null && IsAbstract)
+			{
+				CheckForPolymorphism(context);
+			}
 
 			ImmutableDictionary<string, MethodGroup> parentMethodGroups = (Parent != null) ? Parent.methodGroups : ImmutableDictionary<string, MethodGroup>.Empty;
 			var builder = ImmutableDictionary.CreateBuilder<string, MethodGroup>();
@@ -131,6 +149,19 @@ namespace VeloxDB.SourceGenerator
 			else
 			{
 				methodGroups = parentMethodGroups;
+			}
+		}
+
+		private void CheckForPolymorphism(Context context)
+		{
+			Debug.Assert(IsAbstract);
+
+			foreach(Method method in methods)
+			{
+				if(method.Polymorphism != Polymorphism.Enabled)
+				{
+					Report.MissingSupportPolymorphism(context, method.Symbol);
+				}
 			}
 		}
 
@@ -290,6 +321,10 @@ namespace VeloxDB.SourceGenerator
 					continue;
 
 				IPropertySymbol property = (IPropertySymbol)member;
+
+				if(HasAttribute(property, context.Types.AutomapperIgnoreAttribute))
+					continue;
+
 				DBProperty dbProperty = DBProperty.Create(property, context);
 
 				if(dbProperty == null)
@@ -328,9 +363,32 @@ namespace VeloxDB.SourceGenerator
 			return nsBuilder.ToString();
 		}
 
-		private static bool IsDatabaseClass(INamedTypeSymbol type, Context context)
+		private static bool IsDatabaseClass(INamedTypeSymbol type, Context context, out bool isAbstract)
 		{
-			return HasAttribute(type, context.Types.DatabaseClassAttribute);
+			isAbstract = false;
+
+			AttributeData attribute;
+			bool result = TryGetAttribute(type, context.Types.DatabaseClassAttribute, out attribute);
+
+			if (result)
+			{
+				CheckConstructorSignature(context.Types);
+				isAbstract = attribute.ConstructorArguments.Length > 0 && (bool)attribute.ConstructorArguments[0].Value;
+			}
+
+			return result;
+		}
+
+		[Conditional("DEBUG")]
+		private static void CheckConstructorSignature(Context.ContextTypes types)
+		{
+			INamedTypeSymbol attrib = types.DatabaseClassAttribute;
+			Debug.Assert(attrib.Constructors.Length == 1);
+			IMethodSymbol constructor = attrib.Constructors[0];
+			Debug.Assert(constructor.Parameters.Length == 1);
+			IParameterSymbol parameter = constructor.Parameters[0];
+			Debug.Assert(SymEquals(parameter.Type, types.Bool));
+			Debug.Assert(parameter.Name == "isAbstract");
 		}
 	}
 }

@@ -36,7 +36,6 @@ namespace VeloxDB.SourceGenerator
 
 		public class ContextTypes
 		{
-			INamedTypeSymbol autoMapperIgnoreClassAttribute;
 			HashSet<ITypeSymbol> simpleTypes;
 
 			private readonly string[] simpleTypeNames = new string[]{
@@ -73,8 +72,7 @@ namespace VeloxDB.SourceGenerator
 				DatabaseReferenceAttribute = GetType(compilation, "VeloxDB.ObjectInterface.DatabaseReferenceAttribute");
 				InverseReferencesAttribute = GetType(compilation, "VeloxDB.ObjectInterface.InverseReferencesAttribute");
 				SupportPolymorphismAttribute = GetType(compilation, "VeloxDB.ObjectInterface.SupportPolymorphismAttribute");
-
-				autoMapperIgnoreClassAttribute = compilation.GetTypeByMetadataName("VeloxDB.ObjectInterface.AutoMapperIgnoreClassAttribute");
+				AutomapperIgnoreAttribute = GetType(compilation, "VeloxDB.ObjectInterface.AutomapperIgnoreAttribute");
 			}
 
 			public bool IsEnumerable(ITypeSymbol type, INamedTypeSymbol elementType)
@@ -93,7 +91,7 @@ namespace VeloxDB.SourceGenerator
 
 			public bool IgnoreClass(INamedTypeSymbol type)
 			{
-				return autoMapperIgnoreClassAttribute != null && HasAttribute(type, autoMapperIgnoreClassAttribute);
+				return HasAttribute(type, AutomapperIgnoreAttribute);
 			}
 
 			public bool IsSimpleType(INamedTypeSymbol type) => type.TypeKind == TypeKind.Enum || simpleTypes.Contains(type);
@@ -150,6 +148,7 @@ namespace VeloxDB.SourceGenerator
 			public INamedTypeSymbol DatabaseReferenceAttribute { get; }
 			public INamedTypeSymbol InverseReferencesAttribute { get; }
 			public INamedTypeSymbol SupportPolymorphismAttribute { get; }
+			public INamedTypeSymbol AutomapperIgnoreAttribute { get; }
 		}
 
 		public bool IsAccessibleFrom(ITypeSymbol from, IMethodSymbol toCheck)
