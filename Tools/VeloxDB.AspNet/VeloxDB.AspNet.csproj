@@ -12,6 +12,7 @@
 		<GenerateRuntimeConfigDevFile>true</GenerateRuntimeConfigDevFile>
 		<IsPackable>true</IsPackable>
 		<GenerateDocumentationFile>true</GenerateDocumentationFile>
+		<Copyright>Copyright © 2023 VeloxDB. All rights reserved.</Copyright>
 
 		<PackageOutputPath>$(VlxRootDir)\bin\nuget</PackageOutputPath>
 		<RepositoryUrl>https://github.com/VeloxDB/VeloxDB.git</RepositoryUrl>

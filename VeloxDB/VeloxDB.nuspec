@@ -12,7 +12,7 @@
     <projectUrl>$projectUrl$</projectUrl>
     <description>$description$</description>
     <releaseNotes></releaseNotes>
-    <copyright>VeloxDB 2022</copyright>
+    <copyright>Copyright © 2023 VeloxDB. All rights reserved.</copyright>
     <tags>Database;RDBMS;ORM</tags>
 		<readme>$readme$</readme>
 		<dependencies>

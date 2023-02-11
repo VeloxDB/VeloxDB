@@ -7,6 +7,7 @@
 		<AssemblyName>vlxc</AssemblyName>
 		<Product>VeloxDB</Product>
 		<Company>VeloxDB</Company>
+		<Copyright>Copyright © 2023 VeloxDB. All rights reserved.</Copyright>
 		<PackageOutputPath>$(VlxRootDir)\bin\nuget</PackageOutputPath>
 		<RepositoryUrl>https://github.com/VeloxDB/VeloxDB.git</RepositoryUrl>
 		<RepositoryType>git</RepositoryType>
