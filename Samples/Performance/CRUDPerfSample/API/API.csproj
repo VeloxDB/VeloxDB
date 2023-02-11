@@ -8,7 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="veloxdb.protocol" Version="0.2.0" />
+    <PackageReference Include="veloxdb.protocol" Version="0.2.1" />
   </ItemGroup>
 
 
