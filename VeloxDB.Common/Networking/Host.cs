@@ -104,7 +104,13 @@ internal sealed class Host
 				acceptArgs[i][j].Completed += AcceptCompleted;
 
 				if (!listenSockets[i].AcceptAsync(acceptArgs[i][j]))
-					ThreadPool.UnsafeQueueUserWorkItem(x => AcceptCompleted(listenSockets[i], (SocketAsyncEventArgs)x), acceptArgs[i]);
+				{
+					ThreadPool.UnsafeQueueUserWorkItem(x =>
+					{
+						var t = (Tuple<Socket, SocketAsyncEventArgs>)x;
+						AcceptCompleted(t.Item1, t.Item2);
+					}, (listenSockets[i], acceptArgs[i][j]));
+				}
 			}
 		}
 	}
