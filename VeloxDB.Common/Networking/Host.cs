@@ -109,7 +109,7 @@ internal sealed class Host
 					{
 						var t = (Tuple<Socket, SocketAsyncEventArgs>)x;
 						AcceptCompleted(t.Item1, t.Item2);
-					}, (listenSockets[i], acceptArgs[i][j]));
+					}, new Tuple<Socket, SocketAsyncEventArgs>(listenSockets[i], acceptArgs[i][j]));
 				}
 			}
 		}
