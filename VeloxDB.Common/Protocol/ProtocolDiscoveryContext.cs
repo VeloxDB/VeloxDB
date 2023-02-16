@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -6,6 +6,18 @@ using System.Threading;
 using VeloxDB.Common;
 
 namespace VeloxDB.Protocol;
+
+/// <summary>
+/// Allows a user to dinamically provide additional assemblies containing protocol classes.
+/// </summary>
+public interface IAssemblyProvider
+{
+	/// <summary>
+	/// Returns a sequence of assemblies that contain additional classes that might be used as protocl classes.
+	/// </summary>
+	/// <returns>A sequence of additional assemblies.</returns>
+	IEnumerable<Assembly> GetAssemblies();
+}
 
 internal sealed class ProtocolDiscoveryContext
 {
@@ -30,13 +42,14 @@ internal sealed class ProtocolDiscoveryContext
 
 	public ProtocolInterfaceDescriptor[] Interfaces => interfaces.Values.ToArray();
 
-	public ProtocolInterfaceDescriptor GetInterfaceDescriptor(Type type)
+	public ProtocolInterfaceDescriptor GetInterfaceDescriptor(Type type, IAssemblyProvider assemblyDiscoverer)
 	{
-		return GetInterfaceDescriptor(type, 0, out _, out _);
+		return GetInterfaceDescriptor(type, 0, out _, out _, assemblyDiscoverer);
 	}
 
 	public ProtocolInterfaceDescriptor GetInterfaceDescriptor(Type type, int paramSkipCount,
-		out ProtocolTypeDescriptor[] discoveredInTypes, out ProtocolTypeDescriptor[] discoveredOutTypes)
+		out ProtocolTypeDescriptor[] discoveredInTypes, out ProtocolTypeDescriptor[] discoveredOutTypes,
+		IAssemblyProvider assemblyDiscoverer)
 	{
 		if (interfaces.TryGetValue(type, out ProtocolInterfaceDescriptor desc))
 		{
@@ -66,7 +79,7 @@ internal sealed class ProtocolDiscoveryContext
 				ops[i] = new ProtocolOperationDescriptor((ushort)i, methods[i], this, paramSkipCount);
 			}
 
-			DiscoverInheritedTypes();
+			DiscoverInheritedTypes(assemblyDiscoverer);
 			ProtocolInterfaceDescriptor interfaceDesc = new ProtocolInterfaceDescriptor(GenerateInterfaceId(), type, ops);
 
 			discoveredInTypes = newInTypes.Values.ToArray();
@@ -125,9 +138,12 @@ internal sealed class ProtocolDiscoveryContext
 		return methodInfo.GetCustomAttribute(typeof(DbAPIOperationAttribute)) != null;
 	}
 
-	private void DiscoverInheritedTypes()
+	private void DiscoverInheritedTypes(IAssemblyProvider assemblyDiscoverer)
 	{
 		HashSet<Assembly> assemblies = newInTypes.Values.Concat(newOutTypes.Values).Select(x => x.TargetType.Assembly).ToHashSet();
+		if (assemblyDiscoverer != null)
+			assemblies.UnionWith(assemblyDiscoverer.GetAssemblies());
+
 		foreach (Assembly assembly in assemblies)
 		{
 			foreach (Type type in assembly.GetExportedTypes())
@@ -235,5 +251,20 @@ internal sealed class ProtocolDiscoveryContext
 			throw new InvalidOperationException("Maximum number of API operations exceeded.");
 
 		return interfaceIdCounter++;
+	}
+}
+
+internal sealed class AssemblyProvider : IAssemblyProvider
+{
+	IEnumerable<Assembly> assemblies;
+
+	public AssemblyProvider(IEnumerable<Assembly> assemblies)
+	{
+		this.assemblies = assemblies;
+	}
+
+	public IEnumerable<Assembly> GetAssemblies()
+	{
+		return assemblies;
 	}
 }

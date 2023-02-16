@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -865,7 +865,10 @@ internal abstract class Connection
 			{
 				chunkPool.Put(chunk);
 				if (e is SocketException)
-					throw new CommunicationException(e);
+				{
+					CloseAsync();
+					throw new CommunicationObjectAbortedException(AbortedPhase.Communication, "Failed to send data over a socket.", e);
+				}
 
 				throw;
 			}

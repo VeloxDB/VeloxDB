@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Net;
@@ -303,7 +303,8 @@ internal sealed class Server : IDisposable
 			oldHostedModel.Assemblies.Unload();
 
 		execHost.HostService(string.Empty, typeof(ObjectModel), apis, hostedModel.ExecutionRequestCallback,
-			engine.AssemblyVersionGuid.ToGuid(), serializerManager, deserializerManager, discoveryContext, !isPrimary);
+			engine.AssemblyVersionGuid.ToGuid(), new AssemblyProvider(loadedAssemblies.Loaded),
+			serializerManager, deserializerManager, discoveryContext, !isPrimary);
 	}
 
 	private object[] CreateExecutionApis(Assembly[] assemblies)
@@ -339,14 +340,14 @@ internal sealed class Server : IDisposable
 		LocalWriteClusterAdministration localWriteClusterAdministration =
 			new LocalWriteClusterAdministration((IElector)localWriteElector!, (IElector)globalWriteElector!, engine);
 		adminHost.HostService(AdminAPIServiceNames.LocalWriteClusterAdministration, new object[] { localWriteClusterAdministration },
-							  (r) => r.Execute().SendResponse(null), Guid.NewGuid(), isInitiallyStopped: true);
+							  (r) => r.Execute().SendResponse(null), Guid.NewGuid(), null, isInitiallyStopped: true);
 	}
 
 	private void HostDatabaseAdministrationInterface()
 	{
 		Checker.AssertNotNull(adminHost, databaseAdministration);
 		adminHost.HostService(AdminAPIServiceNames.DatabaseAdministration, new object[] { databaseAdministration },
-							  (r) => r.Execute().SendResponse(null), Guid.NewGuid(), isInitiallyStopped: true);
+							  (r) => r.Execute().SendResponse(null), Guid.NewGuid(), null, isInitiallyStopped: true);
 	}
 
 	private void CreateElectors()
@@ -449,7 +450,7 @@ internal sealed class Server : IDisposable
 	{
 		Checker.AssertNotNull(adminHost);
 		adminHost.HostService(AdminAPIServiceNames.NodeAdministration, new object[] { nodeAdministration },
-			(r) => r.Execute().SendResponse(null), Guid.NewGuid());
+			(r) => r.Execute().SendResponse(null), Guid.NewGuid(), null);
 	}
 
 	public void Dispose()

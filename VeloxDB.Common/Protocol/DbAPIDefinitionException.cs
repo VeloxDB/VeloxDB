@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 
 namespace VeloxDB.Protocol;
 
@@ -83,6 +83,12 @@ public enum DbAPIDefinitionErrorType
 	///	Type name is already used by a different type.
 	/// </summary>
 	TypeNameDuplicate = 15,
+
+	/// <summary>
+	///	The name of the inherited type provider method is invalid. Either the given method does not exists, is not public and static or
+	///	does not take zero arguments.
+	/// </summary>
+	InvalidInheritedTypeProvider = 16,
 }
 
 /// <summary>
@@ -99,7 +105,7 @@ public class DbAPIDefinitionException : DbAPIErrorException
 	{
 	}
 
-	private DbAPIDefinitionException(DbAPIDefinitionErrorType errorType, string typeName, string methodName)
+	private DbAPIDefinitionException(DbAPIDefinitionErrorType errorType, string methodName, string typeName)
 	{
 		this.errorType = errorType;
 		this.typeName = typeName;
@@ -160,6 +166,11 @@ public class DbAPIDefinitionException : DbAPIErrorException
 	internal static DbAPIDefinitionException CreateTypeNameDuplicate(string typeName)
 	{
 		return new DbAPIDefinitionException(DbAPIDefinitionErrorType.TypeNameDuplicate, null, typeName);
+	}
+
+	internal static DbAPIDefinitionException CreateInvalidInheritedTypeProvider(string methodName)
+	{
+		return new DbAPIDefinitionException(DbAPIDefinitionErrorType.InvalidInheritedTypeProvider, methodName, null);
 	}
 
 	internal static DbAPIDefinitionException CreateOutParam(string methodName, string typeName)
@@ -226,7 +237,10 @@ public class DbAPIDefinitionException : DbAPIErrorException
 						methodName, typeName);
 
 				case DbAPIDefinitionErrorType.TypeNameDuplicate:
-					return string.Format("Type name {0} is already used by a different type.", methodName, typeName);
+					return string.Format("Type name {0} is already used by a different type.", typeName);
+
+				case DbAPIDefinitionErrorType.InvalidInheritedTypeProvider:
+					return string.Format("Povided name {0} of the inherited type provider method is invalid.", methodName);
 
 				case DbAPIDefinitionErrorType.OutParam:
 					return string.Format("Operation {0} in API {1} defines an out/ref parameter.", methodName, typeName);

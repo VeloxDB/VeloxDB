@@ -1,4 +1,4 @@
-using System.Collections;
+﻿using System.Collections;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Security.Cryptography;
@@ -106,7 +106,7 @@ public sealed class DatabaseAdministration
 			SerializerManager serializerManager;
 			DeserializerManager deserializerManager;
 			ProtocolDiscoveryContext discoveryContext;
-			PrepareSerialization(apis, out serializerManager, out deserializerManager, out discoveryContext);
+			PrepareSerialization(apis, new AssemblyProvider(loaded.Assemblies), out serializerManager, out deserializerManager, out discoveryContext);
 
 			DataModelDescriptor descriptor = CreateModelDescriptor(dataModelDescriptor, loaded.Loaded);
 
@@ -117,7 +117,7 @@ public sealed class DatabaseAdministration
 		}
 	}
 
-	private static void PrepareSerialization(Type[] apis, out SerializerManager serializerManager,
+	private static void PrepareSerialization(Type[] apis, IAssemblyProvider assemblyProvider, out SerializerManager serializerManager,
 		out DeserializerManager deserializerManager, out ProtocolDiscoveryContext discoveryContext)
 	{
 		serializerManager = null!;
@@ -126,7 +126,8 @@ public sealed class DatabaseAdministration
 
 		try
 		{
-			DbAPIHost.PrepareSerialization(typeof(ObjectModel), apis, out serializerManager, out deserializerManager, out discoveryContext);
+			DbAPIHost.PrepareSerialization(typeof(ObjectModel), apis, assemblyProvider,
+				out serializerManager, out deserializerManager, out discoveryContext);
 		}
 		catch (DbAPIDefinitionException e)
 		{

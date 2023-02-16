@@ -1,10 +1,10 @@
-using System;
+﻿using System;
 
 namespace VeloxDB.Protocol;
 
 /// <summary>
 /// Thrown when unexpected error happens during database api operation execution.
-/// If you need an exception to propagate from operation to client you should use <see cref="DbAPIOperationErrorAttribute"/>
+/// If you need an exception to propagate from an operation to the client you should use <see cref="DbAPIOperationErrorAttribute"/>
 /// </summary>
 public sealed class DbAPIUnknownErrorException : DbAPIErrorException
 {

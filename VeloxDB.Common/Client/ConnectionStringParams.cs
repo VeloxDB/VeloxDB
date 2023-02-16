@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text;
 
@@ -12,7 +12,7 @@ public sealed class ConnectionStringParams
 	const int defaultPoolSize = 4;
 	const int defaultBufferPoolSize = 1024 * 1024;  // 1 MB
 	const int defaultOpenTimeout = 5000;            // 5 sec
-	const int defaultRetryTimeout = 5000;
+	const int defaultRetryTimeout = 10000;
 	const string defaultServiceName = "";
 
 	const string poolSizeParam = "pool_size";

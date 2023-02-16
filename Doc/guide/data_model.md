@@ -15,8 +15,8 @@ Classes are the main building blocks of your data model. You define a database c
 Following example defines a single empty (non-abstract) model class.
 
 ```cs
-[DatabaseClass(isAbstract = false)]
-public abstract class SalesOrder : DatabaseObject
+[DatabaseClass(isAbstract: false)]
+public abstract class Order : DatabaseObject
 {
 }
 ```
@@ -39,7 +39,7 @@ As already stated, each database class must inherit (somewhere along its inherit
 You are free to create arbitrary class hierarchies inside VeloxDB (as long as the aforementioned rule of inheriting the DatabaseObject at some point is satisfied). The following example demonstrates usage of inheritance:
 
 ```cs
-[DatabaseClass(isAbstract = true)]
+[DatabaseClass(isAbstract: true)]
 public abstract class Entity : DatabaseObject
 {
 }
@@ -96,7 +96,7 @@ public enum LegalEntityType : byte
     ...
 }
 
-[DatabaseClass(isAbstract = true)]
+[DatabaseClass(isAbstract: true)]
 public abstract class Entity : DatabaseObject
 {
     [DatabaseProperty]
@@ -112,7 +112,7 @@ public abstract class LegalEntity : Entity
     [DatabaseProperty]
     public abstract long TaxNumber { get; set; }
 
-    [DatabaseProperty(defaultValue:"LLC")]
+    [DatabaseProperty(defaultValue: "LLC")]
     public abstract LegalEntityType Type { get; set; }
 }
 
@@ -146,14 +146,11 @@ public enum OrderStatus : byte
     Completed = 4,
 }
 
-[DatabaseClass(isAbstract = true)]
+[DatabaseClass(isAbstract: true)]
 public abstract class Entity : DatabaseObject
 {
     [DatabaseProperty]
     public abstract string UserName { get; set; }
-
-    [DatabaseProperty]
-    public abstract string PasswordHash { get; set; }
 
     [DatabaseProperty]
     public abstract string Email { get; set; }
@@ -195,7 +192,7 @@ public abstract class Person : Entity
 }
 
 [DatabaseClass]
-public abstract class SalesOrder : DatabaseObject
+public abstract class Order : DatabaseObject
 {
     [DatabaseProperty]
     public abstract OrderStatus Status { get; set; }
@@ -256,7 +253,7 @@ You define a reference property of cardinality 0..1 and 1 by defining a .NET pro
 
 ```cs
 [DatabaseClass]
-public abstract class SalesOrder : DatabaseObject
+public abstract class Order : DatabaseObject
 {
     [DatabaseReference(isNullable: false, deleteTargetAction: DeleteTargetAction.PreventDelete)]
     public abstract Entity OrderedBy { get; set; }
@@ -270,11 +267,11 @@ VeloxDB strictly maintains referential integrity. As already mentioned, referenc
 * CascadeDelete - The referencing object is deleted as well. This can continue to propagate throughout the database (hence the name cascade delete).
 * SetToNull - The referencing property is set to null. This value is invalid for a property of cardinality 1, since it cannot have a null value. If the reference property is of cardinality *, than that reference is simply removed from the reference array.
 
-References with cardinality * are defined in a similar way to the references with cardinality 0..1/1. The only difference is the property type which is required to be <xref:VeloxDB.ObjectInterface.ReferenceArray`1> where T is the referenced class. This class implements IList\<T\> interface (similarly to DatabaseArray\<T\>). You create instances of this class by using any of the publicly available constructors. Following example extends the SalesOrder class to contain a list of ordered products:
+References with cardinality * are defined in a similar way to the references with cardinality 0..1/1. The only difference is the property type which is required to be <xref:VeloxDB.ObjectInterface.ReferenceArray`1> where T is the referenced class. This class implements IList\<T\> interface (similarly to DatabaseArray\<T\>). You create instances of this class by using any of the publicly available constructors. Following example extends the Order class to contain a list of ordered products as well as an Entity class to contain a list of connected entities (friends):
 
 ```cs
 [DatabaseClass]
-public abstract class SalesOrder : DatabaseObject
+public abstract class Order : DatabaseObject
 {
     [DatabaseReference(isNullable: false, deleteTargetAction: DeleteTargetAction.PreventDelete)]
     public abstract Entity OrderedBy { get; set; }
@@ -282,12 +279,22 @@ public abstract class SalesOrder : DatabaseObject
     [DatabaseReference(deleteTargetAction: DeleteTargetAction.PreventDelete)]
     public abstract ReferenceArray<Product> Products { get; set; }
 
+    public IEnumerable<Entity> AllConnections => Connections.Concat(InverseConnections);
     ...
+}
+
+[DatabaseClass(isAbstract: true)]
+public abstract class Entity : DatabaseObject
+{
+    [DatabaseReference(deleteTargetAction: DeleteTargetAction.SetToNull)]
+    public abstract ReferenceArray<Entity> Connections { get; set; }
 }
 ```
 
 >[!CAUTION]
 >VeloxDB handles reference arrays in a similar way how it handles arrays of simple values. For the same reason, having very large arrays of references is not recommended (unless you predominantly modify entire arrays in each operation) since the overhead of creating an array copy, just so you can modify a few values, might be too high.
+
+Notice that we create a non-database property AllConnections because connections in our order management system are considered bidirectional. AllConnections retrieves both connections that we have connected to, as well as connections that have been connected to us.
 
 As previously demonstrated, VeloxDB references support polymorphism, meaning you can reference a base class (optionally abstract class) and assign an object of a derived class to that reference. When you read a polymorphic reference, if needed, you can examine the actual type of the retrieved object. However, be careful to not use the exact type comparison like in the following example:
 
@@ -370,7 +377,7 @@ propertiesSize = 3 * 8 + 6 * (52 + 16 * 2) = 526 b
 size = (500k + 10 * 10) * (68 + 526) ~ 297 MB
 ```
 
-Now lets check the estimation for the SalesOrder class given the following assumptions: maximum number of order instances 100 million, rate of change is 100k changes/s.
+Now lets check the estimation for the Order class given the following assumptions: maximum number of order instances 100 million, rate of change is 100k changes/s.
 
 ```
 propertiesSize = 2 * 8 = 16 b
@@ -382,27 +389,30 @@ size = (100M + 100k * 10) * (68 + 16) ~ 7.9 GB
 
 ## Inverse References
 
-For each reference property you define, VeloxDB maintains an inverse reference index which allows you to quickly navigate the reference in the reverse direction. In our data model example, each SalesOrder instance has a reference to an Entity that placed the order as well as an array of references of all the products that are part of that order. If you wanted to quickly obtain all the orders that a single entity placed, as well as all the orders that included a certain product, you could define the inverse reference properties:
+For each reference property you define, VeloxDB maintains an inverse reference index which allows you to quickly navigate the reference in the reverse direction. In our data model example, each Order instance has a reference to an Entity that placed the order as well as an array of references of all the products that are part of that order. If you wanted to quickly obtain all the orders that a single entity placed, as well as all the orders that included a certain product, you could define the inverse reference properties. Also, we want to track for each entity, all the entities that have a given entity as a connection:
 
 ```cs
 [DatabaseClass]
 public abstract class Entity : DatabaseObject
 {
-    [InverseReferences(nameof(SalesOrder.OrderedBy))]
-    public abstract InverseReferenceSet<SalesOrder> Orders { get; }
+    [InverseReferences(nameof(Order.OrderedBy))]
+    public abstract InverseReferenceSet<Order> Orders { get; }
+
+    [InverseReferences(nameof(Entity.Connections))]
+	public abstract InverseReferenceSet<Entity> InverseConnections { get; }
     ...
 }
 
 [DatabaseClass]
 public abstract class Product : DatabaseObject
 {
-    [InverseReferences(nameof(SalesOrder.Products))]
-    public abstract InverseReferenceSet<SalesOrder> Orders { get; }
+    [InverseReferences(nameof(Order.Products))]
+    public abstract InverseReferenceSet<Order> Orders { get; }
     ...
 }
 ```
 
-Inverse reference property is defined by defining a .NET property (without a setter) of type <xref:VeloxDB.ObjectInterface.InverseReferenceSet`1> where T is the referencing class. This property needs to be defined in the class that is referenced by the reference property. In our case, SalesOrder class references Entity with the OrderedBy reference, so the inverse reference property must be defined in the Entity class and must be of type InverseReferenceSet\<SalesOrder\>. Also, inverse reference property must be decorated with the <xref:VeloxDB.ObjectInterface.InverseReferencesAttribute> attribute where you specify the name of the reference property for which to create the inverse reference property. Since this represents the name of the property from the referencing class, we strongly recommend using the nameof expression to avoid repeating the property name.
+Inverse reference property is defined by defining a .NET property (without a setter) of type <xref:VeloxDB.ObjectInterface.InverseReferenceSet`1> where T is the referencing class. This property needs to be defined in the class that is referenced by the reference property. In our case, Order class references Entity with the OrderedBy reference, so the inverse reference property must be defined in the Entity class and must be of type InverseReferenceSet\<Order\>. Also, inverse reference property must be decorated with the <xref:VeloxDB.ObjectInterface.InverseReferencesAttribute> attribute where you specify the name of the reference property for which to create the inverse reference property. Since this represents the name of the property from the referencing class, we strongly recommend using the nameof expression to avoid repeating the property name.
 
 InverseReferenceSet\<T\> class represents an unordered collection (a set) of objects. You should never rely on the order of entities in this set remaining the same between different operations (transactions). The database is free to reorder this list any way it sees fit. This is similar to reading from a relational database without specifying an order by clause. Even though the returned order might always be the same, it is not guaranteed.
 
@@ -417,11 +427,11 @@ It is possible that the same object appears more than once in the inverse refere
 
 Even though the InverseReferenceSet\<T\> class contains methods that allow you to directly modify the set, you should always prefer to modify the referencing property instead. For example, if we wanted to remove a product from the order, you could locate the product and remove a given order from its Orders set, but it makes more sense (and is a more performant option) to locate the order and remove the product from its Products array.
 
-VeloxDB maintains inverse references for each reference property, by default. This is true even if you do not create an inverse reference property. If you do not want to maintain this index for some property, you can set the <xref:VeloxDB.ObjectInterface.DatabaseReferenceAttribute.TrackInverseReferences> property of the DatabaseReferenceAttribute attribute to false, when defining the reference property. For example, if we wanted to exclude the reference OrderedBy of the SalesOrder class, from the inverse references index, this is how we would accomplish this:
+VeloxDB maintains inverse references for each reference property, by default. This is true even if you do not create an inverse reference property. If you do not want to maintain this index for some property, you can set the <xref:VeloxDB.ObjectInterface.DatabaseReferenceAttribute.TrackInverseReferences> property of the DatabaseReferenceAttribute attribute to false, when defining the reference property. For example, if we wanted to exclude the reference OrderedBy of the Order class, from the inverse references index, this is how we would accomplish this:
 
 ```cs
 [DatabaseClass]
-public abstract class SalesOrder : DatabaseObject
+public abstract class Order : DatabaseObject
 {
     [DatabaseReference(isNullable: false, deleteTargetAction: DeleteTargetAction.PreventDelete, trackInverseReferences: false)]
     public abstract Entity OrderedBy { get; set; }
@@ -434,7 +444,7 @@ public abstract class SalesOrder : DatabaseObject
 >In the current implementation of the inverse reference index, even the references that are excluded from the inverse reference index produce some overhead. This is planned to be fixed in the near future.
 
 >[!CAUTION]
->Excluding a reference property from the inverse reference index needs to be done with extreme caution. This can severely impact the performance of delete operations of the referenced class. Whenever an object is being deleted from the database, the database will check the inverse reference index to see if there are objects in the database that reference the deleted object. If that is the case, these references need to be handled, before the delete operation is allowed. If a reference property is excluded from the index, database needs to perform a class scan (equivalent to full table scan in relational databases) to check whether there is an object referencing the deleted object. In our last example, if we were to delete an Entity object, the database would have to scan through an entire SalesOrder class to verify that no order is currently referencing the deleted entity. We already talked about how large class scans can create problems when executing inside a read-write transaction, so be sure to test your specific use case.
+>Excluding a reference property from the inverse reference index needs to be done with extreme caution. This can severely impact the performance of delete operations of the referenced class. Whenever an object is being deleted from the database, the database will check the inverse reference index to see if there are objects in the database that reference the deleted object. If that is the case, these references need to be handled, before the delete operation is allowed. If a reference property is excluded from the index, database needs to perform a class scan (equivalent to full table scan in relational databases) to check whether there is an object referencing the deleted object. In our last example, if we were to delete an Entity object, the database would have to scan through an entire Order class to verify that no order is currently referencing the deleted entity. We already talked about how large class scans can create problems when executing inside a read-write transaction, so be sure to test your specific use case.
 
 ### Estimating Inverse Reference Memory Requirements
 
@@ -460,11 +470,11 @@ You've already seen how VeloxDB provides specialized indexes for specific use ca
 Hash indexes are defined on database classes and get inherited by the derived classes. You define a hash index by decorating a database class with a <xref:VeloxDB.ObjectInterface.HashIndexAttribute> attribute. First argument of the HashIndexAttribute constructor is the name of the hash index. The namespace name of the indexed class is combined with the provided index name to generate full index name. Full index name must be unique in the database. Second parameter, specifies whether a uniqueness constraint should be enforced on the index. If set to true, the database will prevent any attempts to insert a key that already exists. Uniqueness constraint is enforced for the defining class as well as any descendant classes, meaning that the key needs to be unique for all these classes. The remaining arguments of the HashIndexAttribute constructor are the names of indexed properties (up to four names). Let's now define some hash indexes on our previously defined data model:
 
 ```cs
-[DatabaseClass(isAbstract = true)]
+[DatabaseClass(isAbstract: true)]
 [HashIndex(UserNameIndex, true, nameof(UserName))]
 public abstract class Entity : DatabaseObject
 {
-    public const string UserNameIndex = "UserNameIndex";
+    public const string UserNameIndex = "EntityNameIndex";
 
     [DatabaseProperty]
     public abstract string UserName { get; set; }
@@ -476,7 +486,7 @@ public abstract class Entity : DatabaseObject
 [HashIndex(TaxNumberIndex, true, nameof(TaxNumber))]
 public abstract class LegalEntity : Entity
 {
-    public const string TaxNumberIndex = "TaxNameIndex";
+    public const string TaxNumberIndex = "LegalEntityTaxNumberIndex";
 
     [DatabaseProperty]
     public abstract long TaxNumber { get; set; }
@@ -488,7 +498,7 @@ public abstract class LegalEntity : Entity
 [HashIndex(NameIndex, false, nameof(FirstName), nameof(LastName))]
 public abstract class Person : Entity
 {
-    public const string NameIndex = "PersonNameIndex";
+    public const string NameIndex = "PersonFirstLastNameIndex";
 
     [DatabaseProperty]
     public abstract string FirstName { get; set; }
@@ -522,7 +532,7 @@ We are enforcing a unique user name for any entity in the database, which means 
 
 ### Estimating Hash Index Memory Requirements
 
-Estimating the memory requirements of a hash index is relatively easy. Given the rate of change of indexed classes, changeRate, and total number of indexed objects, indexedObjCount total memory size is given with the following formula:
+Estimating the memory requirements of a hash index is relatively easy. Given the rate of change of indexed classes, changeRate, and total number of indexed objects, indexedObjCount, total memory size is given with the following formula:
 
 ```
 size = indexedObjCount * 24 + changeRate * maxTranDuration * 16

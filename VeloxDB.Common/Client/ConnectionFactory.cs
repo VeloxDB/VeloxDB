@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -29,6 +29,8 @@ public static class ConnectionFactory
 	static Dictionary<Type, InterfaceEntry> interfaces;
 	static Dictionary<Guid, ServerEntry> servers;
 
+	static HashSet<Assembly> classAssemblies = new HashSet<Assembly>(ReferenceEqualityComparer<Assembly>.Instance);
+
 	static ConnectionFactory()
 	{
 		Reset();
@@ -42,17 +44,21 @@ public static class ConnectionFactory
 	{
 		interfaces = new Dictionary<Type, InterfaceEntry>(2);
 		servers = new Dictionary<Guid, ServerEntry>(2);
+		classAssemblies = new HashSet<Assembly>(ReferenceEqualityComparer<Assembly>.Instance);
 		ConnectionPoolCollection.Reset();
 	}
 
 	/// <summary>
-	/// Creates VeloxDB connection using supplied connection string. Use <see cref="VeloxDB.Client.ConnectionStringParams"/> to create connection string.
+	/// Creates VeloxDB connection using supplied connection string. 
+	/// Use <see cref="VeloxDB.Client.ConnectionStringParams"/> to create connection string.
 	/// </summary>
 	/// <typeparam name="T">Interface od database API to connect to.</typeparam>
 	/// <param name="connectionString">Connection string.</param>
+	/// <param name="assemblyProvider">Assembly provider that can be used to provide the protocol serializer
+	/// with additional assemblies containing protocl classes.</param>
 	/// <returns>Proxy object implementing T.</returns>
 	/// <exception cref="ArgumentException">T is not an interface.</exception>
-	public static T Get<T>(string connectionString) where T : class
+	public static T Get<T>(string connectionString, IAssemblyProvider assemblyProvider = null) where T : class
 	{
 		Type type = typeof(T);
 
@@ -74,7 +80,18 @@ public static class ConnectionFactory
 			}
 		}
 
-		return (T)(object)interfaceEntry.GetConnection(connectionString);
+		ConnectionBase conn = interfaceEntry.GetConnection(connectionString);
+		if (assemblyProvider != null && !conn.AssemblyProviderRegistered)
+		{
+			lock (classAssemblies)
+			{
+				classAssemblies.UnionWith(assemblyProvider.GetAssemblies());
+			}
+
+			conn.AssemblyProviderRegistered = true;
+		}
+
+		return (T)(object)conn;
 	}
 
 	internal static OperationData GetOperationData(ConnectionEntry connectionEntry, string connectionString, Type interfaceType, int operationId)
@@ -652,7 +669,7 @@ public static class ConnectionFactory
 				if (interfaces.TryGetValue(type, out entry))
 					return entry;
 
-				entry = CreateInterfaceEntry(type);
+				entry = CreateInterfaceEntry(type, new ClassAssemblyProvider());
 				Dictionary<Type, ServerInterfaceEntry> temp = new Dictionary<Type, ServerInterfaceEntry>(interfaces);
 				temp.Add(type, entry);
 				Thread.MemoryBarrier();
@@ -662,9 +679,11 @@ public static class ConnectionFactory
 			}
 		}
 
-		private ServerInterfaceEntry CreateInterfaceEntry(Type type)
+		private ServerInterfaceEntry CreateInterfaceEntry(Type type, IAssemblyProvider assemblyProvider)
 		{
-			ProtocolInterfaceDescriptor clientInterfaceDesc = discoveryContext.GetInterfaceDescriptor(type, 0, out var inTypes, out var outTypes);
+			ProtocolInterfaceDescriptor clientInterfaceDesc =
+				discoveryContext.GetInterfaceDescriptor(type, 0, out var inTypes, out var outTypes, assemblyProvider);
+
 			ProtocolInterfaceDescriptor serverInterfaceDesc = protocolDescriptor.GetInterface(clientInterfaceDesc.Name);
 			if (serverInterfaceDesc == null)
 				throw new DbAPINotFoundException();
@@ -752,5 +771,16 @@ public static class ConnectionFactory
 		public Delegate Serializer { get; set; }
 		public Delegate Deserializer { get; set; }
 		public Delegate[] DeserializerTable { get; set; }
+	}
+
+	private sealed class ClassAssemblyProvider : IAssemblyProvider
+	{
+		public IEnumerable<Assembly> GetAssemblies()
+		{
+			lock (classAssemblies)
+			{
+				return new List<Assembly>(classAssemblies);
+			}
+		}
 	}
 }

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Reflection;
 
 namespace VeloxDB.Client;
@@ -19,4 +19,6 @@ internal abstract class ConnectionBase
 	}
 
 	public string ConnectionString => connectionString;
+
+	internal bool AssemblyProviderRegistered { get; set; }
 }

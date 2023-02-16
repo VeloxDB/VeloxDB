@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -115,7 +115,7 @@ internal sealed class DbAPIHost
 		}
 	}
 
-	public static void PrepareSerialization(Type requiredParamType, Type[] types,
+	public static void PrepareSerialization(Type requiredParamType, Type[] types, IAssemblyProvider assemblyProvider,
 		out SerializerManager serializerManager, out DeserializerManager deserializerManager, out ProtocolDiscoveryContext discoveryContext)
 	{
 		deserializerManager = new DeserializerManager();
@@ -127,7 +127,7 @@ internal sealed class DbAPIHost
 			Type type = types[i];
 
 			ProtocolInterfaceDescriptor interfaceDesc = discoveryContext.GetInterfaceDescriptor(type,
-				requiredParamType != null ? 1 : 0, out var inTypes, out var outTypes);
+				requiredParamType != null ? 1 : 0, out var inTypes, out var outTypes, assemblyProvider);
 
 			serializerManager.GetInterfaceSerializers(interfaceDesc, outTypes, ProtocolInterfaceDirection.Response, 0);
 			deserializerManager.GetInterfaceDeserializers(interfaceDesc, inTypes,
@@ -183,24 +183,24 @@ internal sealed class DbAPIHost
 	}
 
 	public void HostService(string serviceName, object[] apis, APIRequestCallback requestCallback, Guid versionGuid,
-		SerializerManager serializerManager = null, DeserializerManager deserializerManager = null,
+		IAssemblyProvider assemblyProvider = null, SerializerManager serializerManager = null, DeserializerManager deserializerManager = null,
 		ProtocolDiscoveryContext discoveryContext = null, bool isInitiallyStopped = false)
 	{
-		HostServiceInternal(serviceName, null, apis, requestCallback, versionGuid, serializerManager, deserializerManager,
+		HostServiceInternal(serviceName, null, apis, requestCallback, versionGuid, assemblyProvider, serializerManager, deserializerManager,
 			discoveryContext, isInitiallyStopped);
 	}
 
 	public void HostService(string serviceName, Type requiredParamType, object[] apis, ParametrizedAPIRequestCallback requestCallback,
-		Guid versionGuid, SerializerManager serializerManager = null, DeserializerManager deserializerManager = null,
-		ProtocolDiscoveryContext discoveryContext = null, bool isInitiallyStopped = false)
+		Guid versionGuid, IAssemblyProvider assemblyProvider = null, SerializerManager serializerManager = null,
+		DeserializerManager deserializerManager = null, ProtocolDiscoveryContext discoveryContext = null, bool isInitiallyStopped = false)
 	{
 		HostServiceInternal(serviceName, requiredParamType, apis, requestCallback,
-			versionGuid, serializerManager, deserializerManager, discoveryContext, isInitiallyStopped);
+			versionGuid, assemblyProvider, serializerManager, deserializerManager, discoveryContext, isInitiallyStopped);
 	}
 
 	internal void HostServiceInternal(string serviceName, Type requiredParamType, object[] apis, Delegate requestCallback,
-		Guid versionGuid, SerializerManager serializerManager = null, DeserializerManager deserializerManager = null,
-		ProtocolDiscoveryContext discoveryContext = null, bool isInitiallyStopped = false)
+		Guid versionGuid, IAssemblyProvider assemblyProvider = null, SerializerManager serializerManager = null,
+		DeserializerManager deserializerManager = null, ProtocolDiscoveryContext discoveryContext = null, bool isInitiallyStopped = false)
 	{
 		sync.EnterWriteLock();
 
@@ -209,7 +209,10 @@ internal sealed class DbAPIHost
 			Type[] types = Array.ConvertAll(apis, api => api.GetType());
 
 			if (serializerManager == null)
-				PrepareSerialization(requiredParamType, types, out serializerManager, out deserializerManager, out discoveryContext);
+			{
+				PrepareSerialization(requiredParamType, types, assemblyProvider,
+					out serializerManager, out deserializerManager, out discoveryContext);
+			}
 
 			ProtocolDescriptor protocolDescriptor = new ProtocolDescriptor(versionGuid, discoveryContext.Interfaces);
 
@@ -226,7 +229,7 @@ internal sealed class DbAPIHost
 
 			for (int i = 0; i < apis.Length; i++)
 			{
-				HostAPI(service, discoveryContext.GetInterfaceDescriptor(apis[i].GetType()), apis[i], requiredParamType, requestCallback);
+				HostAPI(service, discoveryContext.GetInterfaceDescriptor(apis[i].GetType(), null), apis[i], requiredParamType, requestCallback);
 			}
 		}
 		finally

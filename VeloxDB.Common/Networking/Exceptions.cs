@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 
 namespace VeloxDB.Networking;
 
@@ -52,10 +52,10 @@ public class CommunicationObjectAbortedException : CommunicationException
 		this.abortedPhase = abortedPhase;
 	}
 
-	/// <summary>
-	/// Indicates at what phase has connection been aborted.
-	/// </summary>
-	public AbortedPhase AbortedPhase => abortedPhase;
+/// <summary>
+/// Indicates at what phase has connection been aborted.
+/// </summary>
+public AbortedPhase AbortedPhase => abortedPhase;
 }
 
 internal class ConnectionNotOpenException : CommunicationException

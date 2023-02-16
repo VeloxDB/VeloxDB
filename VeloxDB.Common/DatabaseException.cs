@@ -94,9 +94,9 @@ public enum DatabaseErrorType
 	IndexPropertyWrongType = 8,
 
 	/// <summary>
-	/// Assembly with same name already exists.
+	/// Assembly with same name already exist.
 	/// </summary>
-	[ErrorCode("Assembly with a name {5} already exists.")]
+	[ErrorCode("Assembly with a name {5} already exist.")]
 	AssemblyNameAlreadyExists = 9,
 
 	/// <summary>
@@ -131,7 +131,7 @@ public enum DatabaseErrorType
 	NonUniqueLogName = 14,
 
 	/// <summary>
-	/// Write operation attempted on the abstract class.
+	/// Write operation attempted on an abstract class.
 	/// </summary>
 	[ErrorCode("Write operation attempted on the abstract class {5}.")]
 	AbstractClassWriteAttempt = 15,
@@ -538,7 +538,7 @@ public enum DatabaseErrorType
 	/// Type is not public.
 	/// </summary>
 	[ErrorCode("Type {5} is not public.")]
-	DbAPINonAccessibleType = 2004,
+	DbAPIUnaccessibleType = 2004,
 
 	/// <summary>
 	/// Type is generic. Generic types are not supported.
@@ -607,15 +607,15 @@ public enum DatabaseErrorType
 	NullReferenceNotAllowed = 5001,
 
 	/// <summary>
-	/// Object could not be updated because it does not exists in the database.
+	/// Object could not be updated because it does not exist in the database.
 	/// </summary>
-	[ErrorCode("Object {0} of class {5} could not be updated because it does not exists in the database.")]
+	[ErrorCode("Object {0} of class {5} could not be updated because it does not exist in the database.")]
 	UpdateNonExistent = 5002,
 
 	/// <summary>
-	/// Object could not be deleted because it does not exists in the database.
+	/// Object could not be deleted because it does not exist in the database.
 	/// </summary>
-	[ErrorCode("Object {0} of class {5} could not be deleted because it does not exists in the database.")]
+	[ErrorCode("Object {0} of class {5} could not be deleted because it does not exist in the database.")]
 	DeleteNonExistent = 5003,
 
 	/// <summary>
@@ -716,7 +716,7 @@ public enum DatabaseErrorType
 	TransactionNotAllowed = 10006,
 
 	/// <summary>
-	/// Maximum number of concurrent transaction has been exceeded.
+	/// Maximum number of concurrent transactions has been exceeded.
 	/// </summary>
 	[ErrorCode("Maximum number of concurrent transaction has been exceeded.")]
 	ConcurrentTranLimitExceeded = 10007,
