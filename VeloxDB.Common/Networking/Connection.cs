@@ -865,10 +865,7 @@ internal abstract class Connection
 			{
 				chunkPool.Put(chunk);
 				if (e is SocketException)
-				{
-					CloseAsync();
 					throw new CommunicationObjectAbortedException(AbortedPhase.Communication, "Failed to send data over a socket.", e);
-				}
 
 				throw;
 			}
