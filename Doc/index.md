@@ -1,5 +1,5 @@
 ---
-title: VeloxDB | Complex systems made easy
+title: VeloxDB | Lightning Fast Database for .NET
 documentType: index
 ---
 <div class="container container-maxwidth">
