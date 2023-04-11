@@ -23,7 +23,7 @@ public class Program
 			addresses = args[0].Split('/');
 
 		if (args.Length > 1)
-			vehicleCount *= int.Parse(args[1]);
+			vehicleCount = (int)(vehicleCount * float.Parse(args[1]));
 
 		if (args.Length > 2)
 			workerCount = int.Parse(args[2]);
@@ -139,8 +139,8 @@ public class Program
 		for (int i = 0; i < workerCount; i++)
 		{
 			finishedEvent.WaitOne();
-			statistics.Stop();
 		}
+		statistics.Stop();
 
 		return ids;
 	}
@@ -180,7 +180,6 @@ public class Program
 		for (int i = 0; i < workerCount; i++)
 		{
 			finishedEvent.WaitOne();
-			statistics.Stop();
 		}
 
 		statistics.Stop();
@@ -218,7 +217,6 @@ public class Program
 		for (int i = 0; i < workerCount; i++)
 		{
 			finishedEvent.WaitOne();
-			statistics.Stop();
 		}
 
 		statistics.Stop();
@@ -254,7 +252,6 @@ public class Program
 		for (int i = 0; i < workerCount; i++)
 		{
 			finishedEvent.WaitOne();
-			statistics.Stop();
 		}
 
 		statistics.Stop();
@@ -290,7 +287,6 @@ public class Program
 		for (int i = 0; i < workerCount; i++)
 		{
 			finishedEvent.WaitOne();
-			statistics.Stop();
 		}
 
 		statistics.Stop();
@@ -327,7 +323,6 @@ public class Program
 		for (int i = 0; i < workerCount; i++)
 		{
 			finishedEvent.WaitOne();
-			statistics.Stop();
 		}
 
 		statistics.Stop();
@@ -363,7 +358,6 @@ public class Program
 		for (int i = 0; i < workerCount; i++)
 		{
 			finishedEvent.WaitOne();
-			statistics.Stop();
 		}
 
 		statistics.Stop();
@@ -399,7 +393,6 @@ public class Program
 		for (int i = 0; i < workerCount; i++)
 		{
 			finishedEvent.WaitOne();
-			statistics.Stop();
 		}
 
 		statistics.Stop();
@@ -435,7 +428,6 @@ public class Program
 		for (int i = 0; i < workerCount; i++)
 		{
 			finishedEvent.WaitOne();
-			statistics.Stop();
 		}
 
 		statistics.Stop();
@@ -471,7 +463,6 @@ public class Program
 		for (int i = 0; i < workerCount; i++)
 		{
 			finishedEvent.WaitOne();
-			statistics.Stop();
 		}
 
 		statistics.Stop();

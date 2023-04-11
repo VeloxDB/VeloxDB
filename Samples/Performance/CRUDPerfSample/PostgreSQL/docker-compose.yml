@@ -1,0 +1,19 @@
+version: "2"
+services:
+  postgres:
+    image: postgres
+    environment:
+      - POSTGRES_PASSWORD=mysecretpassword
+    networks:
+      - test-network
+  client:
+    build:
+      context: ./
+    command: postgres 0.03125 8000
+    depends_on:
+      - postgres
+    networks:
+      - test-network
+networks:
+  test-network:
+    driver: bridge

@@ -1,0 +1,11 @@
+{
+	"Version": 1,
+	"Cluster": {
+		"Children": null,
+		"Type": "Node",
+		"ReplicationAddress": "0.0.0.0:7570",
+		"AdministrationAdress": "0.0.0.0:7569",
+		"ExecutionAdress": "0.0.0.0:7568",
+		"Name": "Node"
+	}
+}

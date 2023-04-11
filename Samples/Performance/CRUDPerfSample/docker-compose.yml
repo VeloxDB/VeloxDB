@@ -1,0 +1,21 @@
+version: "2"
+services:
+  perfserver:
+    build:
+      context: ./
+      dockerfile: ./Dockerfile.server
+    networks:
+      - test-network
+  perfclient:
+    build:
+      context: ./
+      dockerfile: ./Dockerfile.client
+    command: ["sleep 10; ./Client perfserver 1 8000"]
+    entrypoint: ["/bin/bash", "-c"]
+    depends_on:
+      - perfserver
+    networks:
+      - test-network
+networks:
+  test-network:
+    driver: bridge
