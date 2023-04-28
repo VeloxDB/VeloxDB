@@ -172,7 +172,7 @@ internal sealed class DbAPIHost
 					operName = dboa.Name;
 
 				if (operNames.Contains(operName))
-					throw DbAPIDefinitionException.CreateAPINameDuplicate(operName);
+					throw DbAPIDefinitionException.CreateOperationNameDuplicate(operName, name);
 
 				operNames.Add(operName);
 
