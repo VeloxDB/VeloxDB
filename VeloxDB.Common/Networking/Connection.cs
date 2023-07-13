@@ -854,7 +854,8 @@ internal abstract class Connection
 		{
 			try
 			{
-				socket.Send(new ReadOnlySpan<byte>(chunk.PBuffer, chunk.ChunkSize));
+				lock(socket)
+					socket.Send(new ReadOnlySpan<byte>(chunk.PBuffer, chunk.ChunkSize));
 
 				if (chunk.IsLast)
 					chunkPool.Put(chunk);

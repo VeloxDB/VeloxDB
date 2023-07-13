@@ -137,7 +137,8 @@ internal unsafe sealed class GroupingSender
 		int n;
 		try
 		{
-			n = socket.Send(sendSegments);
+			lock(socket)
+				n = socket.Send(sendSegments);
 		}
 		catch (SocketException)
 		{
