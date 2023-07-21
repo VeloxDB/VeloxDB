@@ -71,6 +71,8 @@ internal sealed class ChangeList
 		count = 0;
 	}
 
+	private int GetPerTypeList(int index) => (index < perTypeLists.Length) ? perTypeLists[index] : -1;
+
 	private struct ListItem
 	{
 		public int next;
@@ -91,7 +93,7 @@ internal sealed class ChangeList
 			this.classDesc = classDesc;
 
 			typeIndex = -1;
-			listIndex = list.perTypeLists[classDesc.Index];
+			listIndex = list.GetPerTypeList(classDesc.Index);
 
 			MoveToNonEmptyType();
 		}
@@ -113,7 +115,7 @@ internal sealed class ChangeList
 			{
 				typeIndex++;
 				ClassDescriptor cd = classDesc.Model.GetClass(classDesc.DescendentClassIds[typeIndex]);
-				listIndex = list.perTypeLists[cd.Index];
+				listIndex = list.GetPerTypeList(cd.Index);
 			}
 		}
 	}
