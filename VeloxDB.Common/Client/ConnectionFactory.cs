@@ -49,7 +49,20 @@ public static class ConnectionFactory
 	}
 
 	/// <summary>
-	/// Creates VeloxDB connection using supplied connection string. 
+	/// Creates VeloxDB connection using supplied connection string.
+	/// Use <see cref="VeloxDB.Client.ConnectionStringParams"/> to create connection string.
+	/// </summary>
+	/// <typeparam name="T">Interface od database API to connect to.</typeparam>
+	/// <param name="connectionString">Connection string.</param>
+	/// <returns>Proxy object implementing T.</returns>
+	/// <exception cref="ArgumentException">T is not an interface.</exception>
+	public static T Get<T>(string connectionString) where T : class
+	{
+		return Get<T>(connectionString, null);
+	}
+
+	/// <summary>
+	/// Creates VeloxDB connection using supplied connection string.
 	/// Use <see cref="VeloxDB.Client.ConnectionStringParams"/> to create connection string.
 	/// </summary>
 	/// <typeparam name="T">Interface od database API to connect to.</typeparam>
@@ -58,7 +71,7 @@ public static class ConnectionFactory
 	/// with additional assemblies containing protocl classes.</param>
 	/// <returns>Proxy object implementing T.</returns>
 	/// <exception cref="ArgumentException">T is not an interface.</exception>
-	public static T Get<T>(string connectionString, IAssemblyProvider assemblyProvider = null) where T : class
+	public static T Get<T>(string connectionString, IAssemblyProvider assemblyProvider) where T : class
 	{
 		Type type = typeof(T);
 
