@@ -13,7 +13,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="veloxdb.protocol" Version="0.2.1" />
+    <PackageReference Include="veloxdb.protocol" Version="0.2.2" />
   </ItemGroup>
 
 </Project>

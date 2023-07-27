@@ -120,7 +120,7 @@ dotnet run
 You should see an output similar to this:
 
 ```accesslog
-23-01-01 20:58:32.018 [7C03] [Info] Starting VeloxDB 0.2.1.0
+23-01-01 20:58:32.018 [7C03] [Info] Starting VeloxDB 0.2.2.0
 23-01-01 20:58:32.263 [7C03] [Info] Storage engine started.
 23-01-01 20:58:32.301 [7C03] [Info] Looking for changes in C:\VeloxDB\vlxblog\bin\x64\Debug\net7.0\
 23-01-01 20:58:32.472 [7C03] [Info] User assemblies updated.
