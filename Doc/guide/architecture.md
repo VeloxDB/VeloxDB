@@ -11,7 +11,7 @@ Following figure gives a high level overview of VeloxDB internal architecture.
 <center><b>Figure</b> - VeloxDB high level overview</center>
 </br>
 
-Lets discuss the components present in the figure. Client application uses VeloxDB client API to open connections to, and interact with the database. Currently only .NET client API is supported. The client API translates object oriented method calls and method arguments into a stream of bytes that can be transferred over the network. This process is done using the built in VeloxDB Protocol serializer which is covered in more details in chapter [Database APIs](database_apis.md##serialization-and-deserialization).
+Lets discuss the components present in the figure. Client application uses VeloxDB client API to open connections to, and interact with the database. Currently only .NET client API is supported. The client API translates object oriented method calls and method arguments into a stream of bytes that can be transferred over the network. This process is done using the built in VeloxDB Protocol serializer which is covered in more details in chapter [Database APIs](database_apis.md#protocol-serializer).
 
 On the database side, Network Layer is responsible for translating back the stream of bytes into method calls and method arguments and invoking appropriate API implementations. For each client request, Network Layer assigns a single worker thread to execute the request until completion. Users should avoid creating or using additional threads inside the API implementations. Besides hosting user defined APIs, VeloxDB defines a special administrative API that is used by the client administration tool (vlx tool) to manage the database.
 

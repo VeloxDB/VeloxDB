@@ -632,7 +632,7 @@ string connectionString = cp.GenerateConnectionString()!;
 IOrderManagementSystem orderManagement = ConnectionFactory.Get<IOrderManagementSystem>(connectionString);
 ```
 
-As you can see, you obtain a connection to an API by calling the <xref:VeloxDB.Client.ConnectionFactory.Get`1> static method and providing the connection string. Connection string represents a collection of property values delimited by semicolon, e.g. "address=localhost:7568;open_timeout=5000;pool_size=4". Following parameters are available:
+As you can see, you obtain a connection to an API by calling the <VeloxDB.Client.ConnectionFactory.Get``1(System.String)> static method and providing the connection string. Connection string represents a collection of property values delimited by semicolon, e.g. "address=localhost:7568;open_timeout=5000;pool_size=4". Following parameters are available:
 ** address - Address (in the format hostname:port or ipaddress:port) of the database server. You can specify more than one address when working with a database cluster. See [Database Cluster](database_cluster.md) fir more details.
 
 * pool_size - To avoid opening a new TCP connection every time an API connection is requested, a pool of TCP connections to the database server is kept internally. When a user requests a connection, an existing connection from the pool is used (if available). This property represents the number of TCP connections kept in the pool. The default value for this property is 4 and you will rarely need to change this. Note that this number does not limit your application to 4 concurrent requests against the database at any point in time.
@@ -695,7 +695,7 @@ Protocol exceptions are thrown on the client (during operation invocation) and r
 
 ### User-defined Exceptions
 
-VeloxDB allows you to report user-defined errors from the database operation to the client by throwing .NET exceptions. These exceptions, when thrown inside the database operation, are propagated to the client and can be caught there for further processing. User defined exceptions must inherit from the DbAPIErrorException base class and must be serializable (according to the protocol serializer rules discussed in the previous sections). Additionally, you must explicitly designate each database operation that will allow this exception type to be propagated to the client, by using the <xref:VeloxDB.Protocol.DbAPIOperationError> attribute. Failing to do so will result in client catching an exception of type DbAPIUnknownErrorException instead of the one being thrown on the server.
+VeloxDB allows you to report user-defined errors from the database operation to the client by throwing .NET exceptions. These exceptions, when thrown inside the database operation, are propagated to the client and can be caught there for further processing. User defined exceptions must inherit from the DbAPIErrorException base class and must be serializable (according to the protocol serializer rules discussed in the previous sections). Additionally, you must explicitly designate each database operation that will allow this exception type to be propagated to the client, by using the <xref:VeloxDB.Protocol.DbAPIOperationErrorAttribute> attribute. Failing to do so will result in client catching an exception of type DbAPIUnknownErrorException instead of the one being thrown on the server.
 
 We will now improve our previously defined CreatePerson operation by checking whether an entity with a give user name already exists in the database. First lets define our user defined exception type:
 

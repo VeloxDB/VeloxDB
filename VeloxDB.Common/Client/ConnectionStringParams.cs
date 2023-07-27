@@ -101,7 +101,7 @@ public sealed class ConnectionStringParams
 	}
 
 	/// <summary>
-	/// Create connection string. This string should be passed to <see cref="VeloxDB.Client.ConnectionFactory.Get">ConnectionFactory.Get</see>.
+	/// Create connection string. This string should be passed to <see cref="VeloxDB.Client.ConnectionFactory.Get(string)">ConnectionFactory.Get</see>.
 	/// </summary>
 	public string GenerateConnectionString()
 	{
