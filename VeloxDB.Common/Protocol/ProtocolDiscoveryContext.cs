@@ -27,17 +27,19 @@ internal sealed class ProtocolDiscoveryContext
 	ushort outTypeIdCounter = 1;
 	ushort interfaceIdCounter = 1;
 
-	Dictionary<Type, ProtocolTypeDescriptor> types;
+	Dictionary<Type, ProtocolTypeDescriptor> inTypes;
+	Dictionary<Type, ProtocolTypeDescriptor> outTypes;
 	Dictionary<Type, ProtocolInterfaceDescriptor> interfaces;
 
 	Dictionary<Type, ProtocolTypeDescriptor> newInTypes, newOutTypes;
-	Dictionary<string, Type> newTypesByName;
+	Dictionary<string, Type> typesByName;
 
 	public ProtocolDiscoveryContext()
 	{
-		types = new Dictionary<Type, ProtocolTypeDescriptor>(64, ReferenceEqualityComparer<Type>.Instance);
+		inTypes = new Dictionary<Type, ProtocolTypeDescriptor>(64, ReferenceEqualityComparer<Type>.Instance);
+		outTypes = new Dictionary<Type, ProtocolTypeDescriptor>(64, ReferenceEqualityComparer<Type>.Instance);
 		interfaces = new Dictionary<Type, ProtocolInterfaceDescriptor>(0, ReferenceEqualityComparer<Type>.Instance);
-		newTypesByName = new Dictionary<string, Type>(32);
+		typesByName = new Dictionary<string, Type>(32);
 	}
 
 	public ProtocolInterfaceDescriptor[] Interfaces => interfaces.Values.ToArray();
@@ -117,14 +119,14 @@ internal sealed class ProtocolDiscoveryContext
 		}
 
 		td = CreateTypeDescriptor(type, isInput);
-		if (newTypesByName.TryGetValue(td.Name, out Type existingType))
+		if (typesByName.TryGetValue(td.Name, out Type existingType))
 		{
 			if (!object.ReferenceEquals(existingType, type))
 				throw DbAPIDefinitionException.CreateTypeNameDuplicate(td.Name);
 		}
 		else
 		{
-			newTypesByName.Add(td.Name, type);
+			typesByName.Add(td.Name, type);
 		}
 
 		return td;
@@ -184,6 +186,8 @@ internal sealed class ProtocolDiscoveryContext
 
 	private ProtocolTypeDescriptor CreateTypeDescriptor(Type type, bool isInput)
 	{
+		var types = isInput ? inTypes : outTypes;
+
 		if (!types.TryGetValue(type, out ProtocolTypeDescriptor desc))
 		{
 			if (type.IsArray)
@@ -207,6 +211,7 @@ internal sealed class ProtocolDiscoveryContext
 			else
 				newOutTypes.Add(type, desc);
 
+			types.Add(type, desc);
 			desc.Init(type, this, isInput);
 		}
 		else
