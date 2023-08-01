@@ -280,6 +280,12 @@ internal unsafe sealed class TransactionContext : IDisposable
 		if (tc.changeset == null)
 			return;
 
+		for (int i = 0; i < tc.changeset.LogChangesets.Length; i++)
+		{
+			var lch = tc.changeset.LogChangesets[i];
+			affectedLogGroups = (byte)(affectedLogGroups | (1 << lch.LogIndex));
+		}
+
 		if (changeset == null)
 		{
 			changeset = tc.changeset;
@@ -288,12 +294,6 @@ internal unsafe sealed class TransactionContext : IDisposable
 		else
 		{
 			changeset.Merge(tc.changeset);
-		}
-
-		for (int i = 0; i < tc.changeset.LogChangesets.Length; i++)
-		{
-			var lch = tc.changeset.LogChangesets[i];
-			affectedLogGroups = (byte)(affectedLogGroups | (1 << lch.LogIndex));
 		}
 	}
 
