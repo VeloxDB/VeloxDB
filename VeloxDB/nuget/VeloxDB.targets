@@ -2,7 +2,7 @@
 	<PropertyGroup>
     <StartAction>Program</StartAction>
     <StartProgram>dotnet</StartProgram>
-    <StartArguments>$(PkgVeloxDB)/tools/vlxdbsrv.dll --interactive --update-assemblies $(TargetDir) --init-persistence $(TargetDir)vlxdata</StartArguments>
+    <StartArguments>$(PkgVeloxDB)/tools/vlxdbsrv.dll --interactive --update-assemblies "$(TargetDir)" --init-persistence "$(TargetDir)vlxdata"</StartArguments>
     <StartWorkingDirectory></StartWorkingDirectory>
 	</PropertyGroup>
 
