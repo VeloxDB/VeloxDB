@@ -133,7 +133,7 @@ internal sealed class CommitWorkers
 
 		userDatabase.TransactionCompleted(tran);
 	}
-	
+
 	private void Worker(object obj)
 	{
 		bool isMain = (bool)obj;
@@ -474,10 +474,10 @@ internal sealed class CommitWorkers
 			head = null;
 			operationCount = 0;
 			transactionCount = 0;
-			if (publishTran != null)
-				commitWorkers.EnqueueGlobal(publishTran);
 
 			sync.ExitAndRemoveFlag();
+			commitWorkers.EnqueueGlobal(publishTran);
+
 		}
 
 		public Transaction TryTake()
