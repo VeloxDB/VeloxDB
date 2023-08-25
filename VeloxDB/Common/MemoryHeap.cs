@@ -1,8 +1,8 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Threading;
-
 namespace VeloxDB.Common;
 
 internal unsafe sealed class MemoryHeap
@@ -28,13 +28,16 @@ internal unsafe sealed class MemoryHeap
 
 	public IntPtr Allocate(int size)
 	{
-		size += sizeof(int);
+		size += sizeof(long);
+
+		if (size % 8 != 0)
+			size += 8 - size % 8;
 
 		if (size > MaxManagedSize)
 		{
 			IntPtr p = NativeAllocator.Allocate(size);
 			*((int*)p) = int.MaxValue;
-			return IntPtr.Add(p, sizeof(int));
+			return IntPtr.Add(p, sizeof(long));
 		}
 
 		lock (sync)
@@ -55,10 +58,17 @@ internal unsafe sealed class MemoryHeap
 			bySize.Remove(sti);
 			byAddress.Remove(ati);
 
+			IntPtr result;
 			if (bufferSize - size < MinManagedSize)
 			{
 				*((int*)p) = bufferSize;
-				return IntPtr.Add(p, sizeof(int));
+				result = IntPtr.Add(p, sizeof(long));
+#if TEST_BUILD
+				byte* limit1 = (byte*)result + (size - sizeof(long));
+				TTTrace.Write((ulong)result, (ulong)limit1);
+				Utils.FillMemory((byte*)result, size - sizeof(long), 0xfa);
+#endif
+				return result;
 			}
 
 			*((int*)p) = size;
@@ -68,13 +78,19 @@ internal unsafe sealed class MemoryHeap
 			bySize.Add(new SizeAddress(bufferSize, tp), 0);
 			byAddress.Add((long)tp, bufferSize);
 
-			return IntPtr.Add(p, sizeof(int));
+			result = IntPtr.Add(p, sizeof(long));
+#if TEST_BUILD
+			byte* limit2 = (byte*)result + (size - sizeof(long));
+			TTTrace.Write((ulong)result, (ulong)limit2);
+			Utils.FillMemory((byte*)result, size - sizeof(long), 0xfa);
+#endif
+			return result;
 		}
 	}
 
 	public void Free(IntPtr buffer)
 	{
-		buffer = IntPtr.Add(buffer, -sizeof(int));
+		buffer = IntPtr.Add(buffer, -sizeof(long));
 		int size = *((int*)buffer);
 
 		if (size == int.MaxValue)
@@ -82,6 +98,16 @@ internal unsafe sealed class MemoryHeap
 			NativeAllocator.Free(buffer);
 			return;
 		}
+
+#if TEST_BUILD
+		if (size < 0 || size > MaxManagedSize)
+			throw new CriticalDatabaseException();
+
+		byte* limit1 = (byte*)buffer + sizeof(long);
+		byte* limit2 = (byte*)limit1 + (size - sizeof(long));
+		TTTrace.Write((ulong)limit1, (ulong)limit2);
+		Utils.FillMemory((byte*)buffer + sizeof(long), size - sizeof(long), 0xdf);
+#endif
 
 		lock (sync)
 		{

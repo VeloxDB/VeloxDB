@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 
@@ -17,6 +17,8 @@ internal sealed class FastDictionary<TKey, TValue>
 
 	public FastDictionary(int capacity, IEqualityComparer<TKey> comparer = null)
 	{
+		capacity = Math.Max(capacity, 1);
+
 		capacity = Math.Max(4, (int)Utils.GetNextPow2((ulong)capacity));
 		this.capacityMask = capacity - 1;
 		this.limitCapacity = (int)(capacity * loadFactor);

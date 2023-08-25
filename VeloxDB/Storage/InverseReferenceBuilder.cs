@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -98,8 +98,7 @@ internal unsafe sealed class InverseReferenceBuilder
 					trackingOverride = filter[scan.Class.ClassDesc.Id].TrackingOverride;
 				}
 
-				int count = objects.Length;
-				while (scan.Next(objects, 0, ref count))
+				while (scan.Next(objects, out int count))
 				{
 					for (int j = 0; j < count; j++)
 					{

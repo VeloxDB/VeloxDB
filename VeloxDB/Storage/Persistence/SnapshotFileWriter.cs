@@ -223,8 +223,7 @@ internal unsafe sealed class SnapshotFileWriter
 
 		TTTrace.Write(database.TraceId, cd.Id, @class.EstimatedObjectCount);
 
-		int count = objects.Length;
-		while (scan.Next(objects, 0, ref count))
+		while (scan.Next(objects, out int count))
 		{
 			TTTrace.Write(database.TraceId, cd.Id, count, @class.EstimatedObjectCount);
 			for (int i = 0; i < count; i++)

@@ -1,6 +1,12 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
 		   xmlns:mstns="http://www.vlxdb.com/DataModel.xsd" elementFormDefault="qualified">
+	<xs:simpleType name="SortOrder">
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="Asc"/>
+			<xs:enumeration value="Desc"/>
+		</xs:restriction>
+	</xs:simpleType>
 	<xs:simpleType name="PropertyType">
 		<xs:restriction base="xs:string">
 			<xs:enumeration value="Byte"/>
@@ -51,6 +57,23 @@
 		</xs:sequence>
 		<xs:attribute name="Id" type="xs:short" />
 		<xs:attribute name="Name" type="xs:string" use="required" />
+		<xs:attribute name="CultureName" type="xs:string" use="optional" />
+		<xs:attribute name="CaseSensitive" type="xs:boolean" use="optional" />
+		<xs:attribute name="IsUnique" type="xs:boolean" use="optional" />
+	</xs:complexType>
+	<xs:complexType name="SortedIndex">
+		<xs:sequence minOccurs="1" maxOccurs="unbounded">
+			<xs:element name="Property">
+				<xs:complexType>
+					<xs:attribute name="Name" type="xs:string" use="required" />
+					<xs:attribute name="Order" type="SortOrder" use="required" />
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+		<xs:attribute name="Id" type="xs:short" />
+		<xs:attribute name="Name" type="xs:string" use="required" />
+		<xs:attribute name="CultureName" type="xs:string" use="optional" />
+		<xs:attribute name="CaseSensitive" type="xs:boolean" use="optional" />
 		<xs:attribute name="IsUnique" type="xs:boolean" use="optional" />
 	</xs:complexType>
 	<xs:complexType name="Class">
@@ -81,7 +104,7 @@
 						<xs:attribute name="Type" type="ArrayPropertyType" use="required" />
 					</xs:complexType>
 				</xs:element>
-				<xs:element name="HashIndex">
+				<xs:element name="Index">
 					<xs:complexType>
 						<xs:attribute name="Name" type="xs:string" use="required" />
 					</xs:complexType>
@@ -97,6 +120,7 @@
 	<xs:complexType name="Namespace">
 		<xs:choice minOccurs="0" maxOccurs="unbounded">
 			<xs:element name="HashIndex" type="HashIndex" />
+			<xs:element name="SortedIndex" type="SortedIndex" />
 			<xs:element name="Class" type="Class" />
 		</xs:choice>
 		<xs:attribute name="Name" type="xs:string" use="required" />

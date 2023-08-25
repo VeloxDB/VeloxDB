@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
@@ -114,7 +114,7 @@ public unsafe sealed class ReferenceArray<T> : ReferenceArray, IList<T> where T 
 		Checker.NotNull(collection, nameof(collection));
 		int capacity = 8;
 		ICollection<T> c = collection as ICollection<T>;
-		if (collection != null)
+		if (c != null)
 			capacity = c.Count;
 
 		ids = new long[Math.Max(4, capacity)];

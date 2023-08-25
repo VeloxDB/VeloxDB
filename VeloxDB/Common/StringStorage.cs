@@ -6,7 +6,12 @@ namespace VeloxDB.Common;
 
 internal unsafe sealed partial class StringStorage : IDisposable
 {
-	public const int ReservedCount = 2;
+	public const string MinimumString = "MinimumString";
+	public const string MaximumString = "MaximumString";
+
+	public const int ReservedCount = 4;
+	const int NullOrEmptyLimit = 2;
+
 	const int freeListLimit = 1024 * 16;
 
 	RefCountedStringArray values;
@@ -33,12 +38,18 @@ internal unsafe sealed partial class StringStorage : IDisposable
 
 		h = perCPUData[0]->AddString(values, string.Empty, 1, freeLists);
 		Checker.AssertTrue(h == 1);
+
+		h = perCPUData[0]->AddString(values, MinimumString, 1, freeLists);
+		Checker.AssertTrue(h == 2);
+
+		h = perCPUData[0]->AddString(values, MaximumString, 1, freeLists);
+		Checker.AssertTrue(h == 3);
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static bool IsNullOrEmpty(ulong handle)
 	{
-		return handle < ReservedCount;
+		return handle < NullOrEmptyLimit;
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -49,6 +60,28 @@ internal unsafe sealed partial class StringStorage : IDisposable
 
 		if (s.Length == 0)
 			return 1;
+
+		int procNum = ProcessorNumber.GetCore();
+		ulong handle = perCPUData[procNum]->AddString(values, s, 1, freeLists);
+
+		TTTrace.Write(handle);
+		return handle;
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public ulong AddStringSpecial(string s)
+	{
+		if (s == null)
+			return 0;
+
+		if (s.Length == 0)
+			return 1;
+
+		if (object.ReferenceEquals(s, MinimumString))
+			return 2;
+
+		if (object.ReferenceEquals(s, MaximumString))
+			return 3;
 
 		int procNum = ProcessorNumber.GetCore();
 		ulong handle = perCPUData[procNum]->AddString(values, s, 1, freeLists);
@@ -92,6 +125,12 @@ internal unsafe sealed partial class StringStorage : IDisposable
 	public string GetString(ulong handle)
 	{
 		return values[handle].Value;
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public string GetStringSafe(ulong handle)
+	{
+		return values.ReadStringSafe(handle);
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]

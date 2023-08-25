@@ -41,8 +41,6 @@ public unsafe sealed partial class ObjectModel
 	DeletedSet deletedSet;
 	long[] toDelete1, toDelete2;
 
-	int classScanCount;
-
 	CriticalDatabaseException storedException;
 
 	bool disposed;
@@ -59,6 +57,8 @@ public unsafe sealed partial class ObjectModel
 		this.modelData = modelData;
 
 		context = contextPool.GetContext();
+		context.RefreshModelIfNeeded(modelData.ModelDesc);
+
 		objectMap = context.ObjectMap;
 		changeList = context.ChangeList;
 		inverseReferenceIds = context.InverseReferenceIds;
@@ -163,7 +163,7 @@ public unsafe sealed partial class ObjectModel
 		if (objectMap.TryGetValue(id, out DatabaseObject obj))
 			return obj.IsDeleted ? null : obj;
 
-		if (!modelData.TryGetClassByTypeId(IdHelper.GetClassId(id), out ClassData cd))
+		if (!modelData.TryGetClassByTypeId(IdHelper.GetClassId(id), out ClassData classData))
 			return null;
 
 		if (deletedSet.Contains(id))
@@ -185,12 +185,12 @@ public unsafe sealed partial class ObjectModel
 			return null;
 
 		objPtr += sizeof(long); // Version is skipped
-		obj = cd.Creator(this, cd, objPtr, DatabaseObjectState.None, null);
+		obj = classData.Creator(this, classData, objPtr, DatabaseObjectState.None, null);
 
 		return obj;
 	}
 
-	internal DatabaseObject GetObjectOrCreate(ObjectReader objReader, ClassData cd)
+	internal DatabaseObject GetObjectOrCreate(ObjectReader objReader, ClassData classData)
 	{
 		if (disposed)
 			throw new ObjectDisposedException(nameof(ObjectModel));
@@ -203,12 +203,12 @@ public unsafe sealed partial class ObjectModel
 		if (deletedSet.Contains(id))
 			return null;
 
-		if (cd.ClassDesc.Id != IdHelper.GetClassId(id))
-			cd = modelData.GetClassByTypeId(IdHelper.GetClassId(objReader.GetIdOptimized()));
+		if (classData.ClassDesc.Id != IdHelper.GetClassId(id))
+			classData = modelData.GetClassByClassId(IdHelper.GetClassId(objReader.GetIdOptimized()));
 
 		byte* objPtr = objReader.Object;
 		objPtr += sizeof(long); // Version is skipped
-		obj = cd.Creator(this, cd, objPtr, DatabaseObjectState.None, null);
+		obj = classData.Creator(this, classData, objPtr, DatabaseObjectState.None, null);
 
 		return obj;
 	}
@@ -239,23 +239,40 @@ public unsafe sealed partial class ObjectModel
 		if (disposed)
 			throw new ObjectDisposedException(nameof(ObjectModel));
 
-		if (!modelData.TryGetClassByUserType(typeof(T), out ClassData cd) || cd.ClassDesc.IsAbstract)
+		if (!modelData.TryGetClassByUserType(typeof(T), out ClassData classData) || classData.ClassDesc.IsAbstract)
 			throw new ArgumentException("Invalid object type.");
 
-		long id = cd.ClassDesc.MakeId(context.GetId());
+		long id = classData.ClassDesc.MakeId(context.GetId());
 
-		byte* buffer = AllocObjectBuffer(cd, true);
+		byte* buffer = AllocObjectBuffer(classData, true);
 		*(long*)buffer = id;
-		DatabaseObject obj = cd.Creator(this, cd, buffer, DatabaseObjectState.Inserted, changeList);
+		DatabaseObject obj = classData.Creator(this, classData, buffer, DatabaseObjectState.Inserted, changeList);
+
+		return (T)obj;
+	}
+
+	internal T CreateObject<T>(long id) where T : DatabaseObject
+	{
+		ValidateThread();
+
+		if (disposed)
+			throw new ObjectDisposedException(nameof(ObjectModel));
+
+		if (!modelData.TryGetClassByUserType(typeof(T), out ClassData classData) || classData.ClassDesc.IsAbstract)
+			throw new ArgumentException("Invalid object type.");
+
+		byte* buffer = AllocObjectBuffer(classData, true);
+		*(long*)buffer = id;
+		DatabaseObject obj = classData.Creator(this, classData, buffer, DatabaseObjectState.Inserted, changeList);
 
 		return (T)obj;
 	}
 
 	/// <summary>
-	/// Get all objects from the database.
+	/// Retrieves all the objects of a given type (or any derived type) from the database.
 	/// </summary>
 	/// <typeparam name="T">Type of objects to get.</typeparam>
-	/// <returns>`IEnumerable` of all objects in the database.</returns>
+	/// <returns>`IEnumerable` of all objects of a given type in the database.</returns>
 	/// <exception cref="ObjectDisposedException">If <see cref="ObjectModel"/> has been disposed.</exception>
 	/// <exception cref="ArgumentException">If type `T` is not marked with the<see cref="DatabaseClassAttribute"/></exception>
 	/// <remarks>
@@ -269,22 +286,23 @@ public unsafe sealed partial class ObjectModel
 		if (disposed)
 			throw new ObjectDisposedException(nameof(ObjectModel));
 
-		if (!modelData.TryGetClassByUserType(typeof(T), out ClassData cd))
+		if (!modelData.TryGetClassByUserType(typeof(T), out ClassData classData))
 			throw new ArgumentException("Invalid object type.");
 
-		return new ObjectEnumerable<T>(this, cd);
+		return new ClassScanEnumerable<T>(this, classData);
 	}
 
-	private void ForEachObject(ClassDescriptor classDesc, Action<ObjectReader> dbAction, Action<DatabaseObject> localAction)
+	private void ForEachObject(ClassData classData, Action<ObjectReader> dbAction, Action<DatabaseObject> localAction)
 	{
+		ObjectReader[] rs = context.GetObjectReaders();
+
 		try
 		{
-			ClassScan scan = engine.BeginClassScan(transaction, classDesc);
+			ClassScan scan = engine.BeginClassScan(transaction, classData.ClassDesc);
 			ChangeList.TypeIterator changeIterator = new ChangeList.TypeIterator();
 
 			int objectCount = 0;
 			int readObjectCount = 0;
-			ObjectReader[] rs = context.ObjectReaders;
 
 			while (true)
 			{
@@ -293,12 +311,11 @@ public unsafe sealed partial class ObjectModel
 					if (readObjectCount >= objectCount)
 					{
 						readObjectCount = 0;
-						objectCount = rs.Length;
-						if (!scan.Next(rs, 0, ref objectCount))
+						if (!scan.Next(rs, out objectCount))
 						{
 							scan.Dispose();
 							scan = null;
-							changeIterator = changeList.IterateType(classDesc);
+							changeIterator = changeList.IterateType(classData);
 						}
 					}
 				}
@@ -338,14 +355,25 @@ public unsafe sealed partial class ObjectModel
 			TryStoreException(e);
 			throw;
 		}
+		finally
+		{
+			context.PutObjectReaders(rs);
+		}
 	}
 
-	internal ChangeList.TypeIterator EnumerateLocalChanges<T>() where T : DatabaseObject
+	internal ChangeList.TypeIterator EnumerateLocalChanges(ClassData classData)
 	{
-		if (!modelData.TryGetClassByUserType(typeof(T), out ClassData cd))
-			throw new ArgumentException("Invalid object type.");
+		return changeList.IterateType(classData);
+	}
 
-		return changeList.IterateType(cd.ClassDesc);
+	internal int GetTypeChangeCount(ClassData classData)
+	{
+		return changeList.GetTypeChangeCount(classData);
+	}
+
+	internal bool HasLocalChanges(ClassData classData)
+	{
+		return changeList.HasLocalChange(classData);
 	}
 
 	/// <summary>
@@ -368,18 +396,8 @@ public unsafe sealed partial class ObjectModel
 	public HashIndexReader<T, TKey1> GetHashIndex<T, TKey1>(string name) where T : DatabaseObject
 	{
 		ValidateThread();
-
-		if (!modelData.TryGetClassByUserType(typeof(T), out ClassData cd))
-			throw new ArgumentException("Invalid object type.");
-
-		string namespaceName = cd.ClassDesc.NamespaceName;
-		HashIndexDescriptor hdi = modelData.ModelDesc.GetHashIndex(namespaceName, name);
-
-		Func<T, TKey1, bool> d = modelData.GetHashIndexComparer(hdi.Id) as Func<T, TKey1, bool>;
-		if (d == null)
-			throw new ArgumentException("Invalid hash index class and/or key types.");
-
-		return new HashIndexReader<T, TKey1>(this, hdi.Id, cd, d);
+		IndexData indexData = modelData.GetIndexData(typeof(T).Namespace, name);
+		return new HashIndexReader<T, TKey1>(this, indexData);
 	}
 
 	/// <summary>
@@ -403,18 +421,8 @@ public unsafe sealed partial class ObjectModel
 	public HashIndexReader<T, TKey1, TKey2> GetHashIndex<T, TKey1, TKey2>(string name) where T : DatabaseObject
 	{
 		ValidateThread();
-
-		if (!modelData.TryGetClassByUserType(typeof(T), out ClassData cd))
-			throw new ArgumentException("Invalid object type.");
-
-		string namespaceName = cd.ClassDesc.NamespaceName;
-		HashIndexDescriptor hdi = modelData.ModelDesc.GetHashIndex(namespaceName, name);
-
-		Func<T, TKey1, TKey2, bool> d = modelData.GetHashIndexComparer(hdi.Id) as Func<T, TKey1, TKey2, bool>;
-		if (d == null)
-			throw new ArgumentException("Invalid hash index class and/or key types.");
-
-		return new HashIndexReader<T, TKey1, TKey2>(this, hdi.Id, cd, d);
+		IndexData indexData = modelData.GetIndexData(typeof(T).Namespace, name);
+		return new HashIndexReader<T, TKey1, TKey2>(this, indexData);
 	}
 
 	/// <summary>
@@ -439,18 +447,8 @@ public unsafe sealed partial class ObjectModel
 	public HashIndexReader<T, TKey1, TKey2, TKey3> GetHashIndex<T, TKey1, TKey2, TKey3>(string name) where T : DatabaseObject
 	{
 		ValidateThread();
-
-		if (!modelData.TryGetClassByUserType(typeof(T), out ClassData cd))
-			throw new ArgumentException("Invalid object type.");
-
-		string namespaceName = cd.ClassDesc.NamespaceName;
-		HashIndexDescriptor hdi = modelData.ModelDesc.GetHashIndex(namespaceName, name);
-
-		Func<T, TKey1, TKey2, TKey3, bool> d = modelData.GetHashIndexComparer(hdi.Id) as Func<T, TKey1, TKey2, TKey3, bool>;
-		if (d == null)
-			throw new ArgumentException("Invalid hash index class and/or key types.");
-
-		return new HashIndexReader<T, TKey1, TKey2, TKey3>(this, hdi.Id, cd, d);
+		IndexData indexData = modelData.GetIndexData(typeof(T).Namespace, name);
+		return new HashIndexReader<T, TKey1, TKey2, TKey3>(this, indexData);
 	}
 
 	/// <summary>
@@ -476,18 +474,110 @@ public unsafe sealed partial class ObjectModel
 	public HashIndexReader<T, TKey1, TKey2, TKey3, TKey4> GetHashIndex<T, TKey1, TKey2, TKey3, TKey4>(string name) where T : DatabaseObject
 	{
 		ValidateThread();
+		IndexData indexData = modelData.GetIndexData(typeof(T).Namespace, name);
+		return new HashIndexReader<T, TKey1, TKey2, TKey3, TKey4>(this, indexData);
+	}
 
-		if (!modelData.TryGetClassByUserType(typeof(T), out ClassData cd))
-			throw new ArgumentException("Invalid object type.");
+	/// <summary>
+	/// Get a sorted index by name.
+	/// </summary>
+	/// <typeparam name="T">Type for which the sorted index is requested.</typeparam>
+	/// <typeparam name="TKey1">Type of sorted index's key.</typeparam>
+	/// <param name="name">The name of the sorted index.</param>
+	/// <returns>Requested sorted index</returns>
+	/// <exception cref="ArgumentException">
+	/// 	If type `T` is not marked with the <see cref="DatabaseClassAttribute"/>
+	/// 	<br/>
+	/// 	or
+	/// 	<br/>
+	/// 	if requested sorted index is not found.
+	/// </exception>
+	/// <exception cref="ObjectDisposedException">If <see cref="ObjectModel"/> has been disposed.</exception>
+	/// <seealso cref="SortedIndexAttribute"/>
+	/// <seealso cref="SortedIndexReader{T, TKey1}"/>
+	public SortedIndexReader<T, TKey1> GetSortedIndex<T, TKey1>(string name) where T : DatabaseObject
+	{
+		ValidateThread();
+		IndexData indexData = modelData.GetIndexData(typeof(T).Namespace, name);
+		return new SortedIndexReader<T, TKey1>(this, indexData);
+	}
 
-		string namespaceName = cd.ClassDesc.NamespaceName;
-		HashIndexDescriptor hdi = modelData.ModelDesc.GetHashIndex(namespaceName, name);
+	/// <summary>
+	/// Get sorted index with composite key by name.
+	/// </summary>
+	/// <typeparam name="T">Type for which the sorted index is requested.</typeparam>
+	/// <typeparam name="TKey1">Type of sorted index's first key.</typeparam>
+	/// <typeparam name="TKey2">Type of sorted index's second key.</typeparam>
+	/// <param name="name">The name of the sorted index.</param>
+	/// <returns>Requested sorted index</returns>
+	/// <exception cref="ArgumentException">
+	/// 	If type `T` is not marked with the <see cref="DatabaseClassAttribute"/>
+	/// 	<br/>
+	/// 	or
+	/// 	<br/>
+	/// 	if requested sorted index is not found.
+	/// </exception>
+	/// <exception cref="ObjectDisposedException">If <see cref="ObjectModel"/> has been disposed.</exception>
+	/// <seealso cref="SortedIndexAttribute"/>
+	/// <seealso cref="SortedIndexReader{T, TKey1, TKey2}"/>
+	public SortedIndexReader<T, TKey1, TKey2> GetSortedIndex<T, TKey1, TKey2>(string name) where T : DatabaseObject
+	{
+		ValidateThread();
+		IndexData indexData = modelData.GetIndexData(typeof(T).Namespace, name);
+		return new SortedIndexReader<T, TKey1, TKey2>(this, indexData);
+	}
 
-		Func<T, TKey1, TKey2, TKey3, TKey4, bool> d = modelData.GetHashIndexComparer(hdi.Id) as Func<T, TKey1, TKey2, TKey3, TKey4, bool>;
-		if (d == null)
-			throw new ArgumentException("Invalid hash index class and/or key types.");
+	/// <summary>
+	/// Get sorted index with composite key by name.
+	/// </summary>
+	/// <typeparam name="T">Type for which the sorted index is requested.</typeparam>
+	/// <typeparam name="TKey1">Type of sorted index's first key.</typeparam>
+	/// <typeparam name="TKey2">Type of sorted index's second key.</typeparam>
+	/// <typeparam name="TKey3">Type of sorted index's third key.</typeparam>
+	/// <param name="name">The name of the sorted index.</param>
+	/// <returns>Requested sorted index</returns>
+	/// <exception cref="ArgumentException">
+	/// 	If type `T` is not marked with the <see cref="DatabaseClassAttribute"/>
+	/// 	<br/>
+	/// 	or
+	/// 	<br/>
+	/// 	if requested sorted index is not found.
+	/// </exception>
+	/// <exception cref="ObjectDisposedException">If <see cref="ObjectModel"/> has been disposed.</exception>
+	/// <seealso cref="SortedIndexAttribute"/>
+	/// <seealso cref="SortedIndexReader{T, TKey1, TKey2, TKey3}"/>
+	public SortedIndexReader<T, TKey1, TKey2, TKey3> GetSortedIndex<T, TKey1, TKey2, TKey3>(string name) where T : DatabaseObject
+	{
+		ValidateThread();
+		IndexData indexData = modelData.GetIndexData(typeof(T).Namespace, name);
+		return new SortedIndexReader<T, TKey1, TKey2, TKey3>(this, indexData);
+	}
 
-		return new HashIndexReader<T, TKey1, TKey2, TKey3, TKey4>(this, hdi.Id, cd, d);
+	/// <summary>
+	/// Get sorted index with composite key by name.
+	/// </summary>
+	/// <typeparam name="T">Type for which the sorted index is requested.</typeparam>
+	/// <typeparam name="TKey1">Type of sorted index's first key.</typeparam>
+	/// <typeparam name="TKey2">Type of sorted index's second key.</typeparam>
+	/// <typeparam name="TKey3">Type of sorted index's third key.</typeparam>
+	/// <typeparam name="TKey4">Type of sorted index's fourth key.</typeparam>
+	/// <param name="name">The name of the sorted index.</param>
+	/// <returns>Requested sorted index</returns>
+	/// <exception cref="ArgumentException">
+	/// 	If type `T` is not marked with the <see cref="DatabaseClassAttribute"/>
+	/// 	<br/>
+	/// 	or
+	/// 	<br/>
+	/// 	if requested sorted index is not found.
+	/// </exception>
+	/// <exception cref="ObjectDisposedException">If <see cref="ObjectModel"/> has been disposed.</exception>
+	/// <seealso cref="SortedIndexAttribute"/>
+	/// <seealso cref="SortedIndexReader{T, TKey1, TKey2, TKey3, TKey4}"/>
+	public SortedIndexReader<T, TKey1, TKey2, TKey3, TKey4> GetSortedIndex<T, TKey1, TKey2, TKey3, TKey4>(string name) where T : DatabaseObject
+	{
+		ValidateThread();
+		IndexData indexData = modelData.GetIndexData(typeof(T).Namespace, name);
+		return new SortedIndexReader<T, TKey1, TKey2, TKey3, TKey4>(this, indexData);
 	}
 
 	internal void AbandonObject(DatabaseObject obj)
@@ -604,9 +694,9 @@ public unsafe sealed partial class ObjectModel
 		int nc = newCount;
 		scanClasses.ForEeach((key, value) =>
 		{
-			ClassDescriptor classDesc = modelData.ModelDesc.GetClass(key);
+			ClassData classData = modelData.GetClassByClassId(key);
 			List<ScanClassesSet.ScanedProperty> l = value;
-			ForEachObject(classDesc, r =>
+			ForEachObject(classData, r =>
 			{
 				for (int i = 0; i < value.Count; i++)
 				{
@@ -762,26 +852,29 @@ public unsafe sealed partial class ObjectModel
 
 	private void ObjectModifiedFirstTime(DatabaseObject obj)
 	{
+		if (transaction.Type == TransactionType.Read)
+			throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.ReadTranWriteAttempt));
+
 		byte* buffer = AllocObjectBuffer(obj.ClassData, false);
 		obj.Modified(buffer, obj.ClassData.ObjectSize);
 		changeList.Add(obj);
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	private byte* AllocObjectBuffer(ClassData cd, bool zeroedOut)
+	private byte* AllocObjectBuffer(ClassData classData, bool zeroedOut)
 	{
 		try
 		{
-			byte* buffer = cd.MemoryManager.Allocate(memoryManager);
+			byte* buffer = classData.MemoryManager.Allocate(memoryManager);
 
-			for (int i = 0; i < cd.BitFieldByteSize; i++)
+			for (int i = 0; i < classData.BitFieldByteSize; i++)
 			{
 				buffer[i] = 0;  // Reset bit fields
 			}
 
-			buffer += cd.BitFieldByteSize;
+			buffer += classData.BitFieldByteSize;
 			if (zeroedOut)
-				Utils.ZeroMemory(buffer + sizeof(long), cd.ObjectSize - sizeof(long));
+				Utils.ZeroMemory(buffer + sizeof(long), classData.ObjectSize - sizeof(long));
 
 			return buffer;
 		}
@@ -793,12 +886,12 @@ public unsafe sealed partial class ObjectModel
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	internal void FreeObjectBuffer(ClassData cd, byte* buffer)
+	internal void FreeObjectBuffer(ClassData classData, byte* buffer)
 	{
 		try
 		{
-			buffer -= cd.BitFieldByteSize;
-			cd.MemoryManager.Free(memoryManager, buffer);
+			buffer -= classData.BitFieldByteSize;
+			classData.MemoryManager.Free(memoryManager, buffer);
 		}
 		catch (Exception e)
 		{
@@ -956,12 +1049,6 @@ public unsafe sealed partial class ObjectModel
 	{
 		if (changeList.Count == 0 && !deletedSet.HasDeleted)
 			return;
-
-		if (classScanCount > 0)
-		{
-			throw new InvalidOperationException("Failed to apply changes to the database. " +
-				"There are active class scans present in the object model.");
-		}
 
 		ChangesetWriter writer = engine.ChangesetWriterPool.Get();
 

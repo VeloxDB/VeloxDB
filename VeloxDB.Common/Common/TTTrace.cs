@@ -436,6 +436,12 @@ internal unsafe static class TTTrace
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private static bool TryGetSourceFileId(string fileName, out ushort id)
 	{
+#if !DEBUG
+#if TTTRACE
+		throw new InvalidOperationException();
+#endif
+#endif
+
 		if (sourceFiles.TryGetValue(fileName, out id))
 			return true;
 

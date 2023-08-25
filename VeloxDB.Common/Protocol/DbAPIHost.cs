@@ -172,7 +172,7 @@ internal sealed class DbAPIHost
 					operName = dboa.Name;
 
 				if (operNames.Contains(operName))
-					throw DbAPIDefinitionException.CreateOperationNameDuplicate(operName, name);
+					throw DbAPIDefinitionException.CreateOperationNameDuplicate(operName, type.FullName);
 
 				operNames.Add(operName);
 
@@ -422,12 +422,6 @@ internal sealed class DbAPIHost
 		{
 			sync.ExitWriteLock();
 		}
-	}
-
-	private static object DeserializeWithException(MessageReader reader,
-		DeserializerContext context, ProtocolDeserializeDelegate[] deserializerTable, int depth)
-	{
-		throw new DbAPIMismatchException();
 	}
 
 	private void HandleOperationRequest(Connection connection, ulong requestId, MessageReader reader)

@@ -66,8 +66,10 @@ internal unsafe sealed partial class ObjectStorage
 		version = ((BufferHeader*)(handle - BufferHeader.AdditionalSize))->version;
 
 		// We need to make sure that version check is not reordered with other loads that follow.
-		// This is needed for both x64 and ARM since both memory models allow for loads to be reordered with other loads.
+		// This is not needed on x64 since loads are never reordered with other loads.
+#if !X86_64
 		Thread.MemoryBarrier();
+#endif
 
 		return (version & 1) == 1;
 	}

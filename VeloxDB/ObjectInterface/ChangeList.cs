@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -12,16 +12,12 @@ internal sealed class ChangeList
 
 	int count;
 	ListItem[] list;
-	int[] perTypeLists;
+	PerTypeListItem[] perTypeLists;
 
 	public ChangeList(DataModelDescriptor modelDesc)
 	{
 		list = new ListItem[commitListSize];
-		perTypeLists = new int[modelDesc.ClassCount + 1];
-		for (int i = 0; i < perTypeLists.Length; i++)
-		{
-			perTypeLists[i] = -1;
-		}
+		CreatePerTypeLists(modelDesc);
 	}
 
 	public int Count => count;
@@ -37,31 +33,78 @@ internal sealed class ChangeList
 		}
 	}
 
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public void RefreshModelIfNeeded(DataModelDescriptor modelDesc)
+	{
+		if (perTypeLists.Length <= modelDesc.ClassCount)
+			CreatePerTypeLists(modelDesc);
+	}
+
+	[MethodImpl(MethodImplOptions.NoInlining)]
+	private void CreatePerTypeLists(DataModelDescriptor modelDesc)
+	{
+		perTypeLists = new PerTypeListItem[modelDesc.ClassCount + 1];
+		for (int i = 0; i < perTypeLists.Length; i++)
+		{
+			perTypeLists[i] = new PerTypeListItem() { next = -1, count = 0 };
+		}
+	}
+
 	public void Add(DatabaseObject obj)
 	{
 		if (list.Length == count)
 			Array.Resize(ref list, list.Length * 2);
 
 		int classIndex = obj.ClassData.ClassDesc.Index;
-		if (perTypeLists.Length <= classIndex)
-			Array.Resize(ref perTypeLists, obj.ClassData.ClassDesc.Model.ClassCount + 1);
-
 		int index = count++;
 		list[index].obj = obj;
-		list[index].next = perTypeLists[classIndex];
-		perTypeLists[classIndex] = index;
+		list[index].next = perTypeLists[classIndex].next;
+		perTypeLists[classIndex].next = index;
+		perTypeLists[classIndex].count++;
 	}
 
-	public TypeIterator IterateType(ClassDescriptor classDesc)
+	public int GetTypeChangeCount(ClassData classData)
 	{
-		return new TypeIterator(this, classDesc);
+		if (count == 0)
+			return 0;
+
+		int s = 0;
+		int[] classIndexes = classData.ClassIndexes;
+		for (int i = 0; i < classIndexes.Length; i++)
+		{
+			s += perTypeLists[classIndexes[i]].count;
+		}
+
+		return s;
+	}
+
+	public bool HasLocalChange(ClassData classData)
+	{
+		if (count == 0)
+			return false;
+
+		int[] classIndexes = classData.ClassIndexes;
+		for (int i = 0; i < classIndexes.Length; i++)
+		{
+			if (perTypeLists[classIndexes[i]].count > 0)
+				return true;
+		}
+
+		return false;
+	}
+
+	public TypeIterator IterateType(ClassData classData)
+	{
+		return new TypeIterator(this, classData);
 	}
 
 	public void Clear()
 	{
 		for (int i = 0; i < count; i++)
 		{
-			perTypeLists[list[i].obj.ClassData.ClassDesc.Index] = -1;
+			int n = list[i].obj.ClassData.ClassDesc.Index;
+			perTypeLists[n].next = -1;
+			perTypeLists[n].count = 0;
 			list[i].obj = null;
 		}
 
@@ -79,21 +122,27 @@ internal sealed class ChangeList
 		public DatabaseObject obj;
 	}
 
+	private struct PerTypeListItem
+	{
+		public int next;
+		public int count;
+	}
+
 	public struct TypeIterator
 	{
 		ChangeList list;
-		ClassDescriptor classDesc;
+		ClassData classData;
 
 		int listIndex;
 		int typeIndex;
 
-		public TypeIterator(ChangeList list, ClassDescriptor classDesc)
+		public TypeIterator(ChangeList list, ClassData classData)
 		{
 			this.list = list;
-			this.classDesc = classDesc;
+			this.classData = classData;
 
-			typeIndex = -1;
-			listIndex = list.GetPerTypeList(classDesc.Index);
+			typeIndex = 0;
+			listIndex = list.perTypeLists[classData.ClassIndexes[0]].next;
 
 			MoveToNonEmptyType();
 		}
@@ -111,11 +160,10 @@ internal sealed class ChangeList
 
 		private void MoveToNonEmptyType()
 		{
-			while (listIndex == -1 && typeIndex < classDesc.DescendentClassIds.Length - 1)
+			while (listIndex == -1 && typeIndex < classData.ClassIndexes.Length - 1)
 			{
 				typeIndex++;
-				ClassDescriptor cd = classDesc.Model.GetClass(classDesc.DescendentClassIds[typeIndex]);
-				listIndex = list.GetPerTypeList(cd.Index);
+				listIndex = list.perTypeLists[classData.ClassIndexes[typeIndex]].next;
 			}
 		}
 	}

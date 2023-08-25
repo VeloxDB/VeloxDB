@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using VeloxDB.Descriptor;
@@ -16,17 +16,22 @@ namespace VeloxDB.ObjectInterface;
 /// <seealso cref="ObjectModel.GetHashIndex{T, TKey1}(string)"/>
 public sealed class HashIndexReader<T, TKey1> where T : DatabaseObject
 {
-	ObjectModel model;
-	Func<T, TKey1, bool> keyComparer;
-	IHashIndexReader<TKey1> storageReader;
-	ClassData classData;
+	internal const int MaxLocalChanges = 4;
 
-	internal HashIndexReader(ObjectModel model, short id, ClassData classData, Func<T, TKey1, bool> keyComparer)
+	ObjectModel model;
+	Func<T, StringComparer, TKey1, bool> keyComparer;
+	IHashIndexReader<TKey1> storageReader;
+	IndexData indexData;
+
+	internal HashIndexReader(ObjectModel model, IndexData indexData)
 	{
+		keyComparer = indexData.KeyComparer as Func<T, StringComparer, TKey1, bool>;
+		if (keyComparer == null)
+			throw new ArgumentException("Invalid hash index class and/or key types.");
+
 		this.model = model;
-		this.keyComparer = keyComparer;
-		this.classData = classData;
-		storageReader = model.Transaction.Engine.GetHashIndex<TKey1>(id);
+		this.indexData = indexData;
+		storageReader = model.Transaction.Engine.GetHashIndex<TKey1>(indexData.IndexDescriptor.Id);
 	}
 
 	/// <summary>
@@ -41,22 +46,39 @@ public sealed class HashIndexReader<T, TKey1> where T : DatabaseObject
 		if (model.Disposed)
 			throw new ObjectDisposedException(nameof(ObjectModel));
 
-		ObjectReader[] rs = model.Context.ObjectReaders;
-		storageReader.GetObjects(model.Transaction, key1, ref rs, out int count);
-
-		for (int i = 0; i < count; i++)
+		bool includeLocal = true;
+		if (model.GetTypeChangeCount(indexData.ClassData) > MaxLocalChanges)
 		{
-			DatabaseObject obj = model.GetObjectOrCreate(rs[i], classData);
-			if (obj != null && obj.State == DatabaseObjectState.Read)
-				return (T)(object)obj;
+			includeLocal = false;
+			model.ApplyChanges();
 		}
 
-		ChangeList.TypeIterator ti = model.EnumerateLocalChanges<T>();
-		while (ti.HasMore)
+		ObjectReader[] rs = model.Context.GetObjectReaders();
+		try
 		{
-			DatabaseObject obj = ti.GetNextAndMove();
-			if (!obj.IsDeleted && keyComparer((T)(object)obj, key1))
-				return (T)(object)obj;
+			storageReader.GetObjects(model.Transaction, key1, ref rs, out int count);
+
+			for (int i = 0; i < count; i++)
+			{
+				DatabaseObject obj = model.GetObjectOrCreate(rs[i], indexData.ClassData);
+				if (obj != null && obj.State == DatabaseObjectState.Read)
+					return (T)(object)obj;
+			}
+		}
+		finally
+		{
+			model.Context.PutObjectReaders(rs);
+		}
+
+		if (includeLocal)
+		{
+			ChangeList.TypeIterator ti = model.EnumerateLocalChanges(indexData.ClassData);
+			while (ti.HasMore)
+			{
+				DatabaseObject obj = ti.GetNextAndMove();
+				if (!obj.IsDeleted && keyComparer((T)(object)obj, indexData.StringComparer, key1))
+					return (T)(object)obj;
+			}
 		}
 
 		return default(T);
@@ -74,23 +96,41 @@ public sealed class HashIndexReader<T, TKey1> where T : DatabaseObject
 		if (model.Disposed)
 			throw new ObjectDisposedException(nameof(ObjectModel));
 
-		ObjectReader[] rs = model.Context.ObjectReaders;
-		storageReader.GetObjects(model.Transaction, key1, ref rs, out int count);
-
-		List<T> l = new List<T>(count + 2);
-		for (int i = 0; i < count; i++)
+		bool includeLocal = true;
+		if (model.GetTypeChangeCount(indexData.ClassData) > MaxLocalChanges)
 		{
-			DatabaseObject obj = model.GetObjectOrCreate(rs[i], classData);
-			if (obj != null && obj.State == DatabaseObjectState.Read)
-				l.Add((T)(object)obj);
+			includeLocal = false;
+			model.ApplyChanges();
 		}
 
-		ChangeList.TypeIterator ti = model.EnumerateLocalChanges<T>();
-		while (ti.HasMore)
+		List<T> l;
+		ObjectReader[] rs = model.Context.GetObjectReaders();
+		try
 		{
-			DatabaseObject obj = ti.GetNextAndMove();
-			if (!obj.IsDeleted && keyComparer((T)(object)obj, key1))
-				l.Add((T)(object)obj);
+			storageReader.GetObjects(model.Transaction, key1, ref rs, out int count);
+
+			l = new List<T>(count + 2);
+			for (int i = 0; i < count; i++)
+			{
+				DatabaseObject obj = model.GetObjectOrCreate(rs[i], indexData.ClassData);
+				if (obj != null && obj.State == DatabaseObjectState.Read)
+					l.Add((T)(object)obj);
+			}
+		}
+		finally
+		{
+			model.Context.PutObjectReaders(rs);
+		}
+
+		if (includeLocal)
+		{
+			ChangeList.TypeIterator ti = model.EnumerateLocalChanges(indexData.ClassData);
+			while (ti.HasMore)
+			{
+				DatabaseObject obj = ti.GetNextAndMove();
+				if (!obj.IsDeleted && keyComparer((T)(object)obj, indexData.StringComparer, key1))
+					l.Add((T)(object)obj);
+			}
 		}
 
 		return l;
@@ -110,16 +150,19 @@ public sealed class HashIndexReader<T, TKey1> where T : DatabaseObject
 public sealed class HashIndexReader<T, TKey1, TKey2> where T : DatabaseObject
 {
 	ObjectModel model;
-	Func<T, TKey1, TKey2, bool> keyComparer;
+	Func<T, StringComparer, TKey1, TKey2, bool> keyComparer;
 	IHashIndexReader<TKey1, TKey2> storageReader;
-	ClassData classData;
+	IndexData indexData;
 
-	internal HashIndexReader(ObjectModel model, short id, ClassData classData, Func<T, TKey1, TKey2, bool> keyComparer)
+	internal HashIndexReader(ObjectModel model, IndexData indexData)
 	{
+		keyComparer = indexData.KeyComparer as Func<T, StringComparer, TKey1, TKey2, bool>;
+		if (keyComparer == null)
+			throw new ArgumentException("Invalid hash index class and/or key types.");
+
 		this.model = model;
-		this.keyComparer = keyComparer;
-		this.classData = classData;
-		storageReader = model.Transaction.Engine.GetHashIndex<TKey1, TKey2>(id);
+		this.indexData = indexData;
+		storageReader = model.Transaction.Engine.GetHashIndex<TKey1, TKey2>(indexData.IndexDescriptor.Id);
 	}
 
 	/// <summary>
@@ -135,22 +178,39 @@ public sealed class HashIndexReader<T, TKey1, TKey2> where T : DatabaseObject
 		if (model.Disposed)
 			throw new ObjectDisposedException(nameof(ObjectModel));
 
-		ObjectReader[] rs = model.Context.ObjectReaders;
-		storageReader.GetObjects(model.Transaction, key1, key2, ref rs, out int count);
-
-		for (int i = 0; i < count; i++)
+		bool includeLocal = true;
+		if (model.GetTypeChangeCount(indexData.ClassData) > HashIndexReader<DatabaseObject, int>.MaxLocalChanges)
 		{
-			DatabaseObject obj = model.GetObjectOrCreate(rs[i], classData);
-			if (obj != null && obj.State == DatabaseObjectState.Read)
-				return (T)(object)obj;
+			includeLocal = false;
+			model.ApplyChanges();
 		}
 
-		ChangeList.TypeIterator ti = model.EnumerateLocalChanges<T>();
-		while (ti.HasMore)
+		ObjectReader[] rs = model.Context.GetObjectReaders();
+		try
 		{
-			DatabaseObject obj = ti.GetNextAndMove();
-			if (!obj.IsDeleted && keyComparer((T)(object)obj, key1, key2))
-				return (T)(object)obj;
+			storageReader.GetObjects(model.Transaction, key1, key2, ref rs, out int count);
+
+			for (int i = 0; i < count; i++)
+			{
+				DatabaseObject obj = model.GetObjectOrCreate(rs[i], indexData.ClassData);
+				if (obj != null && obj.State == DatabaseObjectState.Read)
+					return (T)(object)obj;
+			}
+		}
+		finally
+		{
+			model.Context.PutObjectReaders(rs);
+		}
+
+		if (includeLocal)
+		{
+			ChangeList.TypeIterator ti = model.EnumerateLocalChanges(indexData.ClassData);
+			while (ti.HasMore)
+			{
+				DatabaseObject obj = ti.GetNextAndMove();
+				if (!obj.IsDeleted && keyComparer((T)(object)obj, indexData.StringComparer, key1, key2))
+					return (T)(object)obj;
+			}
 		}
 
 		return default(T);
@@ -169,23 +229,41 @@ public sealed class HashIndexReader<T, TKey1, TKey2> where T : DatabaseObject
 		if (model.Disposed)
 			throw new ObjectDisposedException(nameof(ObjectModel));
 
-		ObjectReader[] rs = model.Context.ObjectReaders;
-		storageReader.GetObjects(model.Transaction, key1, key2, ref rs, out int count);
-
-		List<T> l = new List<T>(count + 2);
-		for (int i = 0; i < count; i++)
+		bool includeLocal = true;
+		if (model.GetTypeChangeCount(indexData.ClassData) > HashIndexReader<DatabaseObject, int>.MaxLocalChanges)
 		{
-			DatabaseObject obj = model.GetObjectOrCreate(rs[i], classData);
-			if (obj != null && obj.State == DatabaseObjectState.Read)
-				l.Add((T)(object)obj);
+			includeLocal = false;
+			model.ApplyChanges();
 		}
 
-		ChangeList.TypeIterator ti = model.EnumerateLocalChanges<T>();
-		while (ti.HasMore)
+		List<T> l;
+		ObjectReader[] rs = model.Context.GetObjectReaders();
+		try
 		{
-			DatabaseObject obj = ti.GetNextAndMove();
-			if (!obj.IsDeleted && keyComparer((T)(object)obj, key1, key2))
-				l.Add((T)(object)obj);
+			storageReader.GetObjects(model.Transaction, key1, key2, ref rs, out int count);
+
+			l = new List<T>(count + 2);
+			for (int i = 0; i < count; i++)
+			{
+				DatabaseObject obj = model.GetObjectOrCreate(rs[i], indexData.ClassData);
+				if (obj != null && obj.State == DatabaseObjectState.Read)
+					l.Add((T)(object)obj);
+			}
+		}
+		finally
+		{
+			model.Context.PutObjectReaders(rs);
+		}
+
+		if (includeLocal)
+		{
+			ChangeList.TypeIterator ti = model.EnumerateLocalChanges(indexData.ClassData);
+			while (ti.HasMore)
+			{
+				DatabaseObject obj = ti.GetNextAndMove();
+				if (!obj.IsDeleted && keyComparer((T)(object)obj, indexData.StringComparer, key1, key2))
+					l.Add((T)(object)obj);
+			}
 		}
 
 		return l;
@@ -205,16 +283,19 @@ public sealed class HashIndexReader<T, TKey1, TKey2> where T : DatabaseObject
 public sealed class HashIndexReader<T, TKey1, TKey2, TKey3> where T : DatabaseObject
 {
 	ObjectModel model;
-	Func<T, TKey1, TKey2, TKey3, bool> keyComparer;
+	Func<T, StringComparer, TKey1, TKey2, TKey3, bool> keyComparer;
 	IHashIndexReader<TKey1, TKey2, TKey3> storageReader;
-	ClassData classData;
+	IndexData indexData;
 
-	internal HashIndexReader(ObjectModel model, short id, ClassData classData, Func<T, TKey1, TKey2, TKey3, bool> keyComparer)
+	internal HashIndexReader(ObjectModel model, IndexData indexData)
 	{
+		keyComparer = indexData.KeyComparer as Func<T, StringComparer, TKey1, TKey2, TKey3, bool>;
+		if (keyComparer == null)
+			throw new ArgumentException("Invalid hash index class and/or key types.");
+
 		this.model = model;
-		this.keyComparer = keyComparer;
-		this.classData = classData;
-		storageReader = model.Transaction.Engine.GetHashIndex<TKey1, TKey2, TKey3>(id);
+		this.indexData = indexData;
+		storageReader = model.Transaction.Engine.GetHashIndex<TKey1, TKey2, TKey3>(indexData.IndexDescriptor.Id);
 	}
 
 	/// <summary>
@@ -231,22 +312,39 @@ public sealed class HashIndexReader<T, TKey1, TKey2, TKey3> where T : DatabaseOb
 		if (model.Disposed)
 			throw new ObjectDisposedException(nameof(ObjectModel));
 
-		ObjectReader[] rs = model.Context.ObjectReaders;
-		storageReader.GetObjects(model.Transaction, key1, key2, key3, ref rs, out int count);
-
-		for (int i = 0; i < count; i++)
+		bool includeLocal = true;
+		if (model.GetTypeChangeCount(indexData.ClassData) > HashIndexReader<DatabaseObject, int>.MaxLocalChanges)
 		{
-			DatabaseObject obj = model.GetObjectOrCreate(rs[i], classData);
-			if (obj != null && obj.State == DatabaseObjectState.Read)
-				return (T)(object)obj;
+			includeLocal = false;
+			model.ApplyChanges();
 		}
 
-		ChangeList.TypeIterator ti = model.EnumerateLocalChanges<T>();
-		while (ti.HasMore)
+		ObjectReader[] rs = model.Context.GetObjectReaders();
+		try
 		{
-			DatabaseObject obj = ti.GetNextAndMove();
-			if (!obj.IsDeleted && keyComparer((T)(object)obj, key1, key2, key3))
-				return (T)(object)obj;
+			storageReader.GetObjects(model.Transaction, key1, key2, key3, ref rs, out int count);
+
+			for (int i = 0; i < count; i++)
+			{
+				DatabaseObject obj = model.GetObjectOrCreate(rs[i], indexData.ClassData);
+				if (obj != null && obj.State == DatabaseObjectState.Read)
+					return (T)(object)obj;
+			}
+		}
+		finally
+		{
+			model.Context.PutObjectReaders(rs);
+		}
+
+		if (includeLocal)
+		{
+			ChangeList.TypeIterator ti = model.EnumerateLocalChanges(indexData.ClassData);
+			while (ti.HasMore)
+			{
+				DatabaseObject obj = ti.GetNextAndMove();
+				if (!obj.IsDeleted && keyComparer((T)(object)obj, indexData.StringComparer, key1, key2, key3))
+					return (T)(object)obj;
+			}
 		}
 
 		return default(T);
@@ -266,23 +364,41 @@ public sealed class HashIndexReader<T, TKey1, TKey2, TKey3> where T : DatabaseOb
 		if (model.Disposed)
 			throw new ObjectDisposedException(nameof(ObjectModel));
 
-		ObjectReader[] rs = model.Context.ObjectReaders;
-		storageReader.GetObjects(model.Transaction, key1, key2, key3, ref rs, out int count);
-
-		List<T> l = new List<T>(count + 2);
-		for (int i = 0; i < count; i++)
+		bool includeLocal = true;
+		if (model.GetTypeChangeCount(indexData.ClassData) > HashIndexReader<DatabaseObject, int>.MaxLocalChanges)
 		{
-			DatabaseObject obj = model.GetObjectOrCreate(rs[i], classData);
-			if (obj != null && obj.State == DatabaseObjectState.Read)
-				l.Add((T)(object)obj);
+			includeLocal = false;
+			model.ApplyChanges();
 		}
 
-		ChangeList.TypeIterator ti = model.EnumerateLocalChanges<T>();
-		while (ti.HasMore)
+		List<T> l;
+		ObjectReader[] rs = model.Context.GetObjectReaders();
+		try
 		{
-			DatabaseObject obj = ti.GetNextAndMove();
-			if (!obj.IsDeleted && keyComparer((T)(object)obj, key1, key2, key3))
-				l.Add((T)(object)obj);
+			storageReader.GetObjects(model.Transaction, key1, key2, key3, ref rs, out int count);
+
+			l = new List<T>(count + 2);
+			for (int i = 0; i < count; i++)
+			{
+				DatabaseObject obj = model.GetObjectOrCreate(rs[i], indexData.ClassData);
+				if (obj != null && obj.State == DatabaseObjectState.Read)
+					l.Add((T)(object)obj);
+			}
+		}
+		finally
+		{
+			model.Context.PutObjectReaders(rs);
+		}
+
+		if (includeLocal)
+		{
+			ChangeList.TypeIterator ti = model.EnumerateLocalChanges(indexData.ClassData);
+			while (ti.HasMore)
+			{
+				DatabaseObject obj = ti.GetNextAndMove();
+				if (!obj.IsDeleted && keyComparer((T)(object)obj, indexData.StringComparer, key1, key2, key3))
+					l.Add((T)(object)obj);
+			}
 		}
 
 		return l;
@@ -303,16 +419,19 @@ public sealed class HashIndexReader<T, TKey1, TKey2, TKey3> where T : DatabaseOb
 public sealed class HashIndexReader<T, TKey1, TKey2, TKey3, TKey4> where T : DatabaseObject
 {
 	ObjectModel model;
-	Func<T, TKey1, TKey2, TKey3, TKey4, bool> keyComparer;
+	Func<T, StringComparer, TKey1, TKey2, TKey3, TKey4, bool> keyComparer;
 	IHashIndexReader<TKey1, TKey2, TKey3, TKey4> storageReader;
-	ClassData classData;
+	IndexData indexData;
 
-	internal HashIndexReader(ObjectModel model, short id, ClassData classData, Func<T, TKey1, TKey2, TKey3, TKey4, bool> keyComparer)
+	internal HashIndexReader(ObjectModel model, IndexData indexData)
 	{
+		keyComparer = indexData.KeyComparer as Func<T, StringComparer, TKey1, TKey2, TKey3, TKey4, bool>;
+		if (keyComparer == null)
+			throw new ArgumentException("Invalid hash index class and/or key types.");
+
 		this.model = model;
-		this.keyComparer = keyComparer;
-		this.classData = classData;
-		storageReader = model.Transaction.Engine.GetHashIndex<TKey1, TKey2, TKey3, TKey4>(id);
+		this.indexData = indexData;
+		storageReader = model.Transaction.Engine.GetHashIndex<TKey1, TKey2, TKey3, TKey4>(indexData.IndexDescriptor.Id);
 	}
 
 	/// <summary>
@@ -330,22 +449,39 @@ public sealed class HashIndexReader<T, TKey1, TKey2, TKey3, TKey4> where T : Dat
 		if (model.Disposed)
 			throw new ObjectDisposedException(nameof(ObjectModel));
 
-		ObjectReader[] rs = model.Context.ObjectReaders;
-		storageReader.GetObjects(model.Transaction, key1, key2, key3, key4, ref rs, out int count);
-
-		for (int i = 0; i < count; i++)
+		bool includeLocal = true;
+		if (model.GetTypeChangeCount(indexData.ClassData) > HashIndexReader<DatabaseObject, int>.MaxLocalChanges)
 		{
-			DatabaseObject obj = model.GetObjectOrCreate(rs[i], classData);
-			if (obj != null && obj.State == DatabaseObjectState.Read)
-				return (T)(object)obj;
+			includeLocal = false;
+			model.ApplyChanges();
 		}
 
-		ChangeList.TypeIterator ti = model.EnumerateLocalChanges<T>();
-		while (ti.HasMore)
+		ObjectReader[] rs = model.Context.GetObjectReaders();
+		try
 		{
-			DatabaseObject obj = ti.GetNextAndMove();
-			if (!obj.IsDeleted && keyComparer((T)(object)obj, key1, key2, key3, key4))
-				return (T)(object)obj;
+			storageReader.GetObjects(model.Transaction, key1, key2, key3, key4, ref rs, out int count);
+
+			for (int i = 0; i < count; i++)
+			{
+				DatabaseObject obj = model.GetObjectOrCreate(rs[i], indexData.ClassData);
+				if (obj != null && obj.State == DatabaseObjectState.Read)
+					return (T)(object)obj;
+			}
+		}
+		finally
+		{
+			model.Context.PutObjectReaders(rs);
+		}
+
+		if (includeLocal)
+		{
+			ChangeList.TypeIterator ti = model.EnumerateLocalChanges(indexData.ClassData);
+			while (ti.HasMore)
+			{
+				DatabaseObject obj = ti.GetNextAndMove();
+				if (!obj.IsDeleted && keyComparer((T)(object)obj, indexData.StringComparer, key1, key2, key3, key4))
+					return (T)(object)obj;
+			}
 		}
 
 		return default(T);
@@ -366,23 +502,41 @@ public sealed class HashIndexReader<T, TKey1, TKey2, TKey3, TKey4> where T : Dat
 		if (model.Disposed)
 			throw new ObjectDisposedException(nameof(ObjectModel));
 
-		ObjectReader[] rs = model.Context.ObjectReaders;
-		storageReader.GetObjects(model.Transaction, key1, key2, key3, key4, ref rs, out int count);
-
-		List<T> l = new List<T>(count + 2);
-		for (int i = 0; i < count; i++)
+		bool includeLocal = true;
+		if (model.GetTypeChangeCount(indexData.ClassData) > HashIndexReader<DatabaseObject, int>.MaxLocalChanges)
 		{
-			DatabaseObject obj = model.GetObjectOrCreate(rs[i], classData);
-			if (obj != null && obj.State == DatabaseObjectState.Read)
-				l.Add((T)(object)obj);
+			includeLocal = false;
+			model.ApplyChanges();
 		}
 
-		ChangeList.TypeIterator ti = model.EnumerateLocalChanges<T>();
-		while (ti.HasMore)
+		List<T> l;
+		ObjectReader[] rs = model.Context.GetObjectReaders();
+		try
 		{
-			DatabaseObject obj = ti.GetNextAndMove();
-			if (!obj.IsDeleted && keyComparer((T)(object)obj, key1, key2, key3, key4))
-				l.Add((T)(object)obj);
+			storageReader.GetObjects(model.Transaction, key1, key2, key3, key4, ref rs, out int count);
+
+			l = new List<T>(count + 2);
+			for (int i = 0; i < count; i++)
+			{
+				DatabaseObject obj = model.GetObjectOrCreate(rs[i], indexData.ClassData);
+				if (obj != null && obj.State == DatabaseObjectState.Read)
+					l.Add((T)(object)obj);
+			}
+		}
+		finally
+		{
+			model.Context.PutObjectReaders(rs);
+		}
+
+		if (includeLocal)
+		{
+			ChangeList.TypeIterator ti = model.EnumerateLocalChanges(indexData.ClassData);
+			while (ti.HasMore)
+			{
+				DatabaseObject obj = ti.GetNextAndMove();
+				if (!obj.IsDeleted && keyComparer((T)(object)obj, indexData.StringComparer, key1, key2, key3, key4))
+					l.Add((T)(object)obj);
+			}
 		}
 
 		return l;

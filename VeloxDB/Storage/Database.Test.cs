@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -77,6 +77,16 @@ internal unsafe sealed partial class Database
 	}
 
 #if TEST_BUILD
+	internal void PauseGC()
+	{
+		gc.Pause();
+	}
+
+	internal void UnpauseGC()
+	{
+		gc.Unpause();
+	}
+
 	[Conditional("TEST_BUILD")]
 	internal void DrainPersistenceSnapshot()
 	{
@@ -140,10 +150,14 @@ internal unsafe sealed partial class Database
 				classEntry.Locker.Validate();
 		}
 
-		foreach (HashIndexEntry hashEntry in hashIndexes)
+		foreach (IndexEntry indexEntry in indexes)
 		{
-			hashEntry.Locker.ValidateAndCollectBlobs(versions.ReadVersion, strings);
-			hashEntry.Index.Validate(versions.ReadVersion);
+			indexEntry.Locker?.ValidateAndCollectBlobs(versions.ReadVersion, strings);
+			indexEntry.Index.Validate(versions.ReadVersion);
+			if (indexEntry.Index.IndexDesc.Type == ModelItemType.SortedIndex)
+			{
+				(indexEntry.Index as SortedIndex).CollectBlobRefCounts(strings);
+			}
 		}
 	}
 

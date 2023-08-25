@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
@@ -12,9 +12,9 @@ namespace VeloxDB.Storage;
 
 internal unsafe delegate ulong ApplyAlignDelegate(ClassObject* obj, StringStorage stringStorage,
 	BlobStorage blobStorage, TransactionContext tc, ChangesetReader reader, ClassDescriptor classDesc,
-	HashIndexDeleteDelegate hashDelegate, ulong objHandle);
+	IndexDeleteDelegate indexDelegate, ulong objHandle);
 
-internal unsafe delegate void HashIndexDeleteDelegate(ClassObject* obj, ulong objHandle, int hashIndexIndex);
+internal unsafe delegate void IndexDeleteDelegate(ClassObject* obj, ulong objHandle, int indexIndex);
 
 internal unsafe class StandbyAlignCodeCache
 {
@@ -43,7 +43,7 @@ internal unsafe class StandbyAlignCodeCache
 		readArrayMethod = typeof(StandbyAlignCodeCache).GetMethod(nameof(ReadArray), BindingFlags.DeclaredOnly | BindingFlags.NonPublic | BindingFlags.Static);
 		skipArrayMethod = typeof(StandbyAlignCodeCache).GetMethod(nameof(SkipArray), BindingFlags.DeclaredOnly | BindingFlags.NonPublic | BindingFlags.Static);
 		readReferenceArrayMethod = typeof(StandbyAlignCodeCache).GetMethod(nameof(ReadReferenceArray), BindingFlags.DeclaredOnly | BindingFlags.NonPublic | BindingFlags.Static);
-		getAffectedIndexesMethod = typeof(ClassDescriptor).GetProperty(nameof(ClassDescriptor.PropertyHashIndexIndexes), BindingFlags.DeclaredOnly | BindingFlags.Public | BindingFlags.Instance).GetGetMethod();
+		getAffectedIndexesMethod = typeof(ClassDescriptor).GetProperty(nameof(ClassDescriptor.PropertyIndexIndexes), BindingFlags.DeclaredOnly | BindingFlags.Public | BindingFlags.Instance).GetGetMethod();
 		readOnlyArrayGetMethod = typeof(ReadOnlyArray<ReadOnlyArray<int>>).GetMethod(nameof(ReadOnlyArray<int>.Get), BindingFlags.DeclaredOnly | BindingFlags.Public | BindingFlags.Instance);
 
 		readMethods = new MethodInfo[Utils.MaxEnumValue(typeof(PropertyType)) + 1];
@@ -106,7 +106,7 @@ internal unsafe class StandbyAlignCodeCache
 			foreach (Key key in cache.Keys)
 			{
 				if ((modelUpdate.UpdatedClasses.TryGetValue(key.ClassId, out ClassUpdate cu) &&
-					(cu.PropertyListModified || cu.HashedPropertiesModified || cu.ReferenceTrackingModified)) ||
+					(cu.PropertyListModified || cu.IndexedPropertiesModified || cu.ReferenceTrackingModified)) ||
 					modelUpdate.DeletedClasses.ContainsKey(key.ClassId))
 				{
 					keys.Add(key);
@@ -125,7 +125,7 @@ internal unsafe class StandbyAlignCodeCache
 		DynamicMethod method = new DynamicMethod("__" + Guid.NewGuid().ToString("N"), typeof(ulong),
 			new Type[] { typeof(ClassObject*), typeof(StringStorage), typeof(BlobStorage),
 				typeof(TransactionContext), typeof(ChangesetReader), typeof(ClassDescriptor),
-				typeof(HashIndexDeleteDelegate), typeof(ulong) }, typeof(StandbyAlignCodeCache).Module);
+				typeof(IndexDeleteDelegate), typeof(ulong) }, typeof(StandbyAlignCodeCache).Module);
 
 		GenerateBody(block, method);
 
@@ -165,11 +165,11 @@ internal unsafe class StandbyAlignCodeCache
 			else
 			{
 				PropertyDescriptor pd = block.ClassDescriptor.Properties[csp.Index];
-				ReadOnlyArray<int> affectedHashIndexIndexes = block.ClassDescriptor.PropertyHashIndexIndexes[csp.Index];
+				ReadOnlyArray<int> affectedIndexIndexes = block.ClassDescriptor.PropertyIndexIndexes[csp.Index];
 				int offset = ClassObject.DataOffset + block.ClassDescriptor.PropertyByteOffsets[csp.Index];
 
-				TTTrace.Write(block.ClassDescriptor.Id, pd.Id, offset, affectedHashIndexIndexes != null ?
-					affectedHashIndexIndexes.Length : 0);
+				TTTrace.Write(block.ClassDescriptor.Id, pd.Id, offset, affectedIndexIndexes != null ?
+					affectedIndexIndexes.Length : 0);
 
 				il.Emit(OpCodes.Ldarg, 4);
 				if (csp.Type < PropertyType.String)
@@ -184,7 +184,7 @@ internal unsafe class StandbyAlignCodeCache
 						il.Emit(OpCodes.Ldc_I4, rpd.Id);
 						il.Emit(OpCodes.Ldc_I4, rpd.TrackInverseReferences ? 1 : 0);
 
-						if (affectedHashIndexIndexes != null && affectedHashIndexIndexes.Length > 0)
+						if (affectedIndexIndexes != null && affectedIndexIndexes.Length > 0)
 						{
 							LoadIndexedParameters(il, indexMaskVar, csp);
 							il.Emit(OpCodes.Call, readIndexedReferenceMethod);
@@ -200,7 +200,7 @@ internal unsafe class StandbyAlignCodeCache
 						il.Emit(OpCodes.Ldarg_0);
 						il.Emit(OpCodes.Ldc_I4, offset);
 
-						if (affectedHashIndexIndexes != null && affectedHashIndexIndexes.Length > 0)
+						if (affectedIndexIndexes != null && affectedIndexIndexes.Length > 0)
 						{
 							Checker.AssertFalse(pd.Id == SystemCode.DatabaseObject.Version);
 							LoadIndexedParameters(il, indexMaskVar, csp);
@@ -219,7 +219,7 @@ internal unsafe class StandbyAlignCodeCache
 					il.Emit(OpCodes.Ldarg_0);
 					il.Emit(OpCodes.Ldc_I4, offset);
 
-					if (affectedHashIndexIndexes != null && affectedHashIndexIndexes.Length > 0)
+					if (affectedIndexIndexes != null && affectedIndexIndexes.Length > 0)
 					{
 						LoadIndexedParameters(il, indexMaskVar, csp);
 						il.Emit(OpCodes.Call, readIndexedStringMethod);
@@ -269,9 +269,9 @@ internal unsafe class StandbyAlignCodeCache
 	}
 
 	private static ulong UpatedAffectedIndexes(ClassObject* obj, ulong objHandle,
-		ulong currentAffectedIndexes, ReadOnlyArray<int> affectedIndexIndexes, HashIndexDeleteDelegate hashDelegate)
+		ulong currentAffectedIndexes, ReadOnlyArray<int> affectedIndexIndexes, IndexDeleteDelegate indexDelegate)
 	{
-		if (hashDelegate == null || affectedIndexIndexes == null)
+		if (indexDelegate == null || affectedIndexIndexes == null)
 			return currentAffectedIndexes;
 
 		for (int i = 0; i < affectedIndexIndexes.Length; i++)
@@ -281,7 +281,7 @@ internal unsafe class StandbyAlignCodeCache
 			{
 				TTTrace.Write(currentAffectedIndexes, index);
 				currentAffectedIndexes |= ((ulong)1 << index);
-				hashDelegate(obj, objHandle, index);
+				indexDelegate(obj, objHandle, index);
 			}
 		}
 
@@ -297,7 +297,7 @@ internal unsafe class StandbyAlignCodeCache
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	internal static ulong ReadIndexedByte(ChangesetReader reader, ClassObject* obj, uint byteOffset, ulong currentAffectedIndexes,
-		ReadOnlyArray<int> affectedIndexIndexes, HashIndexDeleteDelegate hashDelegate, ulong objHandle)
+		ReadOnlyArray<int> affectedIndexIndexes, IndexDeleteDelegate indexDelegate, ulong objHandle)
 	{
 		byte prev = *((byte*)obj + byteOffset);
 		byte curr = reader.ReadByte();
@@ -305,7 +305,7 @@ internal unsafe class StandbyAlignCodeCache
 
 		if (prev != curr)
 		{
-			currentAffectedIndexes = UpatedAffectedIndexes(obj, objHandle, currentAffectedIndexes, affectedIndexIndexes, hashDelegate);
+			currentAffectedIndexes = UpatedAffectedIndexes(obj, objHandle, currentAffectedIndexes, affectedIndexIndexes, indexDelegate);
 			*((byte*)obj + byteOffset) = curr;
 		}
 
@@ -327,7 +327,7 @@ internal unsafe class StandbyAlignCodeCache
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	internal static ulong ReadIndexedShort(ChangesetReader reader, ClassObject* obj, uint byteOffset, ulong currentAffectedIndexes,
-		ReadOnlyArray<int> affectedIndexIndexes, HashIndexDeleteDelegate hashDelegate, ulong objHandle)
+		ReadOnlyArray<int> affectedIndexIndexes, IndexDeleteDelegate indexDelegate, ulong objHandle)
 	{
 		short prev = *((short*)((byte*)obj + byteOffset));
 		short curr = reader.ReadShort();
@@ -335,7 +335,7 @@ internal unsafe class StandbyAlignCodeCache
 
 		if (prev != curr)
 		{
-			currentAffectedIndexes = UpatedAffectedIndexes(obj, objHandle, currentAffectedIndexes, affectedIndexIndexes, hashDelegate);
+			currentAffectedIndexes = UpatedAffectedIndexes(obj, objHandle, currentAffectedIndexes, affectedIndexIndexes, indexDelegate);
 			*((short*)((byte*)obj + byteOffset)) = curr;
 		}
 
@@ -357,7 +357,7 @@ internal unsafe class StandbyAlignCodeCache
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	internal static ulong ReadIndexedInt(ChangesetReader reader, ClassObject* obj, uint byteOffset, ulong currentAffectedIndexes,
-		ReadOnlyArray<int> affectedIndexIndexes, HashIndexDeleteDelegate hashDelegate, ulong objHandle)
+		ReadOnlyArray<int> affectedIndexIndexes, IndexDeleteDelegate indexDelegate, ulong objHandle)
 	{
 		int prev = *((int*)((byte*)obj + byteOffset));
 		int curr = reader.ReadInt();
@@ -365,7 +365,7 @@ internal unsafe class StandbyAlignCodeCache
 
 		if (prev != curr)
 		{
-			currentAffectedIndexes = UpatedAffectedIndexes(obj, objHandle, currentAffectedIndexes, affectedIndexIndexes, hashDelegate);
+			currentAffectedIndexes = UpatedAffectedIndexes(obj, objHandle, currentAffectedIndexes, affectedIndexIndexes, indexDelegate);
 			*((int*)((byte*)obj + byteOffset)) = curr;
 		}
 
@@ -387,7 +387,7 @@ internal unsafe class StandbyAlignCodeCache
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	internal static ulong ReadIndexedLong(ChangesetReader reader, ClassObject* obj, uint byteOffset, ulong currentAffectedIndexes,
-		ReadOnlyArray<int> affectedIndexIndexes, HashIndexDeleteDelegate hashDelegate, ulong objHandle)
+		ReadOnlyArray<int> affectedIndexIndexes, IndexDeleteDelegate indexDelegate, ulong objHandle)
 	{
 		long prev = *((long*)((byte*)obj + byteOffset));
 		long curr = reader.ReadLong();
@@ -395,7 +395,7 @@ internal unsafe class StandbyAlignCodeCache
 
 		if (prev != curr)
 		{
-			currentAffectedIndexes = UpatedAffectedIndexes(obj, objHandle, currentAffectedIndexes, affectedIndexIndexes, hashDelegate);
+			currentAffectedIndexes = UpatedAffectedIndexes(obj, objHandle, currentAffectedIndexes, affectedIndexIndexes, indexDelegate);
 			*((long*)((byte*)obj + byteOffset)) = curr;
 		}
 
@@ -431,7 +431,7 @@ internal unsafe class StandbyAlignCodeCache
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	internal static ulong ReadIndexedReference(ChangesetReader reader, ClassObject* obj, uint byteOffset, TransactionContext tc,
 		ushort classIndex, int propId, bool trackRefs, ulong currentAffectedIndexes,
-		ReadOnlyArray<int> affectedIndexIndexes, HashIndexDeleteDelegate hashDelegate, ulong objHandle)
+		ReadOnlyArray<int> affectedIndexIndexes, IndexDeleteDelegate indexDelegate, ulong objHandle)
 	{
 		long prevRef = *((long*)((byte*)obj + byteOffset));
 		long currRef = reader.ReadLong();
@@ -445,7 +445,7 @@ internal unsafe class StandbyAlignCodeCache
 			if (currRef != 0)
 				tc.AddGroupingInvRefChange(classIndex, obj->id, currRef, propId, trackRefs, (byte)InvRefChangeType.Insert);
 
-			currentAffectedIndexes = UpatedAffectedIndexes(obj, objHandle, currentAffectedIndexes, affectedIndexIndexes, hashDelegate);
+			currentAffectedIndexes = UpatedAffectedIndexes(obj, objHandle, currentAffectedIndexes, affectedIndexIndexes, indexDelegate);
 
 			*((long*)((byte*)obj + byteOffset)) = currRef;
 		}
@@ -462,7 +462,7 @@ internal unsafe class StandbyAlignCodeCache
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	internal static ulong ReadIndexedFloat(ChangesetReader reader, ClassObject* obj, uint byteOffset, ulong currentAffectedIndexes,
-		ReadOnlyArray<int> affectedIndexIndexes, HashIndexDeleteDelegate hashDelegate, ulong objHandle)
+		ReadOnlyArray<int> affectedIndexIndexes, IndexDeleteDelegate indexDelegate, ulong objHandle)
 	{
 		float prev = *((float*)((byte*)obj + byteOffset));
 		float curr = reader.ReadFloat();
@@ -470,7 +470,7 @@ internal unsafe class StandbyAlignCodeCache
 
 		if (prev != curr)
 		{
-			currentAffectedIndexes = UpatedAffectedIndexes(obj, objHandle, currentAffectedIndexes, affectedIndexIndexes, hashDelegate);
+			currentAffectedIndexes = UpatedAffectedIndexes(obj, objHandle, currentAffectedIndexes, affectedIndexIndexes, indexDelegate);
 			*((float*)((byte*)obj + byteOffset)) = curr;
 		}
 
@@ -492,7 +492,7 @@ internal unsafe class StandbyAlignCodeCache
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	internal static ulong ReadIndexedDouble(ChangesetReader reader, ClassObject* obj, uint byteOffset, ulong currentAffectedIndexes,
-		ReadOnlyArray<int> affectedIndexIndexes, HashIndexDeleteDelegate hashDelegate, ulong objHandle)
+		ReadOnlyArray<int> affectedIndexIndexes, IndexDeleteDelegate indexDelegate, ulong objHandle)
 	{
 		double prev = *((double*)((byte*)obj + byteOffset));
 		double curr = reader.ReadDouble();
@@ -500,7 +500,7 @@ internal unsafe class StandbyAlignCodeCache
 
 		if (prev != curr)
 		{
-			currentAffectedIndexes = UpatedAffectedIndexes(obj, objHandle, currentAffectedIndexes, affectedIndexIndexes, hashDelegate);
+			currentAffectedIndexes = UpatedAffectedIndexes(obj, objHandle, currentAffectedIndexes, affectedIndexIndexes, indexDelegate);
 			*((double*)((byte*)obj + byteOffset)) = curr;
 		}
 
@@ -522,7 +522,7 @@ internal unsafe class StandbyAlignCodeCache
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	internal static ulong ReadIndexedBool(ChangesetReader reader, ClassObject* obj, uint byteOffset, ulong currentAffectedIndexes,
-		ReadOnlyArray<int> affectedIndexIndexes, HashIndexDeleteDelegate hashDelegate, ulong objHandle)
+		ReadOnlyArray<int> affectedIndexIndexes, IndexDeleteDelegate indexDelegate, ulong objHandle)
 	{
 		bool prev = *((bool*)((byte*)obj + byteOffset));
 		bool curr = reader.ReadBool();
@@ -530,7 +530,7 @@ internal unsafe class StandbyAlignCodeCache
 
 		if (prev != curr)
 		{
-			currentAffectedIndexes = UpatedAffectedIndexes(obj, objHandle, currentAffectedIndexes, affectedIndexIndexes, hashDelegate);
+			currentAffectedIndexes = UpatedAffectedIndexes(obj, objHandle, currentAffectedIndexes, affectedIndexIndexes, indexDelegate);
 			*((bool*)((byte*)obj + byteOffset)) = curr;
 		}
 
@@ -552,7 +552,7 @@ internal unsafe class StandbyAlignCodeCache
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	internal static ulong ReadIndexedDateTime(ChangesetReader reader, ClassObject* obj, uint byteOffset, ulong currentAffectedIndexes,
-		ReadOnlyArray<int> affectedIndexIndexes, HashIndexDeleteDelegate hashDelegate, ulong objHandle)
+		ReadOnlyArray<int> affectedIndexIndexes, IndexDeleteDelegate indexDelegate, ulong objHandle)
 	{
 		DateTime prev = *((DateTime*)((byte*)obj + byteOffset));
 		DateTime curr = reader.ReadDateTime();
@@ -560,7 +560,7 @@ internal unsafe class StandbyAlignCodeCache
 
 		if (prev != curr)
 		{
-			currentAffectedIndexes = UpatedAffectedIndexes(obj, objHandle, currentAffectedIndexes, affectedIndexIndexes, hashDelegate);
+			currentAffectedIndexes = UpatedAffectedIndexes(obj, objHandle, currentAffectedIndexes, affectedIndexIndexes, indexDelegate);
 			*((DateTime*)((byte*)obj + byteOffset)) = curr;
 		}
 
@@ -591,14 +591,14 @@ internal unsafe class StandbyAlignCodeCache
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	internal static ulong ReadIndexedString(ChangesetReader reader, StringStorage stringStorage, ClassObject* obj,
 		uint byteOffset, ulong currentAffectedIndexes,
-		ReadOnlyArray<int> affectedIndexIndexes, HashIndexDeleteDelegate hashDelegate, ulong objHandle)
+		ReadOnlyArray<int> affectedIndexIndexes, IndexDeleteDelegate indexDelegate, ulong objHandle)
 	{
 		TTTrace.Write();
 		string s = reader.ReadString(out bool isDefined);
 
 		if (isDefined)
 		{
-			currentAffectedIndexes = UpatedAffectedIndexes(obj, objHandle, currentAffectedIndexes, affectedIndexIndexes, hashDelegate);
+			currentAffectedIndexes = UpatedAffectedIndexes(obj, objHandle, currentAffectedIndexes, affectedIndexIndexes, indexDelegate);
 
 			stringStorage.DecRefCount(*((ulong*)((byte*)obj + byteOffset)));
 			ulong handle = stringStorage.AddString(s);

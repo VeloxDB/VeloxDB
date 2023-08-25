@@ -1,6 +1,7 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Transactions;
 using VeloxDB.Common;
 
 namespace VeloxDB.Storage;
@@ -34,19 +35,25 @@ internal sealed class ClassScan : IDisposable, IEnumerable<ObjectReader>
 	public bool IsFinished => currRange == null;
 	internal Class Class => @class;
 
-	public bool Next(ObjectReader[] objects, int baseOffset, ref int count)
+	public bool Next(ObjectReader[] objects, out int count)
 	{
+		if (tran != null && tran.Source == TransactionSource.Client)
+			tran.ValidateUsage();
+
 		if (scanContext != null)
 			scanContext.Processed();
 
+		count = 0;
 		if (currRange == null)
 			return false;
+
+		count = objects.Length;
 
 		int c = 0;
 		while (c < count)
 		{
 			int tc = Math.Min(maxBatchSize, count - c);
-			if (!NextInternal(objects, null, baseOffset + c, ref tc))
+			if (!NextInternal(objects, null, c, ref tc))
 			{
 				count = c;
 				return count > 0;
@@ -84,14 +91,14 @@ internal sealed class ClassScan : IDisposable, IEnumerable<ObjectReader>
 
 	public void Dispose()
 	{
+		if (tran != null && tran.Source == TransactionSource.Client)
+			tran.ValidateUsage();
+
 		if (scanContext != null)
 		{
 			scanContext.Processed();
 			scanContext = null;
 		}
-
-		if (tran != null)
-			tran.RemoveClassScan(this);
 	}
 
 	private unsafe bool NextInternal(ObjectReader[] objects, ulong[] handles, int baseOffset, ref int count)
@@ -138,8 +145,7 @@ internal sealed class ClassScan : IDisposable, IEnumerable<ObjectReader>
 	public IEnumerator<ObjectReader> GetEnumerator()
 	{
 		ObjectReader[] rs = new ObjectReader[8];
-		int count = rs.Length;
-		while (Next(rs, 0, ref count))
+		while (Next(rs, out int count))
 		{
 			for (int i = 0; i < count; i++)
 			{

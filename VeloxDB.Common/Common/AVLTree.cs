@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace VeloxDB.Common;
@@ -16,7 +16,7 @@ internal sealed class AVLTree<TKey, TValue> : IEnumerable<KeyValuePair<TKey, TVa
 
 	int count;
 
-	// We maintain tree nodes as structs inside an array and connected them using indexes.
+	// We maintain tree nodes as structs inside an array and connect them using indexes.
 	Node[] nodes;
 	int usedCount;
 	int freeList;
@@ -48,6 +48,8 @@ internal sealed class AVLTree<TKey, TValue> : IEnumerable<KeyValuePair<TKey, TVa
 	}
 
 	public int Count => count;
+	public IComparer<TKey> Comparer => comparer;
+
 	private int Root { get => nodes[rootParent].Left; set => nodes[rootParent].Left = value; }
 
 	public void GetKeyValue(TreeItem item, out TKey key, out TValue value)

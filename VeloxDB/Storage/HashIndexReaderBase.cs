@@ -1,48 +1,31 @@
-using System;
+﻿using System;
 using System.Runtime.CompilerServices;
 using VeloxDB.Common;
 using VeloxDB.Descriptor;
 
 namespace VeloxDB.Storage;
 
-internal abstract class HashIndexReaderBase
+internal unsafe abstract class HashIndexReaderBase : IndexReaderBase
 {
-	int keySize;
-	HashIndex hashIndex;
+	HashIndex index;
 
-	protected ComparerPool comparerPool;
-
-	public HashIndexReaderBase(Type[] types)
+	public HashIndexReaderBase(Type[] types, string cultureName, bool caseSensitive, ReadOnlyArray<SortOrder> sortOrder) :
+		base(types, cultureName, caseSensitive, sortOrder)
 	{
-		keySize = 0;
-		KeyProperty[] properties = new KeyProperty[types.Length];
-
-		for (int i = 0; i < types.Length; i++)
-		{
-			PropertyType propType = PropertyTypesHelper.ManagedTypeToPropertyType(types[i]);
-			if (propType == PropertyType.None || PropertyTypesHelper.IsArray(propType))
-				throw new DatabaseException(DatabaseErrorDetail.Create(DatabaseErrorType.IndexPropertyWrongType));
-
-			properties[i] = new KeyProperty(propType, keySize);
-			keySize += PropertyTypesHelper.GetItemSize(propType);
-		}
-
-		comparerPool = new ComparerPool(2, properties);
 	}
 
-	public HashIndex HashIndex => hashIndex;
-	protected int KeySize => keySize;
+	public HashIndex HashIndex => index;
 
-	public void SetIndex(HashIndex hashIndex)
+	public override void SetIndex(Index index)
 	{
-		this.hashIndex = hashIndex;
+		this.index = (HashIndex)index;
 	}
 }
 
 internal unsafe abstract class HashIndexReaderBase<TKey1> : HashIndexReaderBase, IHashIndexReader<TKey1>
 {
-	public HashIndexReaderBase() :
-		base(new Type[] { typeof(TKey1) })
+	public HashIndexReaderBase(string cultureName, bool caseSensitive, ReadOnlyArray<SortOrder> sortOrder) :
+		base(new Type[] { typeof(TKey1) }, cultureName, caseSensitive, sortOrder)
 	{
 	}
 
@@ -51,18 +34,10 @@ internal unsafe abstract class HashIndexReaderBase<TKey1> : HashIndexReaderBase,
 	[SkipLocalsInit]
 	public void GetObjects(Transaction tran, TKey1 key1, ref ObjectReader[] objectReaders, out int count)
 	{
-		HashComparer a = comparerPool.GetComparer();
-
-		try
-		{
-			byte* pkey = stackalloc byte[KeySize];
-			PopulateKeyBuffer(key1, pkey, a.Strings);
-			tran.Engine.ReadHashIndex(tran, base.HashIndex, pkey, a, ref objectReaders, out count);
-		}
-		finally
-		{
-			comparerPool.PutComparer(a);
-		}
+		byte* pkey = stackalloc byte[keySize];
+		string[] strings = base.comparer.StringPropertyCount == 0 ? null : new string[base.comparer.StringPropertyCount];
+		PopulateKeyBuffer(key1, pkey, strings);
+		tran.Engine.ReadHashIndex(tran, base.HashIndex, pkey, comparer, strings, ref objectReaders, out count);
 	}
 
 	protected abstract void PopulateKeyBuffer(TKey1 key1, byte* pkey, string[] strings);
@@ -70,26 +45,18 @@ internal unsafe abstract class HashIndexReaderBase<TKey1> : HashIndexReaderBase,
 
 internal unsafe abstract class HashIndexReaderBase<TKey1, TKey2> : HashIndexReaderBase, IHashIndexReader<TKey1, TKey2>
 {
-	public HashIndexReaderBase() :
-		base(new Type[] { typeof(TKey1), typeof(TKey2) })
+	public HashIndexReaderBase(string cultureName, bool caseSensitive, ReadOnlyArray<SortOrder> sortOrder) :
+		base(new Type[] { typeof(TKey1), typeof(TKey2) }, cultureName, caseSensitive, sortOrder)
 	{
 	}
 
 	[SkipLocalsInit]
 	public void GetObjects(Transaction tran, TKey1 key1, TKey2 key2, ref ObjectReader[] objectReaders, out int count)
 	{
-		HashComparer a = comparerPool.GetComparer();
-
-		try
-		{
-			byte* pkey = stackalloc byte[KeySize];
-			PopulateKeyBuffer(key1, key2, pkey, a.Strings);
-			tran.Engine.ReadHashIndex(tran, base.HashIndex, pkey, a, ref objectReaders, out count);
-		}
-		finally
-		{
-			comparerPool.PutComparer(a);
-		}
+		byte* pkey = stackalloc byte[keySize];
+		string[] strings = base.comparer.StringPropertyCount == 0 ? null : new string[base.comparer.StringPropertyCount];
+		PopulateKeyBuffer(key1, key2, pkey, strings);
+		tran.Engine.ReadHashIndex(tran, base.HashIndex, pkey, base.comparer, strings, ref objectReaders, out count);
 	}
 
 	protected abstract void PopulateKeyBuffer(TKey1 key1, TKey2 key2, byte* pkey, string[] strings);
@@ -97,111 +64,39 @@ internal unsafe abstract class HashIndexReaderBase<TKey1, TKey2> : HashIndexRead
 
 internal unsafe abstract class HashIndexReaderBase<TKey1, TKey2, TKey3> : HashIndexReaderBase, IHashIndexReader<TKey1, TKey2, TKey3>
 {
-	public HashIndexReaderBase() :
-		base(new Type[] { typeof(TKey1), typeof(TKey2), typeof(TKey3) })
+	public HashIndexReaderBase(string cultureName, bool caseSensitive, ReadOnlyArray<SortOrder> sortOrder) :
+		base(new Type[] { typeof(TKey1), typeof(TKey2), typeof(TKey3) }, cultureName, caseSensitive, sortOrder)
 	{
 	}
 
 	[SkipLocalsInit]
 	public void GetObjects(Transaction tran, TKey1 key1, TKey2 key2, TKey3 key3, ref ObjectReader[] objectReaders, out int count)
 	{
-		HashComparer a = comparerPool.GetComparer();
-
-		try
-		{
-			byte* pkey = stackalloc byte[KeySize];
-			PopulateKeyBuffer(key1, key2, key3, pkey, a.Strings);
-			tran.Engine.ReadHashIndex(tran, base.HashIndex, pkey, a, ref objectReaders, out count);
-		}
-		finally
-		{
-			comparerPool.PutComparer(a);
-		}
+		byte* pkey = stackalloc byte[keySize];
+		string[] strings = base.comparer.StringPropertyCount == 0 ? null : new string[base.comparer.StringPropertyCount];
+		PopulateKeyBuffer(key1, key2, key3, pkey, strings);
+		tran.Engine.ReadHashIndex(tran, base.HashIndex, pkey, base.comparer, strings, ref objectReaders, out count);
 	}
 
 	protected abstract void PopulateKeyBuffer(TKey1 key1, TKey2 key2, TKey3 key3, byte* pkey, string[] strings);
 }
 
-internal unsafe abstract class HashIndexReaderBase<TKey1, TKey2, TKey3, TKey4> : HashIndexReaderBase, IHashIndexReader<TKey1, TKey2, TKey3, TKey4>
+internal unsafe abstract class HashIndexReaderBase<TKey1, TKey2, TKey3, TKey4> : HashIndexReaderBase,
+	IHashIndexReader<TKey1, TKey2, TKey3, TKey4>
 {
-	public HashIndexReaderBase() :
-		base(new Type[] { typeof(TKey1), typeof(TKey2), typeof(TKey3), typeof(TKey4) })
+	public HashIndexReaderBase(string cultureName, bool caseSensitive, ReadOnlyArray<SortOrder> sortOrder) :
+		base(new Type[] { typeof(TKey1), typeof(TKey2), typeof(TKey3), typeof(TKey4) }, cultureName, caseSensitive, sortOrder)
 	{
 	}
 
 	[SkipLocalsInit]
 	public void GetObjects(Transaction tran, TKey1 key1, TKey2 key2, TKey3 key3, TKey4 key4, ref ObjectReader[] objectReaders, out int count)
 	{
-		HashComparer a = comparerPool.GetComparer();
-
-		try
-		{
-			byte* pkey = stackalloc byte[KeySize];
-			PopulateKeyBuffer(key1, key2, key3, key4, pkey, a.Strings);
-			tran.Engine.ReadHashIndex(tran, base.HashIndex, pkey, a, ref objectReaders, out count);
-		}
-		finally
-		{
-			comparerPool.PutComparer(a);
-		}
+		byte* pkey = stackalloc byte[keySize];
+		string[] strings = base.comparer.StringPropertyCount == 0 ? null : new string[base.comparer.StringPropertyCount];
+		PopulateKeyBuffer(key1, key2, key3, key4, pkey, strings);
+		tran.Engine.ReadHashIndex(tran, base.HashIndex, pkey, base.comparer, strings, ref objectReaders, out count);
 	}
 
 	protected abstract void PopulateKeyBuffer(TKey1 key1, TKey2 key2, TKey3 key3, TKey4 key4, byte* pkey, string[] strings);
-}
-
-internal struct ComparerPool
-{
-	RWLock sync;
-	int count;
-	HashComparer[] items;
-
-	KeyProperty[] properties;
-	int stringCount;
-
-	public ComparerPool(int initCapacity, KeyProperty[] properties)
-	{
-		this.properties = properties;
-
-		stringCount = 0;
-		for (int i = 0; i < properties.Length; i++)
-		{
-			if (properties[i].PropertyType == PropertyType.String)
-				stringCount++;
-		}
-
-		sync = new RWLock();
-
-		count = initCapacity;
-		items = new HashComparer[count];
-		KeyComparerDesc compDesc = new KeyComparerDesc(properties);
-		for (int i = 0; i < count; i++)
-		{
-			items[i] = new HashComparer(compDesc, new string[stringCount]);
-		}
-	}
-
-	public HashComparer GetComparer()
-	{
-		HashComparer s = null;
-		sync.EnterWriteLock();
-		if (count > 0)
-			s = items[--count];
-
-		sync.ExitWriteLock();
-
-		if (s == null)
-			s = new HashComparer(new KeyComparerDesc(properties), new string[stringCount]);
-
-		return s;
-	}
-
-	public void PutComparer(HashComparer s)
-	{
-		sync.EnterWriteLock();
-		if (items.Length == count)
-			Array.Resize(ref items, items.Length * 2);
-
-		items[count++] = s;
-		sync.ExitWriteLock();
-	}
 }

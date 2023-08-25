@@ -12,10 +12,10 @@ internal sealed class ModelUpdateContext : IDisposable
 	Database database;
 	DataModelUpdate modelUpdate;
 	JobWorkers<CommonWorkerParam> workers;
-	Dictionary<short, HashIndexEntry> newHashIndexes;
+	Dictionary<short, IndexEntry> newIndexes;
 	Dictionary<short, ClassEntry> newClasses;
 	Dictionary<short, InverseReferenceMap> newInvRefMaps;
-	HashReadersCollection newHashReaders;
+	IndexReadersCollection newIndexReaders;
 	DatabaseErrorDetail error;
 
 	public ModelUpdateContext(Database database, DataModelUpdate modelUpdate)
@@ -28,9 +28,9 @@ internal sealed class ModelUpdateContext : IDisposable
 		workers = JobWorkers<CommonWorkerParam>.Create(workerName, workerCount);
 		ResetWorkersAction();
 
-		newHashReaders = new HashReadersCollection(database.HashReaders, modelUpdate);
+		newIndexReaders = new IndexReadersCollection(database.IndexReaders, modelUpdate);
 
-		newHashIndexes = new Dictionary<short, HashIndexEntry>(2);
+		newIndexes = new Dictionary<short, IndexEntry>(2);
 		newClasses = new Dictionary<short, ClassEntry>(2);
 		newInvRefMaps = new Dictionary<short, InverseReferenceMap>(2);
 	}
@@ -41,7 +41,7 @@ internal sealed class ModelUpdateContext : IDisposable
 	}
 
 	public JobWorkers<CommonWorkerParam> Workers => workers;
-	public HashReadersCollection NewHashReaders => newHashReaders;
+	public IndexReadersCollection NewIndexReaders => newIndexReaders;
 	public DataModelUpdate ModelUpdate => modelUpdate;
 
 	public void Validate()
@@ -57,9 +57,9 @@ internal sealed class ModelUpdateContext : IDisposable
 		workers.EnqueueWork(ValidateNotNullReferenceJob.Create(database, this).
 			Select(x => new CommonWorkerParam() { ReferenceParam = x }));
 
-		workers.EnqueueWork(ValidateModifiedUniqueHashIndexJob.Create(database, this).
+		workers.EnqueueWork(ValidateModifiedUniqueIndexJob.Create(database, this).
 			Select(x => new CommonWorkerParam() { ReferenceParam = x }));
-		workers.EnqueueWork(ValidateUniqueHashIndexJob.Create(database, this).
+		workers.EnqueueWork(ValidateUniqueIndexJob.Create(database, this).
 			Select(x => new CommonWorkerParam() { ReferenceParam = x }));
 
 		workers.Drain();
@@ -78,10 +78,10 @@ internal sealed class ModelUpdateContext : IDisposable
 	{
 		database.Trace.Debug("Executing model update.");
 
-		DeleteHashIndexJob.Execute(database, this);
+		DeleteIndexJob.Execute(database, this);
 		ResetWorkersAction();
 
-		workers.EnqueueWork(DeleteClassFromHashIndexJob.Create(database, this).Select(x => new CommonWorkerParam() { ReferenceParam = x }));
+		workers.EnqueueWork(DeleteClassFromIndexJob.Create(database, this).Select(x => new CommonWorkerParam() { ReferenceParam = x }));
 		workers.Drain();
 
 		DeleteInverseReferenceMapJob.Execute(database, this);
@@ -89,13 +89,13 @@ internal sealed class ModelUpdateContext : IDisposable
 		InsertClassJob.Execute(database, this);
 		InsertInverseReferenceMapJob.Execute(database, this);
 
-		InsertHashIndexJob.Execute(database, this);
+		InsertIndexJob.Execute(database, this);
 		if (modelUpdate.IsAlignment)
-			PrepareHashIndexForPendingRefillJob.Execute(database, this);
+			PrepareIndexForPendingRefillJob.Execute(database, this);
 
 		ResetWorkersAction();
 
-		workers.EnqueueWork(InsertClassIntoHashIndexJob.Create(database, this).Select(x => new CommonWorkerParam() { ReferenceParam = x }));
+		workers.EnqueueWork(InsertClassIntoIndexJob.Create(database, this).Select(x => new CommonWorkerParam() { ReferenceParam = x }));
 		workers.EnqueueWork(DeleteInverseReferencesJob.Create(database, this).Select(x => new CommonWorkerParam() { ReferenceParam = x }));
 		workers.Drain();
 
@@ -127,9 +127,9 @@ internal sealed class ModelUpdateContext : IDisposable
 		workers.SetAction(job => ((ModelUpdateJob)job.ReferenceParam).Execute());
 	}
 
-	public void AddNewHashIndex(HashIndex hashIndex, HashKeyReadLocker locker)
+	public void AddNewIndex(Index index, KeyReadLocker locker)
 	{
-		newHashIndexes.Add(hashIndex.HashIndexDesc.Id, new HashIndexEntry() { HashIndex = hashIndex, HashIndexLocker = locker });
+		newIndexes.Add(index.IndexDesc.Id, new IndexEntry() { Index = index, IndexLocker = locker });
 	}
 
 	public void AddNewClass(ClassBase @class, ClassLocker locker)
@@ -142,17 +142,17 @@ internal sealed class ModelUpdateContext : IDisposable
 		newInvRefMaps.Add(invRefMap.ClassDesc.Id, invRefMap);
 	}
 
-	public bool TryGetNewHashIndex(short id, out HashIndex hashIndex, out HashKeyReadLocker locker)
+	public bool TryGetNewIndex(short id, out Index index, out KeyReadLocker locker)
 	{
-		if (!newHashIndexes.TryGetValue(id, out HashIndexEntry entry))
+		if (!newIndexes.TryGetValue(id, out IndexEntry entry))
 		{
-			hashIndex = null;
+			index = null;
 			locker = null;
 			return false;
 		}
 
-		hashIndex = entry.HashIndex;
-		locker = entry.HashIndexLocker;
+		index = entry.Index;
+		locker = entry.IndexLocker;
 		return true;
 	}
 
@@ -175,10 +175,10 @@ internal sealed class ModelUpdateContext : IDisposable
 		return newInvRefMaps.TryGetValue(id, out invRefMap);
 	}
 
-	private sealed class HashIndexEntry
+	private sealed class IndexEntry
 	{
-		public HashIndex HashIndex { get; set; }
-		public HashKeyReadLocker HashIndexLocker { get; set; }
+		public Index Index { get; set; }
+		public KeyReadLocker IndexLocker { get; set; }
 	}
 
 	private sealed class ClassEntry
@@ -189,10 +189,10 @@ internal sealed class ModelUpdateContext : IDisposable
 
 	public void CancelUpdate()
 	{
-		foreach (HashIndexEntry he in newHashIndexes.Values)
+		foreach (IndexEntry he in newIndexes.Values)
 		{
-			he.HashIndex.Dispose(workers);
-			he.HashIndexLocker?.Dispose();
+			he.Index.Dispose(workers);
+			he.IndexLocker?.Dispose();
 		}
 	}
 

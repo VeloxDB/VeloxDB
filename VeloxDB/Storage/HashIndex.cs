@@ -9,9 +9,9 @@ using static System.Math;
 
 namespace VeloxDB.Storage;
 
-internal unsafe sealed class HashIndex
+internal unsafe sealed class HashIndex : Index
 {
-	HashIndexDescriptor hashIndexDesc;
+	HashIndexDescriptor indexDesc;
 	Database database;
 
 	ParallelResizeCounter resizeCounter;
@@ -30,17 +30,16 @@ internal unsafe sealed class HashIndex
 	StringStorage stringStorage;
 
 	long traceId;
-
 	bool pendingRefill;
 
-	public HashIndex(Database database, HashIndexDescriptor hindDesc, long capacity)
+	public HashIndex(Database database, HashIndexDescriptor indexDesc, long capacity)
 	{
-		TTTrace.Write(database.TraceId, hindDesc.Id, capacity);
+		TTTrace.Write(database.TraceId, indexDesc.Id, capacity);
 
 		StorageEngine engine = database.Engine;
 
 		this.traceId = database.TraceId;
-		this.hashIndexDesc = hindDesc;
+		this.indexDesc = indexDesc;
 		this.database = database;
 		this.memoryManager = database.Engine.MemoryManager;
 		this.fixedMemoryManager = memoryManager.RegisterFixedConsumer(HashIndexItem.Size);
@@ -71,25 +70,23 @@ internal unsafe sealed class HashIndex
 		TTTrace.Write(traceId, capacity, bucketCountLimit);
 	}
 
-	public HashIndexDescriptor HashIndexDesc => hashIndexDesc;
-	public bool Disposed => buckets == null;
+	public HashIndexDescriptor HashIndexDesc => indexDesc;
+	public override IndexDescriptor IndexDesc => indexDesc;
+	public override bool PendingRefill => pendingRefill;
 
-	public bool PendingRefill => pendingRefill;
-
-	public void ModelUpdated(HashIndexDescriptor hindDesc)
+	public override void ModelUpdated(IndexDescriptor indexDesc)
 	{
-		this.hashIndexDesc = hindDesc;
+		this.indexDesc = (HashIndexDescriptor)indexDesc;
 	}
 
-	public DatabaseErrorDetail Insert(Transaction tran, ulong classObjectHandle, byte* key, HashComparer comparer)
+	public override DatabaseErrorDetail Insert(Transaction tran, long id, ulong objectHandle, byte* key,
+		KeyComparer comparer, Func<short, KeyComparer> comparerFinder = null)
 	{
-		comparer.TTTraceKeys(traceId, tran == null ? 0 : tran.Id, HashIndexDesc.Id, key, stringStorage, 2);
-
-		if (comparer.HasNullStrings(key, stringStorage))
-			return null;
+		comparer.TTTraceKeys(traceId, tran == null ? 0 : tran.Id, indexDesc.Id, key, null, stringStorage, 2);
+		Checker.AssertFalse(tran != null && comparerFinder != null);
 
 		bool emptyBucket = false;
-		ulong hash = comparer.CalculateHashCode(key, seed, stringStorage);
+		ulong hash = comparer.CalculateHashCode(key, seed, null, stringStorage);
 
 		ulong itemHandle = fixedMemoryManager.Allocate();
 		HashIndexItem* item = (HashIndexItem*)fixedMemoryManager.GetBuffer(itemHandle);
@@ -102,14 +99,16 @@ internal unsafe sealed class HashIndex
 		DatabaseErrorDetail error = null;
 		Bucket.LockAccess(bucket);
 
-		if (tran != null && database.GetHashIndexLocker(HashIndexDesc.Index).IsLocked(tran, key, hash, comparer))
-		{
-			error = DatabaseErrorDetail.Create(DatabaseErrorType.HashIndexConflict);
-		}
-		else
+		if (indexDesc.IsUnique)
+			error = CheckKeyUniqueness(tran, bucket, key, comparer, comparerFinder, id);
+
+		if (error == null && tran != null && database.GetKeyLocker(indexDesc.Index).IsLocked(tran, key, hash, comparer))
+			error = DatabaseErrorDetail.Create(DatabaseErrorType.IndexConflict);
+
+		if (error == null)
 		{
 			emptyBucket = bucket->Handle == 0;
-			item->objectHandle = classObjectHandle;
+			item->objectHandle = objectHandle;
 			item->nextCollision = bucket->Handle;
 			bucket->Handle = itemHandle;
 		}
@@ -127,47 +126,41 @@ internal unsafe sealed class HashIndex
 		return null;
 	}
 
-	public void ReplaceObjectHandle(ulong classObjectHandle, ulong newClassObjectHandle, byte* key, HashComparer comparer)
+	public override void ReplaceObjectHandle(ulong objectHandle, ulong newObjectHandle, byte* key, long id, KeyComparer comparer)
 	{
-		comparer.TTTraceKeys(traceId, 0, HashIndexDesc.Id, key, stringStorage, 3);
+		comparer.TTTraceKeys(traceId, 0, indexDesc.Id, key, null, stringStorage, 3);
 
-		if (comparer.HasNullStrings(key, stringStorage))
-			return;
-
-		ulong hash = comparer.CalculateHashCode(key, seed, stringStorage);
+		ulong hash = comparer.CalculateHashCode(key, seed, null, stringStorage);
 
 		Bucket* bucket = buckets + CalculateBucket(hash);
 		ulong* pBucketHandle = Bucket.LockAccess(bucket);
 
-		TTTrace.Write(hash, hashIndexDesc.Id, classObjectHandle, newClassObjectHandle, bucket->Handle);
+		TTTrace.Write(hash, indexDesc.Id, objectHandle, newObjectHandle, bucket->Handle);
 
 		HashIndexItem* item = (HashIndexItem*)fixedMemoryManager.GetBuffer(*pBucketHandle);
-		while (item->objectHandle != classObjectHandle)
+		while (item->objectHandle != objectHandle)
 		{
 			item = (HashIndexItem*)fixedMemoryManager.GetBuffer(item->nextCollision);
 		}
 
-		item->objectHandle = newClassObjectHandle;
+		item->objectHandle = newObjectHandle;
 
 		Bucket.UnlockAccess(bucket);
 	}
 
-	public void Delete(Transaction tran, ulong classObjectHandle, byte* key, HashComparer comparer)
+	public override void Delete(ulong objectHandle, byte* key, long id, KeyComparer comparer)
 	{
-		comparer.TTTraceKeys(traceId, tran == null ? 0 : tran.Id, HashIndexDesc.Id, key, stringStorage, 4);
-
-		if (comparer.HasNullStrings(key, stringStorage))
-			return;
+		comparer.TTTraceKeys(traceId, 0, indexDesc.Id, key, null, stringStorage, 4);
 
 		int lockHandle = resizeCounter.EnterReadLock();
 
 		bool clearedBucket = false;
-		ulong hash = comparer.CalculateHashCode(key, seed, stringStorage);
+		ulong hash = comparer.CalculateHashCode(key, seed, null, stringStorage);
 
 		Bucket* bucket = buckets + CalculateBucket(hash);
 		ulong* pBucketHandle = Bucket.LockAccess(bucket);
 
-		TTTrace.Write(hash, hashIndexDesc.Id, classObjectHandle, bucket->Handle);
+		TTTrace.Write(hash, indexDesc.Id, objectHandle, bucket->Handle);
 
 		if (bucket->Handle != 0)
 		{
@@ -175,7 +168,7 @@ internal unsafe sealed class HashIndex
 			while (pHandle[0] != 0)
 			{
 				HashIndexItem* item = (HashIndexItem*)fixedMemoryManager.GetBuffer(*pHandle);
-				if (item->objectHandle == classObjectHandle)
+				if (item->objectHandle == objectHandle)
 				{
 					TTTrace.Write(item->nextCollision, item->objectHandle);
 					ulong handle = *pHandle;
@@ -199,15 +192,10 @@ internal unsafe sealed class HashIndex
 	}
 
 	[SkipLocalsInit]
-	public DatabaseErrorDetail GetItems(Transaction tran, byte* key, HashComparer comparer, ref ObjectReader[] rs, out int count)
+	public DatabaseErrorDetail GetItems(Transaction tran, byte* key, KeyComparer comparer,
+		string[] requestStrings, ref ObjectReader[] rs, out int count)
 	{
-		comparer.TTTraceKeys(traceId, tran == null ? 0 : tran.Id, HashIndexDesc.Id, key, stringStorage, 13);
-
-		if (comparer.HasNullStrings(key, stringStorage))
-		{
-			count = 0;
-			return null;
-		}
+		comparer.TTTraceKeys(traceId, tran == null ? 0 : tran.Id, indexDesc.Id, key, requestStrings, stringStorage, 13);
 
 		HashedItemId* initItems = stackalloc HashedItemId[4];
 		HashedIdCollection items = new HashedIdCollection(4, initItems);
@@ -216,7 +204,7 @@ internal unsafe sealed class HashIndex
 		{
 			count = 0;
 
-			DatabaseErrorDetail error = GetVersionsByKey(tran, key, comparer, ref items);
+			DatabaseErrorDetail error = GetVersionsByKey(tran, key, comparer, requestStrings, ref items);
 			if (error != null)
 				return error;
 
@@ -224,18 +212,16 @@ internal unsafe sealed class HashIndex
 			{
 				HashedItemId* item = &items.items[i];
 				Class @class = database.GetClass(item->classIndex).MainClass;
-				ObjectReader r = @class.GetHashedObject(tran, item->objectHandle, false, out error);
-				if (error != null)
-				{
-					if (error.ErrorType == DatabaseErrorType.Conflict)
-						return DatabaseErrorDetail.Create(DatabaseErrorType.HashIndexConflict);
 
-					return error;
-				}
-				else if (!r.IsEmpty())
+				if (tran.Type == TransactionType.ReadWrite)
 				{
-					StoreObject(ref rs, ref count, r);
+					error = @class.ReadLockObjectFromIndex(tran, item->objectHandle, indexDesc.Id);
+					if (error != null)
+						return error;
 				}
+
+				ObjectReader r = new ObjectReader(ClassObject.ToDataPointer(Class.GetObjectByHandle(item->objectHandle)), @class);
+				StoreObject(ref rs, ref count, r);
 			}
 
 			return null;
@@ -247,138 +233,138 @@ internal unsafe sealed class HashIndex
 	}
 
 	[SkipLocalsInit]
-	public bool ContainsKey(Transaction tran, byte* key, HashComparer comparer, long objectId, out DatabaseErrorDetail error)
+	private DatabaseErrorDetail CheckKeyUniqueness(Transaction tran, Bucket* bucket, byte* key,
+		KeyComparer comparer, Func<short, KeyComparer> comparerFinder, long exceptId)
 	{
-		comparer.TTTraceKeys(traceId, tran == null ? 0 : tran.Id, HashIndexDesc.Id, key, stringStorage, 5);
+		comparer.TTTraceKeys(traceId, tran == null ? 0 : tran.Id, indexDesc.Id, key, null, stringStorage, 5);
 
-		error = null;
-		if (comparer.HasNullStrings(key, stringStorage))
-			return false;
-
-		HashedItemId* initItems = stackalloc HashedItemId[4];
-		HashedIdCollection items = new HashedIdCollection(4, initItems);
-
-		try
+		ulong itemHandle = bucket->Handle;
+		while (itemHandle != 0)
 		{
-			error = GetVersionsByKey(tran, key, comparer, ref items, objectId);
-			if (error == null)
+			HashIndexItem* item = (HashIndexItem*)fixedMemoryManager.GetBuffer(itemHandle);
+			byte* objectKey = Class.GetKey(item->objectHandle, out ClassObject* obj);
+			Checker.AssertFalse(obj->IsDeleted);
+			TTTrace.Write(database.TraceId, tran != null ? tran.Id : 0, exceptId, obj->id, obj->version);
+			if (obj->id != exceptId)
 			{
-				for (int i = 0; i < items.count; i++)
-				{
-					HashedItemId* item = &items.items[i];
-					Class @class = database.GetClass(item->classIndex).MainClass;
-					ObjectReader r = @class.GetHashedObject(tran, item->objectHandle, true, out error);
-					if (error != null)
-						break;
+				Class @class = database.GetClassById(IdHelper.GetClassId(obj->id)).MainClass;
+				KeyComparer itemComparer = comparerFinder != null ?
+					comparerFinder(@class.ClassDesc.Id) : @class.GetKeyComparer(indexDesc.Id, true);
 
-					if (!r.IsEmpty())
-						return true;
+				if (itemComparer.Equals(objectKey, null, key, comparer, stringStorage))
+				{
+					bool isVisible = IsVisible(tran, obj, out bool isConflicting);
+					if (isConflicting)
+						return DatabaseErrorDetail.Create(DatabaseErrorType.IndexConflict);
+
+					if (isVisible)
+						return DatabaseErrorDetail.CreateUniquenessConstraint(indexDesc.Name);
 				}
 			}
 
-			return false;
+			itemHandle = item->nextCollision;
 		}
-		finally
-		{
-			items.Dispose(memoryManager);
-		}
+
+		return null;
 	}
 
-	public bool ContainsKey(byte* key, HashComparer comparer, Func<short, HashComparer> comparerFinder)
+	public override IndexScanRange[] SplitScanRange()
 	{
-		comparer.TTTraceKeys(traceId, 0, HashIndexDesc.Id, key, stringStorage, 6);
-
-		ulong hash = comparer.CalculateHashCode(key, seed, stringStorage);
-
-		Bucket* bucket = buckets + CalculateBucket(hash);
-		Bucket.LockAccess(bucket);
-
-		try
+		Utils.Range[] ranges = Utils.SplitRange(capacity, database.Engine.Settings.ResizeSplitSize, ProcessorNumber.CoreCount);
+		IndexScanRange[] scanRanges = new IndexScanRange[ranges.Length];
+		for (int i = 0; i < ranges.Length; i++)
 		{
-			ulong itemHandle = bucket->Handle;
-			while (itemHandle != 0)
-			{
-				HashIndexItem* item = (HashIndexItem*)fixedMemoryManager.GetBuffer(itemHandle);
-				byte* objectKey = Class.GetHashKey(item->objectHandle, out ClassObject* classObject);
-				Class @class = database.GetClassById(IdHelper.GetClassId(classObject->id)).MainClass;
-				HashComparer itemComparer = comparerFinder(@class.ClassDesc.Id);
-
-				if (itemComparer.AreKeysEqual(objectKey, key, comparer, stringStorage))
-					return true;
-
-				itemHandle = item->nextCollision;
-			}
-		}
-		finally
-		{
-			Bucket.UnlockAccess(bucket);
+			scanRanges[i] = new HashScanRange(ranges[i].Offset, ranges[i].Count);
 		}
 
-		return false;
-	}
-
-	public Utils.Range[] SplitScanRange()
-	{
-		return Utils.SplitRange(capacity, database.Engine.Settings.ResizeSplitSize, ProcessorNumber.CoreCount);
+		return scanRanges;
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private DatabaseErrorDetail GetVersionsByKey(Transaction tran, byte* key,
-		HashComparer comparer, ref HashedIdCollection items, long exceptId = 0)
+		KeyComparer comparer, string[] requestStrings, ref HashedIdCollection items)
 	{
-		ulong hash = comparer.CalculateHashCode(key, seed, stringStorage);
+		ulong hash = comparer.CalculateHashCode(key, seed, requestStrings, null);
 
-		DatabaseErrorDetail error = null;
 		int lockHandle = resizeCounter.EnterReadLock();
 
 		Bucket* bucket = buckets + CalculateBucket(hash);
 		Bucket.LockAccess(bucket);
 
-		TTTrace.Write(database.TraceId, hash, tran.Id, exceptId, bucket->Handle);
-
-		if (tran != null && tran.Type == TransactionType.ReadWrite)
+		try
 		{
-			HashKeyReadLocker locker = database.GetHashIndexLocker(HashIndexDesc.Index);
-			error = locker.Lock(tran, key, comparer, hash);
-		}
+			TTTrace.Write(database.TraceId, hash, tran.Id, bucket->Handle);
 
-		if (error == null)
-		{
+			if (tran.Type == TransactionType.ReadWrite)
+			{
+				KeyReadLocker locker = database.GetKeyLocker(indexDesc.Index);
+				DatabaseErrorDetail error = locker.LockKey(tran, key, comparer, requestStrings, hash);
+				if (error != null)
+					return error;
+			}
+
 			ulong itemHandle = bucket->Handle;
 			while (itemHandle != 0)
 			{
 				HashIndexItem* item = (HashIndexItem*)fixedMemoryManager.GetBuffer(itemHandle);
-				byte* objectKey = Class.GetHashKey(item->objectHandle, out ClassObject* obj);
-				TTTrace.Write(database.TraceId, tran.Id, exceptId, obj->id, obj->version);
-				if (obj->id != exceptId)
+				byte* objectKey = Class.GetKey(item->objectHandle, out ClassObject* obj);
+				Checker.AssertFalse(obj->IsDeleted);
+				TTTrace.Write(database.TraceId, tran.Id, tran.ReadVersion, obj->id, obj->version, obj->NewerVersion);
+
+				Class @class = database.GetClassById(IdHelper.GetClassId(obj->id)).MainClass;
+				KeyComparer itemComparer = @class.GetKeyComparer(indexDesc.Id, true);
+
+				if (comparer.Equals(key, requestStrings, objectKey, itemComparer, stringStorage))
 				{
-					Class @class = database.GetClassById(IdHelper.GetClassId(obj->id)).MainClass;
-					HashComparer itemComparer = @class.GetHashedComparer(HashIndexDesc.Id, true);
+					bool isVisible = IsVisible(tran, obj, out bool isConflicting);
+					if (tran.Type == TransactionType.ReadWrite && isConflicting)
+						return DatabaseErrorDetail.Create(DatabaseErrorType.IndexConflict);
 
-					if (itemComparer.AreKeysEqual(objectKey, key, comparer, stringStorage))
+					if (isVisible)
 					{
-						bool readLockUnavailable = Database.IsUncommited(obj->version) ? obj->version != tran.Id : obj->version > tran.ReadVersion;
-						if (tran != null && tran.Type == TransactionType.ReadWrite && readLockUnavailable)
-						{
-							error = DatabaseErrorDetail.Create(DatabaseErrorType.HashIndexConflict);
-							break;
-						}
-
 						if (items.count == items.capacity)
 							items.Resize(memoryManager);
 
-						items.Add(obj->id, item->objectHandle, (ushort)@class.ClassDesc.Index);
+						items.Add(item->objectHandle, (ushort)@class.ClassDesc.Index);
 					}
 				}
 
 				itemHandle = item->nextCollision;
 			}
+
+			return null;
+		}
+		finally
+		{
+			Bucket.UnlockAccess(bucket);
+			resizeCounter.ExitReadLock(lockHandle);
+		}
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	private bool IsVisible(Transaction tran, ClassObject* obj, out bool isConflicting)
+	{
+		if (tran == null)
+		{
+			isConflicting = false;
+			return true;
 		}
 
-		Bucket.UnlockAccess(bucket);
-		resizeCounter.ExitReadLock(lockHandle);
+		if (obj->version <= tran.ReadVersion)
+		{
+			isConflicting = false;
+			ulong newerVersion = obj->NewerVersion;
+			return newerVersion == 0 || (newerVersion > tran.ReadVersion && newerVersion != tran.Id);
+		}
 
-		return error;
+		if (obj->version == tran.Id)
+		{
+			isConflicting = false;
+			return true;
+		}
+
+		isConflicting = true;
+		return false;
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -390,24 +376,26 @@ internal unsafe sealed class HashIndex
 		rs[count++] = r;
 	}
 
-	private HashComparer ProvideComparerInModelUpdate(ref Dictionary<short, HashComparer> localCache, ClassDescriptor classDesc)
+	private KeyComparer ProvideComparerInModelUpdate(ref Dictionary<short, KeyComparer> localCache, ClassDescriptor classDesc)
 	{
 		if (localCache == null)
-			localCache = new Dictionary<short, HashComparer>(2);
+			localCache = new Dictionary<short, KeyComparer>(2);
 
-		if (localCache.TryGetValue(classDesc.Id, out HashComparer comparer))
+		if (localCache.TryGetValue(classDesc.Id, out KeyComparer comparer))
 			return comparer;
 
-		KeyComparerDesc kad = classDesc.GetHashAccessDescByPropertyName(hashIndexDesc);
-		comparer = new HashComparer(kad, null);
+		KeyComparerDesc kad = classDesc.GetIndexAccessDescByPropertyName(indexDesc);
+		comparer = new KeyComparer(kad);
 		localCache.Add(classDesc.Id, comparer);
 
 		return comparer;
 	}
 
-	public DatabaseErrorDetail CheckUniqueness(Utils.Range range)
+	public override DatabaseErrorDetail CheckUniqueness(IndexScanRange scanRange)
 	{
-		Dictionary<short, HashComparer> localCache = null;
+		HashScanRange range = (HashScanRange)scanRange;
+
+		Dictionary<short, KeyComparer> localCache = null;
 		for (long i = range.Offset; i < range.Offset + range.Count; i++)
 		{
 			ulong handle1 = buckets[i].Handle;
@@ -420,7 +408,7 @@ internal unsafe sealed class HashIndex
 
 				ClassObject* obj1 = Class.GetObjectByHandle(item1->objectHandle);
 				Class class1 = database.GetClassById(IdHelper.GetClassId(obj1->id)).MainClass;
-				HashComparer comparer1 = class1.GetHashedComparer(hashIndexDesc.Id, false);
+				KeyComparer comparer1 = class1.GetKeyComparer(indexDesc.Id, false);
 				if (comparer1 == null)
 					comparer1 = ProvideComparerInModelUpdate(ref localCache, class1.ClassDesc);
 
@@ -433,16 +421,16 @@ internal unsafe sealed class HashIndex
 					ulong nextCollision2 = item2->nextCollision;
 					ClassObject* obj2 = Class.GetObjectByHandle(item2->objectHandle);
 					Class class2 = database.GetClassById(IdHelper.GetClassId(obj2->id)).MainClass;
-					HashComparer comparer2 = class2.GetHashedComparer(hashIndexDesc.Id, false);
+					KeyComparer comparer2 = class2.GetKeyComparer(indexDesc.Id, false);
 					if (comparer2 == null)
 						comparer2 = ProvideComparerInModelUpdate(ref localCache, class2.ClassDesc);
 
 					byte* key2 = (byte*)obj2 + ClassObject.DataOffset;
-					if (comparer1.AreKeysEqual(key1, key2, comparer2, stringStorage))
+					if (comparer1.Equals(key1, null, key2, comparer2, stringStorage))
 					{
-						comparer1.TTTraceKeys(traceId, 0, hashIndexDesc.Id, key1, stringStorage, 7);
-						comparer2.TTTraceKeys(traceId, 0, hashIndexDesc.Id, key2, stringStorage, 8);
-						return DatabaseErrorDetail.CreateUniquenessConstraint(HashIndexDesc.FullName);
+						comparer1.TTTraceKeys(traceId, 0, indexDesc.Id, key1, null, stringStorage, 7);
+						comparer2.TTTraceKeys(traceId, 0, indexDesc.Id, key2, null, stringStorage, 8);
+						return DatabaseErrorDetail.CreateUniquenessConstraint(indexDesc.FullName);
 					}
 
 					handle2 = nextCollision2;
@@ -453,17 +441,6 @@ internal unsafe sealed class HashIndex
 		}
 
 		return null;
-	}
-
-	private bool IdExists(long[] ids, int idCount, long id)
-	{
-		for (int i = 0; i < idCount; i++)
-		{
-			if (ids[i] == id)
-				return true;
-		}
-
-		return false;
 	}
 
 	private void Resize()
@@ -496,7 +473,7 @@ internal unsafe sealed class HashIndex
 			JobWorkers<Utils.Range>.Execute(workerName, workerCount, r => Interlocked.Add(ref usedBucketCount, RehashRange(newBuckets, newCapacityMask, r)), ranges);
 
 			database.Trace.Debug("HashIndex {0} resized from {1} to {2}, hashIndexId={3}.",
-				hashIndexDesc.FullName, this.capacity, newCapacity, hashIndexDesc.Id);
+				indexDesc.FullName, this.capacity, newCapacity, indexDesc.Id);
 
 			resizeCounter.SetCount(usedBucketCount);
 
@@ -517,7 +494,7 @@ internal unsafe sealed class HashIndex
 	private long RehashRange(Bucket* newBuckets, ulong newCapacityMask, Utils.Range range)
 	{
 		long usedBucketCount = 0;
-		Dictionary<short, HashComparer> localCache = null;
+		Dictionary<short, KeyComparer> localCache = null;
 		for (long i = range.Offset; i < range.Offset + range.Count; i++)
 		{
 			ulong handle = buckets[i].Handle;
@@ -526,13 +503,13 @@ internal unsafe sealed class HashIndex
 				HashIndexItem* item = (HashIndexItem*)fixedMemoryManager.GetBuffer(handle);
 				ulong nextCollision = item->nextCollision;
 
-				byte* key = Class.GetHashKey(item->objectHandle, out ClassObject* obj);
+				byte* key = Class.GetKey(item->objectHandle, out ClassObject* obj);
 				Class @class = database.GetClassById(IdHelper.GetClassId(obj->id)).MainClass;
-				HashComparer comparer = @class.GetHashedComparer(HashIndexDesc.Id, false);
+				KeyComparer comparer = @class.GetKeyComparer(indexDesc.Id, false);
 				if (comparer == null)
 					comparer = ProvideComparerInModelUpdate(ref localCache, @class.ClassDesc);
 
-				ulong hash = comparer.CalculateHashCode(key, seed, stringStorage);
+				ulong hash = comparer.CalculateHashCode(key, seed, null, stringStorage);
 				long bucketIndex = CalculateBucket(hash, newCapacityMask);
 
 				Bucket* bucket = newBuckets + bucketIndex;
@@ -566,7 +543,7 @@ internal unsafe sealed class HashIndex
 	}
 
 #if TEST_BUILD
-	public void Validate(ulong readVersion)
+	public override void Validate(ulong readVersion)
 	{
 		TTTrace.Write(traceId, capacity, readVersion);
 
@@ -583,25 +560,22 @@ internal unsafe sealed class HashIndex
 
 			while (item != null)
 			{
-				byte* key = Class.GetHashKey(item->objectHandle, out ClassObject* obj);
+				byte* key = Class.GetKey(item->objectHandle, out ClassObject* obj);
 
 				Class @class = database.GetClassById(IdHelper.GetClassId(obj->id)).MainClass;
-				HashComparer comparer = @class.GetHashedComparer(HashIndexDesc.Id, true);
+				KeyComparer comparer = @class.GetKeyComparer(indexDesc.Id, true);
 
 				if (!@class.IsObjectPresent(item->objectHandle))
 					throw new InvalidOperationException();
 
-				if (comparer.HasNullStrings(key, stringStorage))
-					throw new InvalidOperationException();
-
-				ulong hash = comparer.CalculateHashCode(key, seed, stringStorage);
+				ulong hash = comparer.CalculateHashCode(key, seed, null, stringStorage);
 				long bucketIndex = CalculateBucket(hash);
 
 				if (bucketIndex != i)
 					throw new InvalidOperationException();
 
 				TTTrace.Write(itemHandle, item->objectHandle, @class.ClassDesc.Id);
-				comparer.TTTraceKeys(traceId, 0, HashIndexDesc.Id, key, stringStorage, 9);
+				comparer.TTTraceKeys(traceId, 0, indexDesc.Id, key, null, stringStorage, 9);
 
 				itemHandle = item->nextCollision;
 				item = (HashIndexItem*)fixedMemoryManager.GetBuffer(itemHandle);
@@ -612,9 +586,9 @@ internal unsafe sealed class HashIndex
 			throw new InvalidOperationException();
 	}
 
-	public bool HasObject(ClassObject* tobj, byte* key, HashComparer comparer)
+	public override bool HasObject(ClassObject* tobj, byte* key, ulong objectHandle, KeyComparer comparer)
 	{
-		ulong hash = comparer.CalculateHashCode(key, seed, stringStorage);
+		ulong hash = comparer.CalculateHashCode(key, seed, null, stringStorage);
 		long bucket = CalculateBucket(hash);
 
 		Bucket* bn = buckets + bucket;
@@ -636,9 +610,9 @@ internal unsafe sealed class HashIndex
 	}
 #endif
 
-	public void Dispose(JobWorkers<CommonWorkerParam> workers)
+	public override void Dispose(JobWorkers<CommonWorkerParam> workers)
 	{
-		TTTrace.Write(traceId, hashIndexDesc.Id);
+		TTTrace.Write(traceId, indexDesc.Id);
 
 		FreeBuffers(workers);
 
@@ -648,9 +622,9 @@ internal unsafe sealed class HashIndex
 		resizeCounter.Dispose();
 	}
 
-	public void PrepareForPendingRefill(JobWorkers<CommonWorkerParam> workers)
+	public override void PrepareForPendingRefill(JobWorkers<CommonWorkerParam> workers)
 	{
-		TTTrace.Write(traceId, hashIndexDesc.Id);
+		TTTrace.Write(traceId, indexDesc.Id);
 
 		FreeBuffers(workers);
 		NativeAllocator.Free((IntPtr)buckets);
@@ -659,7 +633,7 @@ internal unsafe sealed class HashIndex
 		pendingRefill = true;
 	}
 
-	public void PendingRefillStarted(long capacity)
+	public override void PendingRefillStarted(long capacity)
 	{
 		capacity = HashUtils.CalculatePow2Capacity(Math.Max(64, capacity), loadFactor, out bucketCountLimit);
 		capacityMask = (ulong)capacity - 1;
@@ -674,14 +648,14 @@ internal unsafe sealed class HashIndex
 		this.capacity = capacity;
 	}
 
-	public void PendingRefillFinished()
+	public override void PendingRefillFinished()
 	{
 		pendingRefill = false;
 	}
 
 	private void FreeBuffers(JobWorkers<CommonWorkerParam> workers)
 	{
-		TTTrace.Write(database.TraceId, HashIndexDesc.Id);
+		TTTrace.Write(database.TraceId, indexDesc.Id);
 
 		Utils.Range[] ranges = Utils.SplitRange(capacity, database.Engine.Settings.ResizeSplitSize, ProcessorNumber.CoreCount);
 		workers.SetAction(o =>
@@ -747,13 +721,24 @@ internal unsafe sealed class HashIndex
 		}
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public void Add(long id, ulong objectHandle, ushort classIndex)
+		public void Add(ulong objectHandle, ushort classIndex)
 		{
 			HashedItemId* p = items + count;
-			p->id = id;
 			p->objectHandle = objectHandle;
 			p->classIndex = classIndex;
 			count++;
+		}
+	}
+
+	private sealed class HashScanRange : IndexScanRange
+	{
+		public long Offset { get; set; }
+		public long Count { get; set; }
+
+		public HashScanRange(long offset, long count)
+		{
+			this.Offset = offset;
+			this.Count = count;
 		}
 	}
 }
@@ -761,9 +746,8 @@ internal unsafe sealed class HashIndex
 [StructLayout(LayoutKind.Sequential, Pack = 1, Size = HashedItemId.Size)]
 internal unsafe struct HashedItemId
 {
-	public const int Size = 24;
+	public const int Size = 16;
 
-	public long id;
 	public ulong objectHandle;
 	public ushort classIndex;
 }

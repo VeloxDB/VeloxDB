@@ -38,9 +38,10 @@ internal enum WriteTransactionFlags
 
 internal unsafe sealed partial class Transaction : IDisposable
 {
-	// Must not be greater than 2^14 because ReaderInfo struct counts how many transaction read-locked a record
+	// Must not be greater than 2^14 because ReaderInfo struct counts how many transactions read-locked a record
 	// and this number is 2^14. We might introduce in the future a limitation on how many transactions can read lock a single record
 	// and remove this limitation.
+	// In any case, transactions lot must be less than 2^15 since one bit is used inside the ReaderInfo class.
 	public const int MaxConcurrentTrans = 16384;
 
 	Database database;
@@ -155,8 +156,6 @@ internal unsafe sealed partial class Transaction : IDisposable
 			flags = (byte)((flags & ~TransactionFlags.AllowsOtherTrans) | (v << TransactionFlags.AllowsOtherTransShift));
 		}
 	}
-
-	public bool HasActiveClassScans => context != null && context.ClassScans != null && context.ClassScans.Count > 0;
 
 	public Transaction PrevActiveTran { get => prevActiveTran; set => prevActiveTran = value; }
 	public Transaction NextActiveTran { get => nextActiveTran; set => nextActiveTran = value; }
@@ -296,7 +295,7 @@ internal unsafe sealed partial class Transaction : IDisposable
 		{
 			Checker.AssertTrue(context.AffectedObjects.Count == 0);
 			Checker.AssertTrue(context.AffectedInvRefs.Count == 0);
-			Checker.AssertTrue(context.HashReadLocks.Count == 0);
+			Checker.AssertTrue(context.KeyReadLocks.Count == 0);
 			Checker.AssertTrue(context.ObjectReadLocks.Count == 0);
 			return;
 		}
@@ -307,7 +306,7 @@ internal unsafe sealed partial class Transaction : IDisposable
 
 		garbage.objects = context.AffectedObjects.TakeContent();
 		garbage.invRefs = context.AffectedInvRefs.TakeContent();
-		garbage.hashReadLocks = context.HashReadLocks.TakeContent();
+		garbage.hashReadLocks = context.KeyReadLocks.TakeContent();
 
 		context.ObjectReadLocks.FreeMemory();
 	}
@@ -334,20 +333,6 @@ internal unsafe sealed partial class Transaction : IDisposable
 		context.Clear();
 		database.Engine.ContextPool.Put(context);
 		context = null;
-	}
-
-	public void AddClassScan(ClassScan ts)
-	{
-		if (Type == TransactionType.ReadWrite)
-			context.ClassScans.Add(ts);
-	}
-
-	public void RemoveClassScan(ClassScan ts)
-	{
-		if (this.Closed || Type == TransactionType.Read)
-			return;
-
-		context.ClassScans.Remove(ts);
 	}
 
 	/// <summary>

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using VeloxDB.Common;
@@ -83,7 +83,7 @@ internal unsafe sealed partial class Class : ClassBase
 
 				ulong verObjHandle = objHandle;
 				ClassObject* verObj = obj;
-				if (verObj->readerInfo.LockCount > 0 || verObj->tempData.NextVersion != 0)
+				if (verObj->readerInfo.LockCount > 0 || verObj->tempData.NewerVersion != 0)
 					throw new InvalidOperationException();
 
 				while (verObj != null)
@@ -94,7 +94,7 @@ internal unsafe sealed partial class Class : ClassBase
 					if (Database.IsCommited(verObj->version) && (verObj->version > maxVersion || verObj->readerInfo.LockCount > 0 || verObj->readerInfo.CommReadLockVer > maxVersion))
 						throw new InvalidOperationException();
 
-					ValidateHashIndexes(verObj);
+					ValidateHashIndexes(verObjHandle, verObj);
 
 					Checker.AssertTrue(ObjectStorage.IsBufferUsed((byte*)verObj));
 
@@ -119,19 +119,16 @@ internal unsafe sealed partial class Class : ClassBase
 			throw new InvalidOperationException();
 	}
 
-	internal void ValidateHashIndexes(ClassObject* obj)
+	internal void ValidateHashIndexes(ulong objectHandle, ClassObject* obj)
 	{
 		if (obj->IsDeleted)
 			return;
 
 		byte* key = (byte*)obj + ClassObject.DataOffset;
-		for (int i = 0; i < hashIndexes.Length; i++)
+		for (int i = 0; i < indexes.Length; i++)
 		{
-			if (!hashIndexes[i].Comparer.HasNullStrings(key, stringStorage))
-			{
-				if (!hashIndexes[i].Index.HasObject(obj, key, hashIndexes[i].Comparer))
-					throw new InvalidOperationException();
-			}
+			if (!indexes[i].Index.HasObject(obj, key, objectHandle, indexes[i].Comparer))
+				throw new InvalidOperationException();
 		}
 	}
 

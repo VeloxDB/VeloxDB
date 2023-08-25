@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -15,11 +15,11 @@ internal sealed class ObjectModelClass
     string logName;
 	Dictionary<string, ObjectModelProperty> properties;
 	List<ObjectModelInverseReferenceProperty> inverseReferences;
-	List<ObjectModelHashIndex> hashIndexes;
+	List<ObjectModelIndex> indexes;
 
 	public ObjectModelClass(short id, bool isAbstract, Type classType, string logName,
         IEnumerable<ObjectModelProperty> properties, IEnumerable<ObjectModelInverseReferenceProperty> inverseReferences,
-		IEnumerable<ObjectModelHashIndex> hashIndexes)
+		IEnumerable<ObjectModelIndex> indexes)
 	{
 		this.id = id;
 		this.isAbstract = isAbstract;
@@ -27,7 +27,7 @@ internal sealed class ObjectModelClass
         this.logName = logName;
 		this.inverseReferences = new List<ObjectModelInverseReferenceProperty>(inverseReferences);
 		this.properties = new Dictionary<string, ObjectModelProperty>(properties.Count());
-		this.hashIndexes = new List<ObjectModelHashIndex>(hashIndexes);
+		this.indexes = new List<ObjectModelIndex>(indexes);
 		foreach (ObjectModelProperty prop in properties)
 		{
 			this.properties.Add(prop.PropertyInfo.Name, prop);
@@ -39,7 +39,7 @@ internal sealed class ObjectModelClass
 	public bool IsAbstract => isAbstract;
 	public IEnumerable<ObjectModelProperty> Properties => properties.Values;
 	public List<ObjectModelInverseReferenceProperty> InverseReferences => inverseReferences;
-	public List<ObjectModelHashIndex> HashIndexes => hashIndexes;
+	public List<ObjectModelIndex> Indexes => indexes;
 	public string LogName => logName;
 
 	public ObjectModelProperty GetProperty(string name)

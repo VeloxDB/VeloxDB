@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using VeloxDB.Common;
@@ -21,6 +21,7 @@ internal sealed class ModelDescriptorDeserializerContext
 		factories[(int)ModelItemType.ArrayProperty] = () => new ArrayPropertyDescriptor();
 		factories[(int)ModelItemType.ReferenceProperty] = () => new ReferencePropertyDescriptor();
 		factories[(int)ModelItemType.HashIndex] = () => new HashIndexDescriptor();
+		factories[(int)ModelItemType.SortedIndex] = () => new SortedIndexDescriptor();
 	}
 
 	public T Deserialize<T>(BinaryReader reader) where T : ModelItemDescriptor

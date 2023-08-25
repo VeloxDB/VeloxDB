@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -370,8 +370,7 @@ internal unsafe sealed class ReferenceIntegrityValidator
 			return error;
 
 		ReadOnlyArray<int> refProps = classDesc.UntrackedRefeferencePropertyIndexes;
-		int count = readers.Length;
-		while (scan.Next(readers, 0, ref count))
+		while (scan.Next(readers, out int count))
 		{
 			for (int i = 0; i < count; i++)
 			{

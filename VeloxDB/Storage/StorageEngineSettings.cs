@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Text;
 using VeloxDB.Common;
 
@@ -41,6 +41,8 @@ internal sealed class StorageEngineSettings
 
 	bool allowUnexistingDirectoryForLog;
 
+	int btreeNodeSize;
+
 	public StorageEngineSettings()
 	{
 		hashMapLoadFactor = 0.75f;
@@ -54,6 +56,9 @@ internal sealed class StorageEngineSettings
 
 		allowInternalParallelization = true;
 		allowUnexistingDirectoryForLog = true;
+
+		// Carefully chosen so that leaf nodes fit closely into 1024 byte buffers and parent nodes never exceed maximum of the MemoryManager
+		btreeNodeSize = 118;
 
 		bufferPoolSize = 1024 * 1024 * 32;
 
@@ -94,6 +99,8 @@ internal sealed class StorageEngineSettings
 		c.allowInternalParallelization = allowInternalParallelization;
 		c.allowUnexistingDirectoryForLog = allowUnexistingDirectoryForLog;
 
+		c.btreeNodeSize = btreeNodeSize;
+
 		c.bufferPoolSize = bufferPoolSize;
 
 		c.autoSnapshotOnShutdown = autoSnapshotOnShutdown;
@@ -129,6 +136,7 @@ internal sealed class StorageEngineSettings
 	public int GCItemThreshold { get => gcItemCountThreshold; set => gcItemCountThreshold = value; }
 	public bool AllowInternalParallelization { get => allowInternalParallelization; set => allowInternalParallelization = value; }
 	public bool AllowUnexistingDirectoryForLog { get => allowUnexistingDirectoryForLog; set => allowUnexistingDirectoryForLog = value; }
+	public int BTreeNodeSize { get => btreeNodeSize; set => btreeNodeSize = value; }
 	public bool AutoSnapshotOnShutdown { get => autoSnapshotOnShutdown; set => autoSnapshotOnShutdown = value; }
 	public long SystemLogMaxSize { get => systemLogMaxSize; set => systemLogMaxSize = value; }
 	public long ResizeSplitSize { get => resizeSplitSize; set => resizeSplitSize = value; }
@@ -161,6 +169,7 @@ internal sealed class StorageEngineSettings
 		Checker.CheckRange(maxMergedOperationCount, 1, int.MaxValue, nameof(MaxMergedOperationCount));
 		Checker.CheckRange(preAlignmentRatio, 0.0, 1.0f, nameof(preAlignmentRatio));
 		Checker.CheckRange(maxMergedTransactionCount, 1, ushort.MaxValue - 1, nameof(MaxMergedTransactionCount));
+		Checker.CheckRange(btreeNodeSize, 16, 1024 * 16, nameof(MaxMergedTransactionCount));
 	}
 
 	public override string ToString()
@@ -176,6 +185,7 @@ internal sealed class StorageEngineSettings
 		sb.AppendFormat("GCItemThreshold={0}", GCItemThreshold).AppendLine();
 		sb.AppendFormat("AllowInternalParallelization={0}", AllowInternalParallelization).AppendLine();
 		sb.AppendFormat("allowUnexistingDirectoryForLog={0}", allowUnexistingDirectoryForLog).AppendLine();
+		sb.AppendFormat("btreeNodeSize={0}", btreeNodeSize).AppendLine();
 		sb.AppendFormat("AutoSnapshotOnShutdown={0}", AutoSnapshotOnShutdown).AppendLine();
 		sb.AppendFormat("SystemLogMaxSize={0}", SystemLogMaxSize).AppendLine();
 		sb.AppendFormat("ResizeSplitSize={0}", ResizeSplitSize).AppendLine();

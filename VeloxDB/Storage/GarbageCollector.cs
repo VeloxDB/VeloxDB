@@ -240,11 +240,20 @@ internal unsafe sealed class GarbageCollector
 	{
 		TTTrace.Write(database.TraceId);
 
-		HashReadLock* rl = (HashReadLock*)((byte*)cp + ModifiedBufferHeader.Size);
+		KeyReadLock* rl = (KeyReadLock*)((byte*)cp + ModifiedBufferHeader.Size);
 		for (int i = 0; i < cp->count; i++)
 		{
-			HashKeyReadLocker locker = database.GetHashIndexLocker(rl->hashIndex);
-			locker.GarbageCollect(rl->itemHandle, rl->hash, cp->readVersion);
+			if (rl->IsRange)
+			{
+				SortedIndex sortedIndex = (SortedIndex)database.GetIndex(rl->IndexIndex, out _);
+				sortedIndex.GarbageCollectRange(rl->itemHandle);
+			}
+			else
+			{
+				KeyReadLocker locker = database.GetKeyLocker(rl->IndexIndex);
+				locker.GarbageCollectKey(rl->itemHandle, rl->hash, cp->readVersion);
+			}
+
 			rl++;
 		}
 	}
@@ -312,6 +321,29 @@ internal unsafe sealed class GarbageCollector
 			readVer = versions.ReadVersion;
 		else
 			readVer = tran.ReadVersion;
+	}
+
+	public void Pause()
+	{
+		lock (drainSync)
+		{
+			drainEvent = new CountdownEvent(workers.Count);
+			unpauseEvent = new CountedManualResetEvent(workers.Count);
+
+			for (int i = 0; i < workers.Count; i++)
+			{
+				commands.Enqueue(pauseCommand);
+			}
+
+			drainEvent.Wait();
+		}
+	}
+
+	public void Unpause()
+	{
+		unpauseEvent.Set();
+		drainEvent.Dispose();
+		drainEvent = null;
 	}
 #endif
 

@@ -14,14 +14,14 @@ internal class ClassUpdate
 	bool isLogModified;
 	bool isAbstractModified;
 	bool isHierarchyTypeModified;
-	bool hashedPropertiesModified;
+	bool indexedPropertiesModified;
 	bool isBaseClassModified;
 	ReadOnlyArray<PropertyInsert> insertedProperties;
 	ReadOnlyArray<PropertyDelete> deletedProperties;
 	ReadOnlyArray<PropertyUpdate> updatedProperties;
 
 	public ClassUpdate(ClassDescriptor prevClassDesc, ClassDescriptor classDesc, bool isAbstractModified, bool isLogModified,
-		bool isHierarchyTypeModified, bool hashedPropertiesModified, bool isBaseClassModified, List<PropertyInsert> insertedProperties,
+		bool isHierarchyTypeModified, bool indexedPropertiesModified, bool isBaseClassModified, List<PropertyInsert> insertedProperties,
 		List<PropertyDelete> deletedProperties, List<PropertyUpdate> updatedProperties)
 	{
 		this.prevClassDesc = prevClassDesc;
@@ -29,7 +29,7 @@ internal class ClassUpdate
 		this.isAbstractModified = isAbstractModified;
 		this.isLogModified = isLogModified;
 		this.isHierarchyTypeModified = isHierarchyTypeModified;
-		this.hashedPropertiesModified = hashedPropertiesModified;
+		this.indexedPropertiesModified = indexedPropertiesModified;
 		this.isBaseClassModified = isBaseClassModified;
 		this.insertedProperties = ReadOnlyArray<PropertyInsert>.FromNullable(insertedProperties);
 		this.deletedProperties = ReadOnlyArray<PropertyDelete>.FromNullable(deletedProperties);
@@ -46,7 +46,7 @@ internal class ClassUpdate
 	public bool IsHierarchyTypeModified => isHierarchyTypeModified;
 	public bool IsBaseClassModified => isBaseClassModified;
 	public bool PropertyListModified => deletedProperties.Length > 0 || insertedProperties.Length > 0;
-	public bool HashedPropertiesModified => hashedPropertiesModified;
+	public bool IndexedPropertiesModified => indexedPropertiesModified;
 	public bool ReferenceTrackingModified => updatedProperties.Any(x => x.InvRefTrackingModified);
 
 	public bool HasDefaultValueChanges

@@ -56,6 +56,9 @@ internal sealed class EngineLock
 		sync.EnterWriteLock();
 		isDraining = true;
 
+		if (engine.Disposed)
+			return;
+
 		// Currently this lock, when draining is turned on, allows transaction to be created if the thread owns the lock.
 		// This is needed for alignment that enters the draining mode and than creates alignment transactions. We currently
 		// have no identification who owns the draining mode and until we do, we need to, after cancelling all transaqctions

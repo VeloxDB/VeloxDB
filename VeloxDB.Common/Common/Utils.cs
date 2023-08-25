@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
@@ -58,6 +58,14 @@ internal unsafe static class Utils
 	public static bool IsPowerOf2(long n)
 	{
 		return n >= 1 && (n & (n - 1)) == 0;
+	}
+
+	public static long GetNextDivisible(long n, long d)
+	{
+		if (n % d == 0)
+			return n;
+
+		return ((n / d) + 1) * d;
 	}
 
 	public static int MaxEnumValue(Type enumType)

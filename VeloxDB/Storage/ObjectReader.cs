@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -11,9 +11,6 @@ namespace VeloxDB.Storage;
 
 internal unsafe struct ObjectReader
 {
-	const int versioneIndex = 0;   // Guarantee by the meta model
-	const int idIndex = 1;          // Guarantee by the meta model
-
 	byte* obj;
 	Class @class;
 
@@ -24,6 +21,7 @@ internal unsafe struct ObjectReader
 		this.@class = @class;
 	}
 
+	internal byte* RawObject => obj;
 	internal byte* Object => (byte*)((ulong)obj & 0x7FFFFFFFFFFFFFFF);
 	internal ClassObject* ClassObject => (ClassObject*)(((ulong)obj & 0x7FFFFFFFFFFFFFFF) - Storage.ClassObject.DataOffset);
 	internal Class Class => @class;
@@ -33,12 +31,6 @@ internal unsafe struct ObjectReader
 	public bool IsEmpty()
 	{
 		return obj == null;
-	}
-
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	internal unsafe ClassObject* GetObject()
-	{
-		return (ClassObject*)(obj - Storage.ClassObject.DataOffset);
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]

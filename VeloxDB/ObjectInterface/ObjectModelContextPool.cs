@@ -1,4 +1,5 @@
-using System;
+﻿using System;
+using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using VeloxDB.Common;
@@ -14,6 +15,8 @@ internal unsafe class ObjectModelContextPool
 	static readonly int perCoreCount = 32;
 #endif
 
+	const int readerPoolCapacity = 1024;
+
 	StorageEngine engine;
 
 	readonly object sync = new object();
@@ -27,6 +30,9 @@ internal unsafe class ObjectModelContextPool
 	MultiSpinLock perCoreSync;
 
 	IdRange idRange;
+
+	readonly object readerPoolSync = new object();
+	List<ObjectReader[]> readerPool;
 
 	public ObjectModelContextPool(StorageEngine engine)
 	{
@@ -48,9 +54,11 @@ internal unsafe class ObjectModelContextPool
 			perCorePools[i] = new ObjectModelContext[perCoreCount];
 			for (int j = 0; j < perCoreCount; j++)
 			{
-				perCorePools[i][j] = new ObjectModelContext(engine, idRange, i);
+				perCorePools[i][j] = new ObjectModelContext(this, engine, idRange, i);
 			}
 		}
+
+		readerPool = new List<ObjectReader[]>(readerPoolCapacity);
 
 		perCoreSync = new MultiSpinLock();
 	}
@@ -118,7 +126,7 @@ internal unsafe class ObjectModelContextPool
 			}
 		}
 
-		return new ObjectModelContext(engine, idRange, -1);
+		return new ObjectModelContext(this, engine, idRange, -1);
 	}
 
 	private void PutGlobalContext(ObjectModelContext tc)
@@ -129,6 +137,33 @@ internal unsafe class ObjectModelContextPool
 				Array.Resize(ref globalPool, globalPool.Length * 2);
 
 			globalPool[globalCount++] = tc;
+		}
+	}
+
+	public ObjectReader[] GetObjectReaders()
+	{
+		lock (readerPoolSync)
+		{
+			if (readerPool.Count > 0)
+			{
+				int index = readerPool.Count - 1;
+				ObjectReader[] r = readerPool[index];
+				readerPool.RemoveAt(index);
+				return r;
+			}
+		}
+
+		return new ObjectReader[ObjectModelContext.ObjectReadersCapacity];
+	}
+
+	public void PutObjectReaders(ObjectReader[] r)
+	{
+		lock (readerPoolSync)
+		{
+			if (readerPool.Count == readerPoolCapacity)
+				return;
+
+			readerPool.Add(r);
 		}
 	}
 

@@ -104,7 +104,8 @@ public unsafe abstract class DatabaseObject
 	/// <remarks>
 	/// <see cref="DatabaseObject"/> has an `Id` that is auto assigned by the database. The id represents primary key, it is unique
 	/// for all database objects, across all types. The id is never reused even if the object is deleted.
-	/// If you need additional keys use <see cref="HashIndexAttribute"/> with <see cref="HashIndexAttribute.IsUnique"/> set to `true`.
+	/// If you need additional keys use <see cref="HashIndexAttribute"/> or <see cref="SortedIndexAttribute"/>
+	/// with <see cref="IndexAttribute.IsUnique"/> set to `true`.
 	/// </remarks>
 	public long Id => id;
 

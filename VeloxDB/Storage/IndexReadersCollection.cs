@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Reflection.Emit;
 using System.Reflection;
@@ -9,71 +9,85 @@ using VeloxDB.Storage.ModelUpdate;
 
 namespace VeloxDB.Storage;
 
-internal unsafe sealed class HashReadersCollection
+internal delegate IndexReaderBase IndexReaderCreator(string cultureName, bool caseSensitive, ReadOnlyArray<SortOrder> sortOrders);
+
+internal unsafe sealed class IndexReadersCollection
 {
-	const string assemblyName = "__HashReaders";
+	const string assemblyName = "__IndexReaders";
 	static ModuleBuilder moduleBuilder;
 
-	static readonly Type[] readerBaseTypes = new Type[] { typeof(HashIndexReaderBase<>), typeof(HashIndexReaderBase<,>),
+	static readonly Type[] hashReaderBaseTypes = new Type[] { typeof(HashIndexReaderBase<>), typeof(HashIndexReaderBase<,>),
 		typeof(HashIndexReaderBase<,,>), typeof(HashIndexReaderBase<,,,>) };
 
-	Dictionary<short, Func<HashIndexReaderBase>> readerFactories;
+	static readonly Type[] sortedReaderBaseTypes = new Type[] { typeof(SortedIndexReaderBase<>), typeof(SortedIndexReaderBase<,>),
+		typeof(SortedIndexReaderBase<,,>), typeof(SortedIndexReaderBase<,,,>) };
 
-	static HashReadersCollection()
+	static readonly Type[] ctorTypes = new Type[] { typeof(string), typeof(bool), typeof(ReadOnlyArray<SortOrder>) };
+
+	Dictionary<short, IndexReaderCreator> readerFactories;
+
+	static IndexReadersCollection()
 	{
 		AssemblyName aName = new AssemblyName(assemblyName);
 		AssemblyBuilder ab = AssemblyBuilder.DefineDynamicAssembly(aName, AssemblyBuilderAccess.RunAndCollect);
 		moduleBuilder = ab.DefineDynamicModule(aName.Name);
 	}
 
-	public HashReadersCollection(HashReadersCollection prevReaders, DataModelUpdate modelUpdate)
+	public IndexReadersCollection(IndexReadersCollection prevReaders, DataModelUpdate modelUpdate)
 	{
-		readerFactories = new Dictionary<short, Func<HashIndexReaderBase>>(modelUpdate.ModelDesc.GetAllHashIndexes().Count());
-		foreach (HashIndexDescriptor hashIndexDesc in modelUpdate.ModelDesc.GetAllHashIndexes())
+		readerFactories = new Dictionary<short, IndexReaderCreator>(modelUpdate.ModelDesc.GetAllIndexes().Count());
+		foreach (IndexDescriptor indexDesc in modelUpdate.ModelDesc.GetAllIndexes())
 		{
-			if (modelUpdate.PrevModelDesc.GetHashIndex(hashIndexDesc.Id) != null && !modelUpdate.HashIndexModified(hashIndexDesc.Id))
+			if (modelUpdate.PrevModelDesc.GetIndex(indexDesc.Id) != null && !modelUpdate.IndexModified(indexDesc.Id))
 			{
-				readerFactories.Add(hashIndexDesc.Id, prevReaders.readerFactories[hashIndexDesc.Id]);
+				readerFactories.Add(indexDesc.Id, prevReaders.readerFactories[indexDesc.Id]);
 			}
 			else
 			{
-				readerFactories.Add(hashIndexDesc.Id, CreateReaderClass(hashIndexDesc));
+				readerFactories.Add(indexDesc.Id, CreateReaderClass(indexDesc));
 			}
 		}
 	}
 
-	public HashReadersCollection(DataModelDescriptor model)
+	public IndexReadersCollection(DataModelDescriptor model)
 	{
-		readerFactories = new Dictionary<short, Func<HashIndexReaderBase>>(model.GetAllHashIndexes().Count());
-		foreach (HashIndexDescriptor hashIndexDesc in model.GetAllHashIndexes())
+		readerFactories = new Dictionary<short, IndexReaderCreator>(model.GetAllIndexes().Count());
+		foreach (IndexDescriptor indexDesc in model.GetAllIndexes())
 		{
-			readerFactories.Add(hashIndexDesc.Id, CreateReaderClass(hashIndexDesc));
+			readerFactories.Add(indexDesc.Id, CreateReaderClass(indexDesc));
 		}
 	}
 
-	public Func<HashIndexReaderBase> GetReaderFactory(short hashIndexId)
+	public IndexReaderCreator GetReaderFactory(short indexId)
 	{
-		return readerFactories[hashIndexId];
+		return readerFactories[indexId];
 	}
 
-	private Func<HashIndexReaderBase> CreateReaderClass(HashIndexDescriptor hashIndexDesc)
+	private IndexReaderCreator CreateReaderClass(IndexDescriptor indexDesc)
 	{
-		Type[] propertyTypes = new Type[hashIndexDesc.Properties.Length];
-		for (int i = 0; i < hashIndexDesc.Properties.Length; i++)
+		Type[] propertyTypes = new Type[indexDesc.Properties.Length];
+		for (int i = 0; i < indexDesc.Properties.Length; i++)
 		{
-			propertyTypes[i] = PropertyTypesHelper.PropertyTypeToManagedType(hashIndexDesc.Properties[i].PropertyType);
+			propertyTypes[i] = PropertyTypesHelper.PropertyTypeToManagedType(indexDesc.Properties[i].PropertyType);
 		}
 
-		Type baseType = readerBaseTypes[propertyTypes.Length - 1].MakeGenericType(propertyTypes);
+		Type baseType;
+		if (indexDesc.Type == ModelItemType.HashIndex)
+			baseType = hashReaderBaseTypes[propertyTypes.Length - 1].MakeGenericType(propertyTypes);
+		else
+			baseType = sortedReaderBaseTypes[propertyTypes.Length - 1].MakeGenericType(propertyTypes);
 
 		TypeBuilder readerType = moduleBuilder.DefineType("__" + Guid.NewGuid().ToString("N"),
 			TypeAttributes.Sealed | TypeAttributes.Class | TypeAttributes.Public, baseType);
 
-		ConstructorBuilder cb = readerType.DefineConstructor(MethodAttributes.Public, CallingConventions.Standard, Type.EmptyTypes);
+		ConstructorBuilder cb = readerType.DefineConstructor(MethodAttributes.Public, CallingConventions.Standard, ctorTypes);
 		ILGenerator il = cb.GetILGenerator();
 
 		il.Emit(OpCodes.Ldarg_0);
-		il.Emit(OpCodes.Call, baseType.GetConstructor(Type.EmptyTypes));
+		il.Emit(OpCodes.Ldarg_1);
+		il.Emit(OpCodes.Ldarg_2);
+		il.Emit(OpCodes.Ldarg_3);
+		il.Emit(OpCodes.Call, baseType.GetConstructor(ctorTypes));
 		il.Emit(OpCodes.Ret);
 
 		// Override PopulateKeyBuffer
@@ -173,37 +187,40 @@ internal unsafe sealed class HashReadersCollection
 		}
 	}
 
-	private static Func<HashIndexReaderBase> GenerateFactory(TypeBuilder readerType)
+	private static IndexReaderCreator GenerateFactory(TypeBuilder readerType)
 	{
 		DynamicMethod factMethod = new DynamicMethod("Factory__" + Guid.NewGuid().ToString("N"),
-					typeof(HashIndexReaderBase), Type.EmptyTypes, true);
+					typeof(IndexReaderBase), ctorTypes, true);
 
 		ILGenerator il = factMethod.GetILGenerator();
-		il.Emit(OpCodes.Newobj, readerType.GetConstructor(Type.EmptyTypes));
+		il.Emit(OpCodes.Ldarg_0);
+		il.Emit(OpCodes.Ldarg_1);
+		il.Emit(OpCodes.Ldarg_2);
+		il.Emit(OpCodes.Newobj, readerType.GetConstructor(ctorTypes));
 		il.Emit(OpCodes.Ret);
 
-		return (Func<HashIndexReaderBase>)factMethod.CreateDelegate(typeof(Func<HashIndexReaderBase>));
+		return (IndexReaderCreator)factMethod.CreateDelegate(typeof(IndexReaderCreator));
 	}
 
 	private struct ComparerKey : IEquatable<ComparerKey>
 	{
-		int hashIndexId;
+		int indexId;
 		short classId;
 
-		public ComparerKey(int hashIndexId, short classId)
+		public ComparerKey(int indexId, short classId)
 		{
-			this.hashIndexId = hashIndexId;
+			this.indexId = indexId;
 			this.classId = classId;
 		}
 
 		public bool Equals(ComparerKey other)
 		{
-			return hashIndexId == other.hashIndexId && classId == other.classId;
+			return indexId == other.indexId && classId == other.classId;
 		}
 
 		public override int GetHashCode()
 		{
-			return (int)(hashIndexId * HashUtils.PrimeMultiplier32 + classId);
+			return (int)(indexId * HashUtils.PrimeMultiplier32 + classId);
 		}
 	}
 }

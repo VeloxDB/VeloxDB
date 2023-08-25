@@ -16,35 +16,35 @@ internal sealed class DataModelDescriptor : ModelItemDescriptor
 
 	short lastUsedClassId;
 	int lastUsedPropertyId;
-	short lastUsedHashIndexId;
+	short lastUsedIndexId;
 
 	ReadOnlyArray<ClassDescriptor> classes;
-	ReadOnlyArray<HashIndexDescriptor> hashIndexes;
+	ReadOnlyArray<IndexDescriptor> indexes;
 
 	Dictionary<string, ClassDescriptor> nameToClass;
 	Dictionary<short, ClassDescriptor> idToClass;
 
 	Dictionary<string, NamespaceDescriptor> nameToNamespace;
 
-	Dictionary<string, HashIndexDescriptor> nameToHashIndex;
-	Dictionary<SplitName, HashIndexDescriptor> splitNameToHashIndex;
-	Dictionary<short, HashIndexDescriptor> idToHashIndex;
+	Dictionary<string, IndexDescriptor> nameToIndex;
+	Dictionary<SplitName, IndexDescriptor> splitNameToIndex;
+	Dictionary<short, IndexDescriptor> idToIndex;
 
 	// While the model is being built different types of descriptors need to store temporary data
 	// so this generic map is used for that.
 	Dictionary<object, object> loadingTempData;
 
-	public DataModelDescriptor(short lastUsedClassId = 0, int lastUsedPropertyId = 0, short lastUsedHashIndexId = 0)
+	public DataModelDescriptor(short lastUsedClassId = 0, int lastUsedPropertyId = 0, short lastUsedIndexId = 0)
 	{
 		this.lastUsedClassId = lastUsedClassId;
 		this.lastUsedPropertyId = lastUsedPropertyId;
-		this.lastUsedHashIndexId = lastUsedHashIndexId;
+		this.lastUsedIndexId = lastUsedIndexId;
 
 		nameToClass = new Dictionary<string, ClassDescriptor>(1024, StringComparer.Ordinal);
 		idToClass = new Dictionary<short, ClassDescriptor>(1024);
-		nameToHashIndex = new Dictionary<string, HashIndexDescriptor>(4);
-		splitNameToHashIndex = new Dictionary<SplitName, HashIndexDescriptor>(4);
-		idToHashIndex = new Dictionary<short, HashIndexDescriptor>(4);
+		nameToIndex = new Dictionary<string, IndexDescriptor>(4);
+		splitNameToIndex = new Dictionary<SplitName, IndexDescriptor>(4);
+		idToIndex = new Dictionary<short, IndexDescriptor>(4);
 		nameToNamespace = new Dictionary<string, NamespaceDescriptor>(64);
 		loadingTempData = new Dictionary<object, object>(1024, ReferenceEqualityComparer<object>.Instance);
 
@@ -53,11 +53,11 @@ internal sealed class DataModelDescriptor : ModelItemDescriptor
 
 	public override ModelItemType Type => ModelItemType.Model;
 	public int ClassCount => classes.Length;
-	public int HashIndexCount => hashIndexes.Length;
+	public int IndexCount => indexes.Length;
 	public int NamespaceCount => nameToNamespace.Count;
 	public short LastUsedClassId => lastUsedClassId;
 	public int LastUsedPropertyId => lastUsedPropertyId;
-	public short LastUsedHashIndexId => lastUsedHashIndexId;
+	public short LastUsedIndexId => lastUsedIndexId;
 	public Dictionary<object, object> LoadingTempData => loadingTempData;
 
 	public static DataModelDescriptor CreateEmpty(PersistenceDescriptor persistenceDescriptor)
@@ -74,7 +74,7 @@ internal sealed class DataModelDescriptor : ModelItemDescriptor
 	{
 		this.lastUsedClassId = Math.Max(lastUsedClassId, classId);
 		this.lastUsedPropertyId = Math.Max(propId, lastUsedPropertyId);
-		this.lastUsedHashIndexId = Math.Max(hindId, lastUsedHashIndexId);
+		this.lastUsedIndexId = Math.Max(hindId, lastUsedIndexId);
 	}
 
 	public void Register(Stream stream)
@@ -116,9 +116,9 @@ internal sealed class DataModelDescriptor : ModelItemDescriptor
 		}
 	}
 
-	public void Register(ClassDescriptor[] clss, HashIndexDescriptor[] hinds, string namespaceName)
+	public void Register(ClassDescriptor[] clss, IndexDescriptor[] indexes, string namespaceName)
 	{
-		NamespaceDescriptor nsd = new NamespaceDescriptor(namespaceName, clss, hinds);
+		NamespaceDescriptor nsd = new NamespaceDescriptor(namespaceName, clss, indexes);
 		nsd.Model = this;
 		StoreNamespace(nsd);
 	}
@@ -130,9 +130,9 @@ internal sealed class DataModelDescriptor : ModelItemDescriptor
 			classDesc.Prepare();
 		}
 
-		foreach (HashIndexDescriptor hashIndex in nameToHashIndex.Values)
+		foreach (IndexDescriptor index in nameToIndex.Values)
 		{
-			hashIndex.Prepare();
+			index.Prepare();
 		}
 
 		CreateItemLists();
@@ -141,7 +141,7 @@ internal sealed class DataModelDescriptor : ModelItemDescriptor
 		foreach (ClassDescriptor classDesc in nameToClass.Values)
 		{
 			classDesc.PrepareDescendants();
-			classDesc.PreparePropertyToHashIndexMapping();
+			classDesc.PreparePropertyToIndexMapping();
 		}
 
 		if (persistenceSett != null)
@@ -178,9 +178,9 @@ internal sealed class DataModelDescriptor : ModelItemDescriptor
 			}
 		}
 
-		for (int i = 0; i < hashIndexes.Length; i++)
+		for (int i = 0; i < indexes.Length; i++)
 		{
-			lastUsedHashIndexId = Math.Max(lastUsedHashIndexId, hashIndexes[i].Id);
+			lastUsedIndexId = Math.Max(lastUsedIndexId, indexes[i].Id);
 		}
 	}
 
@@ -203,19 +203,19 @@ internal sealed class DataModelDescriptor : ModelItemDescriptor
 		this.classes = new ReadOnlyArray<ClassDescriptor>(classes);
 
 		c = 0;
-		HashIndexDescriptor[] hashIndexes = new HashIndexDescriptor[nameToHashIndex.Count];
-		foreach (HashIndexDescriptor hashIndex in nameToHashIndex.Values)
+		IndexDescriptor[] indexes = new IndexDescriptor[nameToIndex.Count];
+		foreach (IndexDescriptor index in nameToIndex.Values)
 		{
-			hashIndexes[c++] = hashIndex;
+			indexes[c++] = index;
 		}
 
-		Array.Sort(hashIndexes, (x, y) => comp.Compare(x.Id, y.Id));
-		for (int i = 0; i < hashIndexes.Length; i++)
+		Array.Sort(indexes, (x, y) => comp.Compare(x.Id, y.Id));
+		for (int i = 0; i < indexes.Length; i++)
 		{
-			hashIndexes[i].Index = i;
+			indexes[i].Index = i;
 		}
 
-		this.hashIndexes = new ReadOnlyArray<HashIndexDescriptor>(hashIndexes);
+		this.indexes = new ReadOnlyArray<IndexDescriptor>(indexes);
 	}
 
 	private void ValidatePropertyIds()
@@ -301,33 +301,33 @@ internal sealed class DataModelDescriptor : ModelItemDescriptor
 		return classes[index];
 	}
 
-	public HashIndexDescriptor GetHashIndex(short id)
+	public IndexDescriptor GetIndex(short id)
 	{
-		idToHashIndex.TryGetValue(id, out HashIndexDescriptor hashIndex);
-		return hashIndex;
+		idToIndex.TryGetValue(id, out IndexDescriptor index);
+		return index;
 	}
 
-	public HashIndexDescriptor GetHashIndex(string fullName)
+	public IndexDescriptor GetIndex(string fullName)
 	{
-		nameToHashIndex.TryGetValue(fullName, out HashIndexDescriptor hashIndex);
-		return hashIndex;
+		nameToIndex.TryGetValue(fullName, out IndexDescriptor index);
+		return index;
 	}
 
-	public HashIndexDescriptor GetHashIndex(string namespaceName, string name)
+	public IndexDescriptor GetIndex(string namespaceName, string name)
 	{
-		splitNameToHashIndex.TryGetValue(new SplitName(namespaceName, name), out HashIndexDescriptor hashIndex);
-		return hashIndex;
+		splitNameToIndex.TryGetValue(new SplitName(namespaceName, name), out IndexDescriptor index);
+		return index;
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	internal HashIndexDescriptor GetHashIndexByIndex(int index)
+	internal IndexDescriptor GetIndexByIndex(int index)
 	{
-		return hashIndexes[index];
+		return indexes[index];
 	}
 
-	public int GetHashIndexCount()
+	public int GetIndexCount()
 	{
-		return nameToHashIndex.Count;
+		return nameToIndex.Count;
 	}
 
 	public IEnumerable<ClassDescriptor> GetAllClasses()
@@ -335,9 +335,9 @@ internal sealed class DataModelDescriptor : ModelItemDescriptor
 		return classes;
 	}
 
-	public IEnumerable<HashIndexDescriptor> GetAllHashIndexes()
+	public IEnumerable<IndexDescriptor> GetAllIndexes()
 	{
-		return nameToHashIndex.Values;
+		return nameToIndex.Values;
 	}
 
 	public IEnumerable<NamespaceDescriptor> GetAllNamespaces()
@@ -416,21 +416,21 @@ internal sealed class DataModelDescriptor : ModelItemDescriptor
 	{
 		nameToNamespace[@namespace.Name] = @namespace;
 		StoreClasses(@namespace);
-		StoreHashIndexes(@namespace);
+		StoreIndexes(@namespace);
 	}
 
-	private void StoreHashIndexes(NamespaceDescriptor @namespace)
+	private void StoreIndexes(NamespaceDescriptor @namespace)
 	{
-		foreach (HashIndexDescriptor hashIndex in @namespace.HashIndexes)
+		foreach (IndexDescriptor index in @namespace.Indexes)
 		{
-			if (nameToHashIndex.ContainsKey(hashIndex.FullName))
+			if (nameToIndex.ContainsKey(index.FullName))
 			{
-				Throw.DuplicateHashIndexName(hashIndex.FullName, hashIndex.Id);
+				Throw.DuplicateIndexName(index.FullName, index.Id);
 			}
 
-			nameToHashIndex[hashIndex.FullName] = hashIndex;
-			splitNameToHashIndex[new SplitName(hashIndex.NamespaceName, hashIndex.Name)] = hashIndex;
-			idToHashIndex[hashIndex.Id] = hashIndex;
+			nameToIndex[index.FullName] = index;
+			splitNameToIndex[new SplitName(index.NamespaceName, index.Name)] = index;
+			idToIndex[index.Id] = index;
 		}
 	}
 
@@ -514,7 +514,7 @@ internal sealed class DataModelDescriptor : ModelItemDescriptor
 
 		writer.Write(lastUsedClassId);
 		writer.Write(lastUsedPropertyId);
-		writer.Write(lastUsedHashIndexId);
+		writer.Write(lastUsedIndexId);
 
 		writer.Write(nameToClass.Count);
 		foreach (ClassDescriptor cd in nameToClass.Values)
@@ -522,10 +522,10 @@ internal sealed class DataModelDescriptor : ModelItemDescriptor
 			context.Serialize(cd, writer);
 		}
 
-		writer.Write(nameToHashIndex.Count);
-		foreach (HashIndexDescriptor hi in nameToHashIndex.Values)
+		writer.Write(nameToIndex.Count);
+		foreach (IndexDescriptor index in nameToIndex.Values)
 		{
-			context.Serialize(hi, writer);
+			context.Serialize(index, writer);
 		}
 
 		writer.Write(nameToNamespace.Count);
@@ -545,7 +545,7 @@ internal sealed class DataModelDescriptor : ModelItemDescriptor
 
 		lastUsedClassId = reader.ReadInt16();
 		lastUsedPropertyId = reader.ReadInt32();
-		lastUsedHashIndexId = reader.ReadInt16();
+		lastUsedIndexId = reader.ReadInt16();
 
 		int c = reader.ReadInt32();
 		nameToClass = new Dictionary<string, ClassDescriptor>(c);
@@ -558,15 +558,15 @@ internal sealed class DataModelDescriptor : ModelItemDescriptor
 		}
 
 		c = reader.ReadInt32();
-		nameToHashIndex = new Dictionary<string, HashIndexDescriptor>(c);
-		splitNameToHashIndex = new Dictionary<SplitName, HashIndexDescriptor>(c);
-		idToHashIndex = new Dictionary<short, HashIndexDescriptor>(c);
+		nameToIndex = new Dictionary<string, IndexDescriptor>(c);
+		splitNameToIndex = new Dictionary<SplitName, IndexDescriptor>(c);
+		idToIndex = new Dictionary<short, IndexDescriptor>(c);
 		for (int i = 0; i < c; i++)
 		{
-			HashIndexDescriptor hi = context.Deserialize<HashIndexDescriptor>(reader);
-			nameToHashIndex.Add(hi.FullName, hi);
-			splitNameToHashIndex.Add(new SplitName(hi.NamespaceName, hi.Name), hi);
-			idToHashIndex.Add(hi.Id, hi);
+			IndexDescriptor index = context.Deserialize<IndexDescriptor>(reader);
+			nameToIndex.Add(index.FullName, index);
+			splitNameToIndex.Add(new SplitName(index.NamespaceName, index.Name), index);
+			idToIndex.Add(index.Id, index);
 		}
 
 		c = reader.ReadInt32();
@@ -593,7 +593,7 @@ internal sealed class DataModelDescriptor : ModelItemDescriptor
 		SetClassInverseRefs();
 	}
 
-	private struct SplitName : IEquatable<SplitName>
+	internal struct SplitName : IEquatable<SplitName>
 	{
 		public string Name { get; private set; }
 		public string NamespaceName { get; private set; }
@@ -622,7 +622,7 @@ internal sealed class DataModelDescriptor : ModelItemDescriptor
 	{
 		long lastUsedClassId = 0;
 		long lastUsedPropertyId = 0;
-		long lastUsedHashIndexId = 0;
+		long lastUsedIndexId = 0;
 		foreach (ClassDescriptor classDesc in GetAllClasses())
 		{
 			lastUsedClassId = Math.Max(lastUsedClassId, classDesc.Id);
@@ -632,13 +632,13 @@ internal sealed class DataModelDescriptor : ModelItemDescriptor
 			}
 		}
 
-		foreach (HashIndexDescriptor hindDesc in GetAllHashIndexes())
+		foreach (IndexDescriptor indexDesc in GetAllIndexes())
 		{
-			lastUsedHashIndexId = Math.Max(lastUsedHashIndexId, hindDesc.Id);
+			lastUsedIndexId = Math.Max(lastUsedIndexId, indexDesc.Id);
 		}
 
 		if (this.LastUsedClassId < lastUsedClassId || this.LastUsedPropertyId < lastUsedPropertyId ||
-			this.LastUsedHashIndexId < lastUsedHashIndexId)
+			this.LastUsedIndexId < lastUsedIndexId)
 		{
 			throw new InvalidOperationException();
 		}

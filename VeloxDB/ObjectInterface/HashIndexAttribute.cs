@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using VeloxDB.Common;
 
 namespace VeloxDB.ObjectInterface;
@@ -13,30 +13,29 @@ namespace VeloxDB.ObjectInterface;
 /// <seealso cref="HashIndexReader{T, TKey1, TKey2, TKey3}"/>
 /// <seealso cref="HashIndexReader{T, TKey1, TKey2, TKey3, TKey4}"/>
 [AttributeUsage(AttributeTargets.Class, Inherited = false, AllowMultiple = true)]
-public sealed class HashIndexAttribute : Attribute
+public sealed class HashIndexAttribute : IndexAttribute
 {
-	string name;
-	bool isUnique;
 	ReadOnlyArray<string> properties;
 
-	/// <param name="name">Hash index's name</param>
+	/// <param name="name">Index's name</param>
 	/// <param name="isUnique">If true, VeloxDB will enforce hash index uniqueness.</param>
 	/// <param name="properties">Names of the properties that hash index should include.</param>
-	public HashIndexAttribute(string name, bool isUnique, params string[] properties)
+	public HashIndexAttribute(string name, bool isUnique, params string[] properties) :
+		base(name, null, true, isUnique)
 	{
-		this.name = name;
-		this.isUnique = isUnique;
 		this.properties = new ReadOnlyArray<string>(properties, true);
 	}
 
-	/// <summary>
-	/// Gets the name.
-	/// </summary>
-	public string Name => name;
+	/// <param name="name">Index's name</param>
+	/// <param name="isUnique">If true, VeloxDB will enforce hash index uniqueness.</param>
+	/// <param name="properties">Names of the properties that hash index should include.</param>
+	/// <param name="caseSensitive">Indicates whether string comparisons inside the index are case sensitive.</param>
+	/// <param name="cultureName">The name of the culture to use to compare strings inside the index.</param>
+	public HashIndexAttribute(string name, string cultureName, bool caseSensitive, bool isUnique, params string[] properties) :
+		base(name, cultureName, caseSensitive, isUnique)
+	{
+		this.properties = new ReadOnlyArray<string>(properties, true);
+	}
 
-	/// <summary>
-	/// Gets if hash index has unique constraint.
-	/// </summary>
-	public bool IsUnique => isUnique;
 	internal ReadOnlyArray<string> Properties => properties;
 }

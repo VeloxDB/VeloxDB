@@ -59,7 +59,7 @@ internal sealed class XMLModelSettings : ModelSettings, IDisposable
 
 		model.Prepare(persistenceSettings);
 		if (previousModel != null)
-			model.UpdateLastUsedIds(previousModel.LastUsedClassId, previousModel.LastUsedPropertyId, previousModel.LastUsedHashIndexId);
+			model.UpdateLastUsedIds(previousModel.LastUsedClassId, previousModel.LastUsedPropertyId, previousModel.LastUsedIndexId);
 
 		usedUp = true;
 		Dispose();

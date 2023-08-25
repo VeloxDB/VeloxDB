@@ -538,11 +538,11 @@ internal unsafe sealed partial class InverseReferenceMap
 			while (bitemHandle != 0)
 			{
 				InvRefBaseItem* bitem = (InvRefBaseItem*)memoryManager.GetBuffer(bitemHandle);
-				TTTrace.Write(database.TraceId, classDesc.Id, bitem->id, bitem->propertyId, bitem->Version, bitem->IsDeleted, bitem->Count);
+				TTTrace.Write(database.TraceId, classDesc.Id, bitem->id, bitem->propertyId, bitem->Version, bitem->IsDeleted, bitem->Count, bitem->nextDelta);
 
 				if (propIds.Contains(bitem->propertyId))
 				{
-					Checker.AssertTrue(bitem->NextBase == 0); // Since we are in model updated an GC has been drained
+					Checker.AssertTrue(bitem->NextBase == 0); // Since we are in model updated and GC has been drained
 
 					int refCount = bitem->Count;
 					ulong ditemHandle = bitem->nextDelta;
@@ -558,8 +558,10 @@ internal unsafe sealed partial class InverseReferenceMap
 						ditem = (InvRefDeltaItem*)memoryManager.GetBuffer(ditemHandle);
 					}
 
-					ulong* nextCollisionPointer = &(bitem->nextCollision);
+
 					ulong nextCollision = bitem->nextCollision;
+					long id = bitem->id;
+					int propertyId = bitem->propertyId;
 					memoryManager.Free(bitemHandle);
 
 					if (refCount == 0)
@@ -568,7 +570,7 @@ internal unsafe sealed partial class InverseReferenceMap
 					}
 					else
 					{
-						InvRefBaseItem* newItem = CreateBase(bitem->id, bitem->propertyId, false, refCount, null, out ulong newItemHandle);
+						InvRefBaseItem* newItem = CreateBase(id, propertyId, false, refCount, null, out ulong newItemHandle);
 						newItem->Version = version;
 						newItem->NextBase = 0;
 						newItem->nextDelta = 0;

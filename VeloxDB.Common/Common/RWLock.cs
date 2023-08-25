@@ -41,6 +41,15 @@ internal struct RWLock
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public bool TryEnterReadLock()
+	{
+		long state = rh_wh_crw_cww_cr_cw;
+		int cw = GetCW(state);
+		int cww = GetCWW(state);
+		return cw == 0 && cww == 0 && TryChangeState(MakeState(0, 0, 0, 0, GetCR(state) + 1, 0), state);
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public unsafe static bool TryEnterReadLock(RWLock* p, int timeout)
 	{
 		return SpinWait.SpinUntil(() => p->TryEnterReadLockSingle(), timeout);
@@ -123,6 +132,12 @@ internal struct RWLock
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static bool IsWriteLockTaken(RWLock sync)
+	{
+		return GetCW(sync.rh_wh_crw_cww_cr_cw) != 0;
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public void EnterWriteLock()
 	{
 		long state = rh_wh_crw_cww_cr_cw;
@@ -136,6 +151,15 @@ internal struct RWLock
 		}
 
 		EnterWriteLockContested();
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public bool TryEnterWriteLock()
+	{
+		long state = rh_wh_crw_cww_cr_cw;
+		int cw = GetCW(state);
+		int cr = GetCR(state);
+		return cw == 0 && cr == 0 && TryChangeState(MakeState(0, 0, 0, 0, 0, 1), state);
 	}
 
 	[MethodImpl(MethodImplOptions.NoInlining)]
@@ -271,6 +295,23 @@ internal struct RWLock
 		ExitWriteLockContested();
 	}
 
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public void DowngradeWriteToReadLock()
+	{
+		long state = rh_wh_crw_cww_cr_cw;
+		int crw = GetCRW(state);
+		int cww = GetCWW(state);
+		int wh = GetWH(state);
+		Checker.AssertTrue(GetCR(state) == 0 && GetCW(state) == 1);
+		if (crw == 0 && TryChangeState(MakeState(0, wh, 0, cww, 1, 0), state))
+		{
+			Checker.AssertTrue(GetRH(state) == 0);
+			return;
+		}
+
+		DowngradeWriteToReadLockContested();
+	}
+
 	[MethodImpl(MethodImplOptions.NoInlining)]
 	private void ExitWriteLockContested()
 	{
@@ -315,6 +356,38 @@ internal struct RWLock
 
 				ManualEventPool.Get(rh).Set();
 			}
+
+			break;
+		}
+	}
+
+	[MethodImpl(MethodImplOptions.NoInlining)]
+	private void DowngradeWriteToReadLockContested()
+	{
+		while (true)
+		{
+			long state = rh_wh_crw_cww_cr_cw;
+			int crw = GetCRW(state);
+			int cww = GetCWW(state);
+			int wh = GetWH(state);
+			Checker.AssertTrue(GetCR(state) == 0 && GetCW(state) == 1);
+			if (crw == 0)
+			{
+				if (TryChangeState(MakeState(0, wh, 0, cww, 1, 0), state))
+				{
+					Checker.AssertTrue(GetRH(state) == 0);
+					return;
+				}
+
+				continue;
+			}
+
+			int rh = GetRH(state);
+			Checker.AssertTrue(rh != 0);
+			if (!TryChangeState(MakeState(0, wh, 0, cww, crw + 1, 0), state))
+				continue;
+
+			ManualEventPool.Get(rh).Set();
 
 			break;
 		}

@@ -8,7 +8,10 @@ namespace VeloxDB.Storage.ModelUpdate;
 
 internal sealed class DataModelUpdate
 {
-	Database database;
+	Tracing.Source trace;
+	long traceId;
+	long databaseId;
+
 	DataModelDescriptor prevModelDesc, modelDesc;
 
 	BuildupState state;
@@ -19,16 +22,17 @@ internal sealed class DataModelUpdate
 	ReadOnlyArray<InverseMapInsert> insertedInvRefMaps;
 	ReadOnlyArray<InverseMapDelete> deletedInvRefMaps;
 	ReadOnlyArray<InverseMapUpdate> updatedInvRefMaps;
-	ReadOnlyHashMap<short, HashIndexInsert> insertedHashIndexes;
-	ReadOnlyHashMap<short, HashIndexDelete> deletedHashIndexes;
-	ReadOnlyHashMap<short, HashIndexUpdate> updatedHashIndexes;
+	ReadOnlyHashMap<short, IndexInsert> insertedIndexes;
+	ReadOnlyHashMap<short, IndexDelete> deletedIndexes;
+	ReadOnlyHashMap<short, IndexUpdate> updatedIndexes;
 
 	bool isAlignment;
 
 	public DataModelUpdate(Database database, DataModelDescriptor prevModelDesc, DataModelDescriptor modelDesc, bool isAlignment)
 	{
-		Checker.AssertTrue(prevModelDesc.LastUsedClassId <= modelDesc.LastUsedClassId);
-		this.database = database;
+		this.traceId = database != null ? database.TraceId : 0;
+		this.trace = database?.Engine.Trace;
+		this.databaseId = database != null ? databaseId : 0;
 		this.prevModelDesc = prevModelDesc;
 		this.modelDesc = modelDesc;
 		this.isAlignment = isAlignment;
@@ -42,7 +46,7 @@ internal sealed class DataModelUpdate
 		{
 			return insertedClasses.Length == 0 && deletedClasses.Count == 0 && updatedClasses.Count == 0 &&
 				insertedInvRefMaps.Length == 0 && deletedInvRefMaps.Length == 0 && updatedInvRefMaps.Length == 0 &&
-				insertedHashIndexes.Count == 0 && deletedHashIndexes.Count == 0 && updatedHashIndexes.Count == 0;
+				insertedIndexes.Count == 0 && deletedIndexes.Count == 0 && updatedIndexes.Count == 0;
 		}
 	}
 
@@ -52,9 +56,9 @@ internal sealed class DataModelUpdate
 	public ReadOnlyArray<InverseMapInsert> InsertedInvRefMaps => insertedInvRefMaps;
 	public ReadOnlyArray<InverseMapDelete> DeletedInvRefMaps => deletedInvRefMaps;
 	public ReadOnlyArray<InverseMapUpdate> UpdatedInvRefMaps => updatedInvRefMaps;
-	public ReadOnlyHashMap<short, HashIndexInsert> InsertedHashIndexes => insertedHashIndexes;
-	public ReadOnlyHashMap<short, HashIndexDelete> DeletedHashIndexes => deletedHashIndexes;
-	public ReadOnlyHashMap<short, HashIndexUpdate> UpdatedHashIndexes => updatedHashIndexes;
+	public ReadOnlyHashMap<short, IndexInsert> InsertedIndexes => insertedIndexes;
+	public ReadOnlyHashMap<short, IndexDelete> DeletedIndexes => deletedIndexes;
+	public ReadOnlyHashMap<short, IndexUpdate> UpdatedIndexes => updatedIndexes;
 
 	public DataModelDescriptor PrevModelDesc => prevModelDesc;
 	public DataModelDescriptor ModelDesc => modelDesc;
@@ -88,10 +92,10 @@ internal sealed class DataModelUpdate
 		}
 	}
 
-	public bool HashIndexModified(short id)
+	public bool IndexModified(short id)
 	{
-		return updatedHashIndexes.ContainsKey(id) ||
-			(deletedHashIndexes.ContainsKey(id) && insertedHashIndexes.ContainsKey(id));
+		return updatedIndexes.ContainsKey(id) ||
+			(deletedIndexes.ContainsKey(id) && insertedIndexes.ContainsKey(id));
 	}
 
 	public bool ReferencePropertyStillExists(short classId, int propId)
@@ -112,14 +116,14 @@ internal sealed class DataModelUpdate
 
 		DetectClassesDiff(modifiedTargets);
 		DetectInverseRefMapsDiff(prevModelDesc, modelDesc);
-		DetectHashIndexesDiff(prevModelDesc, modelDesc);
+		DetectIndexesDiff(prevModelDesc, modelDesc);
 
 		insertedClasses = ReadOnlyArray<ClassInsert>.FromNullable(state.InsertedClasses);
 		updatedClasses = new ReadOnlyHashMap<short, ClassUpdate>(state.UpdatedClasses);
 		deletedClasses = new ReadOnlyHashMap<short, ClassDelete>(state.DeletedClasses);
-		insertedHashIndexes = new ReadOnlyHashMap<short, HashIndexInsert>(state.InsertedHashIndexes);
-		updatedHashIndexes = new ReadOnlyHashMap<short, HashIndexUpdate>(state.UpdatedHashIndexes);
-		deletedHashIndexes = new ReadOnlyHashMap<short, HashIndexDelete>(state.DeletedHashIndexes);
+		insertedIndexes = new ReadOnlyHashMap<short, IndexInsert>(state.InsertedIndexes);
+		updatedIndexes = new ReadOnlyHashMap<short, IndexUpdate>(state.UpdatedIndexes);
+		deletedIndexes = new ReadOnlyHashMap<short, IndexDelete>(state.DeletedIndexes);
 		insertedInvRefMaps = ReadOnlyArray<InverseMapInsert>.FromNullable(state.InsertedInvRefMaps);
 		updatedInvRefMaps = ReadOnlyArray<InverseMapUpdate>.FromNullable(state.UpdatedInvRefMaps);
 		deletedInvRefMaps = ReadOnlyArray<InverseMapDelete>.FromNullable(state.DeletedInvRefMaps);
@@ -130,11 +134,11 @@ internal sealed class DataModelUpdate
 		foreach (ClassDescriptor classDesc in modelDesc.GetAllClasses())
 		{
 			ClassDescriptor prevClassDesc = prevModelDesc.GetClass(classDesc.Id);
-			TTTrace.Write(database.TraceId, database.Id, classDesc.Id, prevClassDesc != null);
+			TTTrace.Write(traceId, databaseId, classDesc.Id, prevClassDesc != null);
 
 			if (prevClassDesc == null)
 			{
-				database.Engine.Trace.Debug("Class {0} inserted.", classDesc.FullName);
+				trace?.Debug("Class {0} inserted.", classDesc.FullName);
 				state.InsertedClasses.Add(new ClassInsert(classDesc));
 			}
 			else
@@ -147,144 +151,171 @@ internal sealed class DataModelUpdate
 		{
 			if (modelDesc.GetClass(prevClassDesc.Id) == null)
 			{
-				TTTrace.Write(database.TraceId, database.Id, prevClassDesc.Id);
+				TTTrace.Write(traceId, databaseId, prevClassDesc.Id);
 
-				database.Engine.Trace.Debug("Class {0} deleted.", prevClassDesc.FullName);
-				TTTrace.Write(database.TraceId, database.Id, prevClassDesc.Id);
+				trace?.Debug("Class {0} deleted.", prevClassDesc.FullName);
+				TTTrace.Write(traceId, databaseId, prevClassDesc.Id);
 
 				state.DeletedClasses.Add(prevClassDesc.Id, new ClassDelete(prevClassDesc));
 			}
 		}
 	}
 
-	private void DetectHashIndexesDiff(DataModelDescriptor prevModelDesc, DataModelDescriptor modelDesc)
+	private void DetectIndexesDiff(DataModelDescriptor prevModelDesc, DataModelDescriptor modelDesc)
 	{
-		foreach (HashIndexDescriptor hashDesc in modelDesc.GetAllHashIndexes())
+		foreach (IndexDescriptor indDesc in modelDesc.GetAllIndexes())
 		{
-			HashIndexDescriptor prevHashDesc = prevModelDesc.GetHashIndex(hashDesc.Id);
-			TTTrace.Write(database.TraceId, database.Id, prevHashDesc == null ? -1 : prevHashDesc.Id);
+			IndexDescriptor prevIndDesc = prevModelDesc.GetIndex(indDesc.Id);
+			TTTrace.Write(traceId, databaseId, prevIndDesc == null ? -1 : prevIndDesc.Id);
 
-			if (prevHashDesc == null)
+			if (prevIndDesc == null)
 			{
-				database.Engine.Trace.Debug("Hash index {0} inserted.", hashDesc.FullName);
+				trace?.Debug("Index {0} inserted.", indDesc.FullName);
 
-				state.InsertedHashIndexes.Add(hashDesc.Id, new HashIndexInsert(hashDesc));
-				foreach (ClassDescriptor hashClassDesc in hashDesc.Classes)
+				state.InsertedIndexes.Add(indDesc.Id, new IndexInsert(indDesc));
+				foreach (ClassDescriptor indexedClassDesc in indDesc.Classes)
 				{
-					ValidateHashIndexPropertiesNotNewlyIntroduced(hashDesc, hashClassDesc);
+					ValidateIndexPropertiesNotNewlyIntroduced(indDesc, indexedClassDesc);
 				}
 			}
 			else
 			{
-				DetectHashInedexDiff(prevHashDesc, hashDesc);
+				DetectIndexDiff(prevIndDesc, indDesc);
 			}
 		}
 
-		foreach (HashIndexDescriptor prevHashDesc in prevModelDesc.GetAllHashIndexes())
+		foreach (IndexDescriptor prevIndDesc in prevModelDesc.GetAllIndexes())
 		{
-			if (modelDesc.GetHashIndex(prevHashDesc.Id) == null)
+			if (modelDesc.GetIndex(prevIndDesc.Id) == null)
 			{
-				database.Engine.Trace.Debug("Hash index {0} deleted.", prevHashDesc.FullName);
-				TTTrace.Write(database.TraceId, database.Id, prevHashDesc.Id);
+				trace?.Debug("Index {0} deleted.", prevIndDesc.FullName);
+				TTTrace.Write(traceId, databaseId, prevIndDesc.Id);
 
-				state.DeletedHashIndexes.Add(prevHashDesc.Id, new HashIndexDelete(prevHashDesc));
+				state.DeletedIndexes.Add(prevIndDesc.Id, new IndexDelete(prevIndDesc));
 			}
 		}
 	}
 
-	private void DetectHashInedexDiff(HashIndexDescriptor prevHashDesc, HashIndexDescriptor hashDesc)
+	private void DetectIndexDiff(IndexDescriptor prevIndDesc, IndexDescriptor indDesc)
 	{
-		if (HashIndexPropertiesDiffer(prevHashDesc, hashDesc))
+		if (prevIndDesc.Type != indDesc.Type)
 		{
-			database.Engine.Trace.Debug("Hash index {0} properties modified.", prevHashDesc.FullName);
-			TTTrace.Write(database.TraceId, database.Id, prevHashDesc.Id);
+			trace?.Debug("Index {0} type modified.", prevIndDesc.FullName);
+			TTTrace.Write(traceId, databaseId, prevIndDesc.Id);
 
-			state.DeletedHashIndexes.Add(prevHashDesc.Id, new HashIndexDelete(prevHashDesc));
-			state.InsertedHashIndexes.Add(hashDesc.Id, new HashIndexInsert(hashDesc));
+			state.DeletedIndexes.Add(prevIndDesc.Id, new IndexDelete(prevIndDesc));
+			state.InsertedIndexes.Add(indDesc.Id, new IndexInsert(indDesc));
 			return;
 		}
 
-		bool hasBecomeUnique = !prevHashDesc.IsUnique && hashDesc.IsUnique;
+		if (IndexPropertiesDiffer(prevIndDesc, indDesc))
+		{
+			trace?.Debug("Index {0} properties modified.", prevIndDesc.FullName);
+			TTTrace.Write(traceId, databaseId, prevIndDesc.Id);
+
+			state.DeletedIndexes.Add(prevIndDesc.Id, new IndexDelete(prevIndDesc));
+			state.InsertedIndexes.Add(indDesc.Id, new IndexInsert(indDesc));
+			return;
+		}
+
+		if (!string.Equals(prevIndDesc.CultureName, indDesc.CultureName) || prevIndDesc.CaseSensitive != indDesc.CaseSensitive)
+		{
+			trace?.Debug("Index {0} string comparison rules modified.", prevIndDesc.FullName);
+			TTTrace.Write(traceId, databaseId, prevIndDesc.Id);
+
+			state.DeletedIndexes.Add(prevIndDesc.Id, new IndexDelete(prevIndDesc));
+			state.InsertedIndexes.Add(indDesc.Id, new IndexInsert(indDesc));
+			return;
+		}
+
+		bool hasBecomeUnique = !prevIndDesc.IsUnique && indDesc.IsUnique;
 		if (hasBecomeUnique)
-			database.Engine.Trace.Debug("Hash index {0} has become unique.", hashDesc.FullName);
+			trace?.Debug("Index {0} has become unique.", indDesc.FullName);
 
 		List<ClassDescriptor> insertedClasses = null;
 		List<ClassDescriptor> deletedClasses = null;
 
-		foreach (ClassDescriptor hashClassDesc in hashDesc.Classes)
+		foreach (ClassDescriptor indexedClassDesc in indDesc.Classes)
 		{
-			ClassDescriptor prevHashClassDesc = prevHashDesc.Classes.FirstOrDefault(x => x.Id == hashClassDesc.Id);
-			if (prevHashClassDesc == null)
+			ClassDescriptor prevIndexedClassDesc = prevIndDesc.Classes.FirstOrDefault(x => x.Id == indexedClassDesc.Id);
+			if (prevIndexedClassDesc == null)
 			{
 				if (insertedClasses == null)
 					insertedClasses = new List<ClassDescriptor>();
 
-				if (this.prevModelDesc.GetClass(hashClassDesc.Id) != null)  // Newly inserted classes will not affect the hash index
+				if (this.prevModelDesc.GetClass(indexedClassDesc.Id) != null)  // Newly inserted classes will not affect the index
 				{
-					database.Engine.Trace.Debug("Class {0} inserted into hash index {1}.", hashClassDesc.FullName, hashDesc.FullName);
-					TTTrace.Write(database.TraceId, database.Id, hashDesc.Id, hashClassDesc.Id);
+					trace?.Debug("Class {0} inserted into index {1}.", indexedClassDesc.FullName, indDesc.FullName);
+					TTTrace.Write(traceId, databaseId, indDesc.Id, indexedClassDesc.Id);
 
-					ValidateHashIndexPropertiesNotNewlyIntroduced(hashDesc, hashClassDesc);
-					insertedClasses.Add(hashClassDesc);
+					ValidateIndexPropertiesNotNewlyIntroduced(indDesc, indexedClassDesc);
+					insertedClasses.Add(indexedClassDesc);
 				}
 			}
 		}
 
-		foreach (ClassDescriptor prevHashClassDesc in prevHashDesc.Classes)
+		foreach (ClassDescriptor prevIndexedClassDesc in prevIndDesc.Classes)
 		{
-			ClassDescriptor hashClassDesc = hashDesc.Classes.FirstOrDefault(x => x.Id == prevHashClassDesc.Id);
-			if (hashClassDesc == null)
+			ClassDescriptor indexedClassDesc = indDesc.Classes.FirstOrDefault(x => x.Id == prevIndexedClassDesc.Id);
+			if (indexedClassDesc == null)
 			{
 				if (deletedClasses == null)
 					deletedClasses = new List<ClassDescriptor>();
 
-				database.Engine.Trace.Debug("Class {0} deleted from hash index {1}.", prevHashClassDesc.FullName, prevHashDesc.FullName);
-				TTTrace.Write(database.TraceId, database.Id, prevHashDesc.Id, prevHashClassDesc.Id);
+				trace?.Debug("Class {0} deleted from index {1}.", prevIndexedClassDesc.FullName, prevIndDesc.FullName);
+				TTTrace.Write(traceId, databaseId, prevIndDesc.Id, prevIndexedClassDesc.Id);
 
-				deletedClasses.Add(prevHashClassDesc);
+				deletedClasses.Add(prevIndexedClassDesc);
 			}
 		}
 
 		if (hasBecomeUnique || insertedClasses != null || deletedClasses != null)
 		{
-			TTTrace.Write(database.TraceId, database.Id, prevHashDesc.Id, hasBecomeUnique, insertedClasses != null, deletedClasses != null);
+			TTTrace.Write(traceId, databaseId, prevIndDesc.Id, hasBecomeUnique, insertedClasses != null, deletedClasses != null);
 
-			state.UpdatedHashIndexes.Add(prevHashDesc.Id,
-				new HashIndexUpdate(prevHashDesc, hashDesc, hasBecomeUnique, insertedClasses, deletedClasses));
+			state.UpdatedIndexes.Add(prevIndDesc.Id,
+				new IndexUpdate(prevIndDesc, indDesc, hasBecomeUnique, insertedClasses, deletedClasses));
 		}
 	}
 
-	private void ValidateHashIndexPropertiesNotNewlyIntroduced(HashIndexDescriptor hashDesc, ClassDescriptor hashClassDesc)
+	private void ValidateIndexPropertiesNotNewlyIntroduced(IndexDescriptor indexDesc, ClassDescriptor indexedClassDesc)
 	{
 		if (isAlignment)
 			return;
 
-		ClassDescriptor prevHashClassDesc = prevModelDesc.GetClass(hashClassDesc.Id);
-		if (prevHashClassDesc == null)
+		ClassDescriptor prevIndexedClassDesc = prevModelDesc.GetClass(indexedClassDesc.Id);
+		if (prevIndexedClassDesc == null)
 			return;
 
-		ReadOnlyArray<PropertyDescriptor> hashProperties = hashDesc.Properties;
-		for (int i = 0; i < hashProperties.Length; i++)
+		ReadOnlyArray<PropertyDescriptor> indexedProperties = indexDesc.Properties;
+		for (int i = 0; i < indexedProperties.Length; i++)
 		{
-			// It is invalid to add an existing class to a hash index with a newly introduced property
-			if (prevHashClassDesc.GetProperty(hashProperties[i].Id) == null)
+			// It is invalid to add an existing class to an index with a newly introduced property
+			if (prevIndexedClassDesc.GetProperty(indexedProperties[i].Id) == null)
 			{
 				throw new DatabaseException(DatabaseErrorDetail.
-					CreateInsertedPropertyClassAddedToHashIndex(hashClassDesc.FullName, hashProperties[i].Name));
+					CreateInsertedPropertyClassAddedToIndex(indexedClassDesc.FullName, indexedProperties[i].Name));
 			}
 		}
 	}
 
-	private bool HashIndexPropertiesDiffer(HashIndexDescriptor prevHashDesc, HashIndexDescriptor hashDesc)
+	private bool IndexPropertiesDiffer(IndexDescriptor prevIndexDesc, IndexDescriptor indexDesc)
 	{
-		if (prevHashDesc.Properties.Length != hashDesc.Properties.Length)
+		if (prevIndexDesc.Properties.Length != indexDesc.Properties.Length)
 			return true;
 
-		for (int i = 0; i < prevHashDesc.Properties.Length; i++)
+		for (int i = 0; i < prevIndexDesc.Properties.Length; i++)
 		{
-			if (prevHashDesc.Properties[i].Id != hashDesc.Properties[i].Id)
+			if (prevIndexDesc.Properties[i].Id != indexDesc.Properties[i].Id)
 			{
-				TTTrace.Write(database.TraceId, database.Id, prevHashDesc.Id, prevHashDesc.Properties[i].Id, hashDesc.Properties[i].Id);
+				TTTrace.Write(traceId, databaseId, prevIndexDesc.Id, prevIndexDesc.Properties[i].Id, indexDesc.Properties[i].Id);
+				return true;
+			}
+
+			if (indexDesc.Type == ModelItemType.SortedIndex &&
+				((SortedIndexDescriptor)prevIndexDesc).PropertySortOrder[i] != ((SortedIndexDescriptor)indexDesc).PropertySortOrder[i])
+			{
+				TTTrace.Write(traceId, databaseId, prevIndexDesc.Id, prevIndexDesc.Properties[i].Id, indexDesc.Properties[i].Id);
 				return true;
 			}
 		}
@@ -300,8 +331,8 @@ internal sealed class DataModelUpdate
 			ClassDescriptor prevClassDesc = prevModelDesc.GetClass(classDesc.Id);
 			if (prevClassDesc == null || prevClassDesc.InverseReferences.Length == 0 || prevClassDesc.IsAbstract)
 			{
-				database.Engine.Trace.Debug("Inverse reference map {0} inserted.", classDesc.FullName);
-				TTTrace.Write(database.TraceId, database.Id, classDesc.Id);
+				trace?.Debug("Inverse reference map {0} inserted.", classDesc.FullName);
+				TTTrace.Write(traceId, databaseId, classDesc.Id);
 
 				state.InsertedInvRefMaps.Add(new InverseMapInsert(classDesc));
 			}
@@ -316,8 +347,8 @@ internal sealed class DataModelUpdate
 			ClassDescriptor classDesc = modelDesc.GetClass(prevClassDesc.Id);
 			if (classDesc == null || classDesc.InverseReferences.Length == 0 || classDesc.IsAbstract)
 			{
-				database.Engine.Trace.Debug("Inverse reference map {0} deleted.", prevClassDesc.FullName);
-				TTTrace.Write(database.TraceId, database.Id, prevClassDesc.Id);
+				trace?.Debug("Inverse reference map {0} deleted.", prevClassDesc.FullName);
+				TTTrace.Write(traceId, databaseId, prevClassDesc.Id);
 
 				state.DeletedInvRefMaps.Add(new InverseMapDelete(prevClassDesc));
 			}
@@ -350,9 +381,9 @@ internal sealed class DataModelUpdate
 					if (trackedReferences == null)
 						trackedReferences = new List<PropertyDescriptor>();
 
-					database.Engine.Trace.Debug("Inverse reference {0} of class {1} tracking started, inverse reference map {2}.",
+					trace?.Debug("Inverse reference {0} of class {1} tracking started, inverse reference map {2}.",
 						refPropDesc.Name, refPropDesc.OwnerClass.FullName, classDesc.Id);
-					TTTrace.Write(database.TraceId, database.Id, refPropDesc.Id, refPropDesc.OwnerClass.Id, classDesc.Id);
+					TTTrace.Write(traceId, databaseId, refPropDesc.Id, refPropDesc.OwnerClass.Id, classDesc.Id);
 
 					trackedReferences.Add(prevRefPropDesc);
 				}
@@ -360,16 +391,16 @@ internal sealed class DataModelUpdate
 				{
 					untrackedReferences  ??= new List<PropertyDescriptor>();
 
-					database.Engine.Trace.Debug("Inverse reference {0} of class {1} tracking stopped, inverse reference map {2}.",
+					trace?.Debug("Inverse reference {0} of class {1} tracking stopped, inverse reference map {2}.",
 						refPropDesc.Name, refPropDesc.OwnerClass.FullName, classDesc.Id);
-					TTTrace.Write(database.TraceId, database.Id, refPropDesc.Id, refPropDesc.OwnerClass.Id, classDesc.Id);
+					TTTrace.Write(traceId, databaseId, refPropDesc.Id, refPropDesc.OwnerClass.Id, classDesc.Id);
 
 					untrackedReferences.Add(prevRefPropDesc);
 				}
 			}
 			else
 			{
-				database.Engine.Trace.Debug("Inverse reference {0} of class {1} inserted, inverse reference map {2}.",
+				trace?.Debug("Inverse reference {0} of class {1} inserted, inverse reference map {2}.",
 					refPropDesc.Name, refPropDesc.OwnerClass.FullName, classDesc.Id);
 				insertedReferences ??= new List<PropertyDescriptor>();
 			}
@@ -388,9 +419,9 @@ internal sealed class DataModelUpdate
 				if (deletedReferences == null)
 					deletedReferences = new List<PropertyDescriptor>();
 
-				database.Engine.Trace.Debug("Inverse reference {0} of class {1} deleted, inverse reference map {2}.",
+				trace?.Debug("Inverse reference {0} of class {1} deleted, inverse reference map {2}.",
 					prevRefPropDesc.Name, prevDefiningClassDesc.FullName, classDesc.Id);
-				TTTrace.Write(database.TraceId, database.Id, prevRefPropDesc.Id, prevDefiningClassDesc.Id, classDesc.Id);
+				TTTrace.Write(traceId, databaseId, prevRefPropDesc.Id, prevDefiningClassDesc.Id, classDesc.Id);
 
 				deletedReferences.Add(prevRefPropDesc);
 			}
@@ -400,9 +431,9 @@ internal sealed class DataModelUpdate
 				if (partiallyDeletedReferences == null)
 					partiallyDeletedReferences = new List<PropertyDescriptor>();
 
-				database.Engine.Trace.Debug("Inverse reference {0} of class {1} partially deleted, inverse reference map {2}.",
+				trace?.Debug("Inverse reference {0} of class {1} partially deleted, inverse reference map {2}.",
 					prevRefPropDesc.Name, prevDefiningClassDesc.FullName, classDesc.Id);
-				TTTrace.Write(database.TraceId, database.Id, prevRefPropDesc.Id, prevDefiningClassDesc.Id, classDesc.Id);
+				TTTrace.Write(traceId, databaseId, prevRefPropDesc.Id, prevDefiningClassDesc.Id, classDesc.Id);
 
 				partiallyDeletedReferences.Add(prevRefPropDesc);
 			}
@@ -484,7 +515,7 @@ internal sealed class DataModelUpdate
 		List<PropertyUpdate> updatedProps = null;
 		bool isAbstratModified = prevClassDesc.IsAbstract != classDesc.IsAbstract;
 		bool isLogModified = !string.Equals(prevClassDesc.LogName, classDesc.LogName, StringComparison.OrdinalIgnoreCase);
-		bool hashedPropertiesModified = HashedPropertiesModified(prevClassDesc.PropertyHashIndexIndexes, classDesc.PropertyHashIndexIndexes);
+		bool indexedPropertiesModified = IndexedPropertiesModified(prevClassDesc.PropertyIndexIndexes, classDesc.PropertyIndexIndexes);
 
 		bool isPrevInherited = prevClassDesc.DescendentClassIds.Length > 0 || prevClassDesc.IsAbstract;
 		bool isInherited = classDesc.DescendentClassIds.Length > 0 || classDesc.IsAbstract;
@@ -492,16 +523,16 @@ internal sealed class DataModelUpdate
 		bool isBaseClaseModified = IsBaseClassModified(prevClassDesc, classDesc);
 
 		if (isAbstratModified)
-			database.Engine.Trace.Debug("Modified abstractness of class {0}.", classDesc.FullName);
+			trace?.Debug("Modified abstractness of class {0}.", classDesc.FullName);
 
 		if (isLogModified)
-			database.Engine.Trace.Debug("Log of class {0} modified.", classDesc.FullName);
+			trace?.Debug("Log of class {0} modified.", classDesc.FullName);
 
-		if (hashedPropertiesModified)
-			database.Engine.Trace.Debug("Hashed properties of class {0} modified.", classDesc.FullName);
+		if (indexedPropertiesModified)
+			trace?.Debug("Indexed properties of class {0} modified.", classDesc.FullName);
 
 		if (isBaseClaseModified)
-			database.Engine.Trace.Debug("Base class of class {0} modified.", classDesc.FullName);
+			trace?.Debug("Base class of class {0} modified.", classDesc.FullName);
 
 		if (!classDesc.IsAbstract)
 		{
@@ -520,7 +551,7 @@ internal sealed class DataModelUpdate
 					if (insertedProps == null)
 						insertedProps = new List<PropertyInsert>();
 
-					database.Engine.Trace.Debug("Property {0} inserted in class {1}.", propDesc.Name, classDesc.FullName);
+					trace?.Debug("Property {0} inserted in class {1}.", propDesc.Name, classDesc.FullName);
 					insertedProps.Add(new PropertyInsert(propDesc));
 				}
 				else
@@ -537,21 +568,21 @@ internal sealed class DataModelUpdate
 					if (deletedProps == null)
 						deletedProps = new List<PropertyDelete>();
 
-					database.Engine.Trace.Debug("Property {0} deleted from class {1}.", prevPropDesc.Name, classDesc.FullName);
+					trace?.Debug("Property {0} deleted from class {1}.", prevPropDesc.Name, classDesc.FullName);
 					deletedProps.Add(new PropertyDelete(prevPropDesc));
 				}
 			}
 		}
 
-		if (isHierarchyTypeModified || isLogModified || isAbstratModified || isBaseClaseModified || hashedPropertiesModified ||
+		if (isHierarchyTypeModified || isLogModified || isAbstratModified || isBaseClaseModified || indexedPropertiesModified ||
 			insertedProps != null || deletedProps != null || updatedProps != null)
 		{
-			TTTrace.Write(database.TraceId, database.Id, classDesc.Id, isLogModified, isAbstratModified, isBaseClaseModified,
+			TTTrace.Write(traceId, databaseId, classDesc.Id, isLogModified, isAbstratModified, isBaseClaseModified,
 				insertedProps == null ? 0 : insertedProps.Count, deletedProps == null ? 0 : deletedProps.Count,
-				updatedProps == null ? 0 : updatedProps.Count, hashedPropertiesModified);
+				updatedProps == null ? 0 : updatedProps.Count, indexedPropertiesModified);
 
 			ClassUpdate cu = new ClassUpdate(prevClassDesc, classDesc, isAbstratModified,
-				isLogModified, isHierarchyTypeModified, hashedPropertiesModified, isBaseClaseModified, insertedProps, deletedProps, updatedProps);
+				isLogModified, isHierarchyTypeModified, indexedPropertiesModified, isBaseClaseModified, insertedProps, deletedProps, updatedProps);
 
 			state.UpdatedClasses.Add(prevClassDesc.Id, cu);
 		}
@@ -565,7 +596,7 @@ internal sealed class DataModelUpdate
 		return prevClassDesc.BaseClass.Id != classDesc.BaseClass.Id;
 	}
 
-	private bool HashedPropertiesModified(ReadOnlyArray<ReadOnlyArray<int>> p1, ReadOnlyArray<ReadOnlyArray<int>> p2)
+	private bool IndexedPropertiesModified(ReadOnlyArray<ReadOnlyArray<int>> p1, ReadOnlyArray<ReadOnlyArray<int>> p2)
 	{
 		if ((p1 == null) != (p2 == null))
 			return true;
@@ -632,31 +663,31 @@ internal sealed class DataModelUpdate
 
 		if (propDesc.Kind == PropertyKind.Simple && !object.Equals(propDesc.DefaultValue, prevPropDesc.DefaultValue))
 		{
-			TTTrace.Write(database.TraceId, database.Id, classDesc.Id, propDesc.Id, classDesc.LogIndex);
+			TTTrace.Write(traceId, databaseId, classDesc.Id, propDesc.Id, classDesc.LogIndex);
 			defaultValueModified = true;
 		}
 
 		if (isMultiplicityModified)
 		{
-			database.Engine.Trace.Debug("Reference property {0} of class {1} multiplicity modified to {2}.",
+			trace?.Debug("Reference property {0} of class {1} multiplicity modified to {2}.",
 				propDesc.Name, classDesc.FullName, refPropDesc.Multiplicity);
 		}
 
 		if (isTargetModified)
-			database.Engine.Trace.Debug("Reference property {0} of class {1} target class modified.", propDesc.Name, classDesc.FullName);
+			trace?.Debug("Reference property {0} of class {1} target class modified.", propDesc.Name, classDesc.FullName);
 
 		if (invRefTrackingModified)
-			database.Engine.Trace.Debug("Tracking of reference property {0} of class {1} modified.", propDesc.Name, classDesc.FullName);
+			trace?.Debug("Tracking of reference property {0} of class {1} modified.", propDesc.Name, classDesc.FullName);
 
 		if (defaultValueModified)
-			database.Engine.Trace.Debug("Default value of property {0} of class {1} modified.", propDesc.Name, classDesc.FullName);
+			trace?.Debug("Default value of property {0} of class {1} modified.", propDesc.Name, classDesc.FullName);
 
 		if (deleteTargetActionModified)
-			database.Engine.Trace.Debug("Delete target action of reference property {0} of class {1} modified.", propDesc.Name, classDesc.FullName);
+			trace?.Debug("Delete target action of reference property {0} of class {1} modified.", propDesc.Name, classDesc.FullName);
 
 		if (isMultiplicityModified || isTargetModified || invRefTrackingModified || defaultValueModified || deleteTargetActionModified)
 		{
-			TTTrace.Write(database.TraceId, database.Id, classDesc.Id, propDesc.Id,
+			TTTrace.Write(traceId, databaseId, classDesc.Id, propDesc.Id,
 				isMultiplicityModified, isTargetModified, invRefTrackingModified, defaultValueModified, deleteTargetActionModified);
 
 			if (updatedProps == null)
@@ -675,8 +706,8 @@ internal sealed class DataModelUpdate
 		public List<InverseMapInsert> InsertedInvRefMaps { get; private set; } = new List<InverseMapInsert>();
 		public List<InverseMapDelete> DeletedInvRefMaps { get; private set; } = new List<InverseMapDelete>();
 		public List<InverseMapUpdate> UpdatedInvRefMaps { get; private set; } = new List<InverseMapUpdate>();
-		public Dictionary<short, HashIndexInsert> InsertedHashIndexes { get; private set; } = new Dictionary<short, HashIndexInsert>(2);
-		public Dictionary<short, HashIndexDelete> DeletedHashIndexes { get; private set; } = new Dictionary<short, HashIndexDelete>(2);
-		public Dictionary<short, HashIndexUpdate> UpdatedHashIndexes { get; private set; } = new Dictionary<short, HashIndexUpdate>(2);
+		public Dictionary<short, IndexInsert> InsertedIndexes { get; private set; } = new Dictionary<short, IndexInsert>(2);
+		public Dictionary<short, IndexDelete> DeletedIndexes { get; private set; } = new Dictionary<short, IndexDelete>(2);
+		public Dictionary<short, IndexUpdate> UpdatedIndexes { get; private set; } = new Dictionary<short, IndexUpdate>(2);
 	}
 }

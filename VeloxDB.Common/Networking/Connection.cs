@@ -950,7 +950,7 @@ internal abstract class Connection
 	private unsafe void DelegateWorkItems(ref int currPool, ref MessageChunk receiveChunk, ref int totalReceived)
 	{
 		// Management of receiveChunk life gets tricky here. This method either claims the chunk for further processing
-		// or return back the same chunk it got. If it claims the chunk, it must guarantee proper cleanup (returning to the pool)
+		// or returns back the same chunk it got. If it claims the chunk, it must guarantee proper cleanup (returning to the pool)
 		// both in case of successful processing and in case of exception at any stage during processing. General rule of thumb
 		// is that if we encounter an exception during processing (closed connection, corrupted message...) we asynchronously
 		// close the connection and release used chunks.

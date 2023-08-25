@@ -43,7 +43,7 @@ internal sealed unsafe partial class Changeset : IDisposable
 
 	~Changeset()
 	{
-#if DEBUG
+#if HUNT_CHG_LEAKS
 		throw new CriticalDatabaseException();
 #endif
 	}

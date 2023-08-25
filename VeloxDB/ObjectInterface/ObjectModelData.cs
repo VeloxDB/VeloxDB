@@ -1,12 +1,14 @@
-using System;
+﻿using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
 using System.Reflection;
 using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using VeloxDB.Common;
 using VeloxDB.Descriptor;
-
 namespace VeloxDB.ObjectInterface;
 
 internal delegate bool ReferenceCheckerDelegate(DatabaseObject obj, LongHashSet deletedIds);
@@ -19,7 +21,7 @@ internal sealed class ObjectModelData
 	DataModelDescriptor modelDesc;
 	Dictionary<Type, ClassData> userTypeMap;
 	Dictionary<short, ClassData> typeIdMap;
-	Dictionary<short, Delegate> hashIndexComparers;
+	Dictionary<DataModelDescriptor.SplitName, IndexData> indexNameMap;
 	Dictionary<int, ReferenceCheckerDelegate> referencePropertyDelegates;
 
 	public ObjectModelData(DataModelDescriptor modelDesc, IEnumerable<Assembly> modelAssemblies = null)
@@ -38,7 +40,7 @@ internal sealed class ObjectModelData
 
 		userTypeMap = new Dictionary<Type, ClassData>(modelDesc.ClassCount);
 		typeIdMap = new Dictionary<short, ClassData>(modelDesc.ClassCount);
-		hashIndexComparers = new Dictionary<short, Delegate>(modelDesc.HashIndexCount);
+		indexNameMap = new Dictionary<DataModelDescriptor.SplitName, IndexData>(modelDesc.IndexCount);
 
 		int c = 0;
 		foreach (ClassDescriptor classDesc in modelDesc.GetAllClasses())
@@ -76,13 +78,18 @@ internal sealed class ObjectModelData
 			}
 		}
 
-		foreach (HashIndexDescriptor hdi in modelDesc.GetAllHashIndexes())
+		foreach (IndexDescriptor indexDesc in modelDesc.GetAllIndexes())
 		{
-			if (hdi.Id < 0)
+			if (indexDesc.Id < 0)
 				continue;
 
-			Delegate d = ClassData.CreateHashIndexComparer(hdi);
-			AddHashIndexComparer(hdi.Id, d);
+			Delegate d = ClassData.CreateIndexComparer(indexDesc);
+
+			Type definingType = indexDesc.DefiningObjectModelClass.ClassType;
+			ClassData classData = userTypeMap[definingType];
+
+			indexNameMap.Add(new DataModelDescriptor.SplitName(indexDesc.NamespaceName, indexDesc.Name),
+				new IndexData(d, classData, indexDesc));
 		}
 	}
 
@@ -125,11 +132,6 @@ internal sealed class ObjectModelData
 		typeIdMap.Add(cd.ClassDesc.Id, cd);
 	}
 
-	private void AddHashIndexComparer(short id, Delegate comparer)
-	{
-		hashIndexComparers.Add(id, comparer);
-	}
-
 	private void AddReferencePropertyDelegates(ReferencePropertyDescriptor propDesc, ReferenceCheckerDelegate r)
 	{
 		referencePropertyDelegates.Add(propDesc.Id, r);
@@ -148,7 +150,7 @@ internal sealed class ObjectModelData
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public ClassData GetClassByTypeId(short id)
+	public ClassData GetClassByClassId(short id)
 	{
 		return typeIdMap[id];
 	}
@@ -160,14 +162,46 @@ internal sealed class ObjectModelData
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public Delegate GetHashIndexComparer(short id)
+	public IndexData GetIndexData(string namespaceName, string name)
 	{
-		return hashIndexComparers[id];
+		if (!indexNameMap.TryGetValue(new DataModelDescriptor.SplitName(namespaceName, name), out IndexData indexData))
+			throw new DatabaseException(DatabaseErrorDetail.Create(DatabaseErrorType.InvalidIndex));
+
+		return indexData;
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public ReferenceCheckerDelegate GetReferencePropertyDelegate(int id)
 	{
 		return referencePropertyDelegates[id];
+	}
+}
+
+internal sealed class IndexData
+{
+	public Delegate KeyComparer { get; private set; }
+	public int[] ClassIndexes { get; private set; }
+	public ClassData ClassData { get; private set; }
+	public IndexDescriptor IndexDescriptor { get; private set; }
+	public StringComparer StringComparer { get; private set; }
+
+	public IndexData(Delegate keyComparer, ClassData classData, IndexDescriptor indexDescriptor)
+	{
+		this.KeyComparer = keyComparer;
+		this.ClassData = classData;
+		this.IndexDescriptor = indexDescriptor;
+
+		ClassIndexes = new int[indexDescriptor.Classes.Length];
+		for (int i = 0; i < indexDescriptor.Classes.Length; i++)
+		{
+			ClassIndexes[i] = indexDescriptor.Classes[i].Index;
+		}
+
+		if (indexDescriptor.Properties.Where(x => x.PropertyType == PropertyType.String).Count() > 0)
+		{
+			StringComparer = indexDescriptor.CultureName == null ?
+				(indexDescriptor.CaseSensitive ? StringComparer.InvariantCulture : StringComparer.InvariantCultureIgnoreCase) :
+				StringComparer.Create(new CultureInfo(indexDescriptor.CultureName), !indexDescriptor.CaseSensitive);
+		}
 	}
 }

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Xml;
 using System.Runtime.CompilerServices;
@@ -18,7 +18,7 @@ internal class ClassDescriptor : TypeDescriptor
 
 	public const int MaxPropertyCount = 512;
 	public const int MaxBlobPropertyCount = 32;
-	public const int MaxHashIndexesPerClass = 32;
+	public const int MaxIndexesPerClass = 32;
 	public const int MaxInverseReferencesPerClass = 128;
 
 	short id;
@@ -35,7 +35,7 @@ internal class ClassDescriptor : TypeDescriptor
 	Dictionary<string, PropertyDescriptor> nameToProperty;
 	IntToIntMap propertyIndexes;
 	ReadOnlyArray<PropertyDescriptor> properties;
-	ReadOnlyArray<HashIndexDescriptor> hashIndexes;
+	ReadOnlyArray<IndexDescriptor> indexes;
 	ReadOnlyArray<ReferencePropertyDescriptor> inverseReferences;
 	ReadOnlyArray<ReferencePropertyDescriptor> cascadeDeletePreventInverseReferences;
 	ReadOnlyArray<ReferencePropertyDescriptor> setToNullInverseReferences;
@@ -44,7 +44,7 @@ internal class ClassDescriptor : TypeDescriptor
 	ReadOnlyArray<int> blobPropertyIndexes;
 	ReadOnlyArray<int> refeferencePropertyIndexes;
 	ReadOnlyArray<int> untrackedRefeferencePropertyIndexes;
-	ReadOnlyArray<ReadOnlyArray<int>> propertyHashIndexIndexes;
+	ReadOnlyArray<ReadOnlyArray<int>> propertyIndexIndexes;
 	ObjectModelClass objectModelClass;
 
 	public ClassDescriptor()
@@ -85,7 +85,7 @@ internal class ClassDescriptor : TypeDescriptor
 			}
 		}
 
-		prepareData.HashIndexes.AddRange(objectModelClass.HashIndexes.Select(x => x.FullName));
+		prepareData.Indexes.AddRange(objectModelClass.Indexes.Select(x => x.FullName));
 
 		Model.LoadingTempData.Add(this, prepareData);
 	}
@@ -140,9 +140,9 @@ internal class ClassDescriptor : TypeDescriptor
 					prepareData.Properties.Add(p.Id, p);
 				}
 
-				if (reader.Name.Equals("HashIndex", StringComparison.Ordinal))
+				if (reader.Name.Equals("Index", StringComparison.Ordinal))
 				{
-					prepareData.HashIndexes.Add(reader.GetAttribute("Name"));
+					prepareData.Indexes.Add(reader.GetAttribute("Name"));
 				}
 			}
 
@@ -151,7 +151,7 @@ internal class ClassDescriptor : TypeDescriptor
 	}
 
 	public ClassDescriptor(DataModelDescriptor modelDesc, string name, short id, bool isAbstract,
-		string baseClassName, string logName, PropertyDescriptor[] props, string[] hashIndexes) :
+		string baseClassName, string logName, PropertyDescriptor[] props, string[] indexes) :
 		base(name)
 	{
 		PreparePhaseData prepareData = new PreparePhaseData();
@@ -168,7 +168,7 @@ internal class ClassDescriptor : TypeDescriptor
 			props[i].OwnerClass = this;
 		}
 
-		prepareData.HashIndexes.AddRange(hashIndexes);
+		prepareData.Indexes.AddRange(indexes);
 
 		modelDesc.LoadingTempData.Add(this, prepareData);
 	}
@@ -179,7 +179,7 @@ internal class ClassDescriptor : TypeDescriptor
 	public bool IsAbstract => isAbstract;
 	public ClassDescriptor BaseClass => baseClass;
 	public ReadOnlyArray<PropertyDescriptor> Properties => properties;
-	public ReadOnlyArray<HashIndexDescriptor> HashIndexes => hashIndexes;
+	public ReadOnlyArray<IndexDescriptor> Indexes => indexes;
 	public ReadOnlyArray<short> DescendentClassIds => descendentClassIds;
 	public ReadOnlyHashSet<short> DescendentClassIdsSet => descendentClassIdsSet;
 	public int LogIndex => logIndex;
@@ -193,7 +193,7 @@ internal class ClassDescriptor : TypeDescriptor
 	public ReadOnlyArray<ReferencePropertyDescriptor> InverseReferences => inverseReferences;
 	public ReadOnlyArray<ReferencePropertyDescriptor> CascadeDeletePreventInverseReferences => cascadeDeletePreventInverseReferences;
 	public ReadOnlyArray<ReferencePropertyDescriptor> SetToNullInverseReferences => setToNullInverseReferences;
-	public ReadOnlyArray<ReadOnlyArray<int>> PropertyHashIndexIndexes => propertyHashIndexIndexes;
+	public ReadOnlyArray<ReadOnlyArray<int>> PropertyIndexIndexes => propertyIndexIndexes;
 	public int FirstStringBlobOffset => firstStringBlobOffset;
 	public int FirstStringBlobIndex => firstStringBlobIndex;
 
@@ -255,31 +255,48 @@ internal class ClassDescriptor : TypeDescriptor
 		return pd;
 	}
 
-	public KeyComparerDesc GetHashAccessDesc(HashIndexDescriptor hind)
+	public KeyComparerDesc GetIndexAccessDesc(IndexDescriptor indexDesc)
 	{
-		ReadOnlyArray<PropertyDescriptor> ips = hind.Properties;
+		ReadOnlyArray<PropertyDescriptor> ips = indexDesc.Properties;
 		KeyProperty[] props = new KeyProperty[ips.Length];
 		for (int i = 0; i < props.Length; i++)
 		{
 			propertyIndexes.TryGetValue(ips[i].Id, out int index);
-			props[i] = new KeyProperty(ips[i].PropertyType, propertyByteOffsets[index]);
+			if (indexDesc.Type == ModelItemType.HashIndex)
+			{
+				props[i] = new KeyProperty(ips[i].PropertyType, propertyByteOffsets[index], SortOrder.Asc);
+			}
+			else
+			{
+				props[i] = new KeyProperty(ips[i].PropertyType, propertyByteOffsets[index],
+					((SortedIndexDescriptor)indexDesc).PropertySortOrder[i]);
+			}
 		}
 
-		return new KeyComparerDesc(props);
+		return new KeyComparerDesc(props, indexDesc.CultureName, indexDesc.CaseSensitive);
 	}
 
-	public KeyComparerDesc GetHashAccessDescByPropertyName(HashIndexDescriptor hind)
+	public KeyComparerDesc GetIndexAccessDescByPropertyName(IndexDescriptor indexDesc)
 	{
-		ReadOnlyArray<PropertyDescriptor> ips = hind.Properties;
+		ReadOnlyArray<PropertyDescriptor> ips = indexDesc.Properties;
 		KeyProperty[] props = new KeyProperty[ips.Length];
 		for (int i = 0; i < props.Length; i++)
 		{
 			PropertyDescriptor propDesc = GetProperty(ips[i].Name);
 			propertyIndexes.TryGetValue(propDesc.Id, out int index);
-			props[i] = new KeyProperty(propDesc.PropertyType, propertyByteOffsets[index]);
+			if (indexDesc.Type == ModelItemType.HashIndex)
+			{
+				props[i] = new KeyProperty(propDesc.PropertyType, propertyByteOffsets[index], SortOrder.Asc);
+			}
+			else
+			{
+				int propIndex = GetPropertyIndex(propDesc.Id);
+				props[i] = new KeyProperty(propDesc.PropertyType, propertyByteOffsets[index],
+					((SortedIndexDescriptor)indexDesc).PropertySortOrder[i]);
+			}
 		}
 
-		return new KeyComparerDesc(props);
+		return new KeyComparerDesc(props, indexDesc.CultureName, indexDesc.CaseSensitive);
 	}
 
 	public void Prepare()
@@ -292,42 +309,42 @@ internal class ClassDescriptor : TypeDescriptor
 		PrepareBaseClass();
 		CreateProperties();
 		PrepareProperties();
-		PrepareHashIndexes();
+		PrepareIndexes();
 	}
 
-	private void PrepareHashIndexes()
+	private void PrepareIndexes()
 	{
 		PreparePhaseData prepareData = (PreparePhaseData)Model.LoadingTempData[this];
-		if (prepareData.HashIndexes.Count > MaxHashIndexesPerClass)
-			Throw.MaximumNumberOfHashIndexesPerClassExceeded(FullName);
+		if (prepareData.Indexes.Count > MaxIndexesPerClass)
+			Throw.MaximumNumberOfIndexesPerClassExceeded(FullName);
 
 		if (isAbstract)
 		{
-			hashIndexes = ReadOnlyArray<HashIndexDescriptor>.Empty;
+			indexes = ReadOnlyArray<IndexDescriptor>.Empty;
 			return;
 		}
 
-		HashIndexDescriptor[] hashIndexDescs = new HashIndexDescriptor[prepareData.HashIndexes.Count];
-		for (int i = 0; i < prepareData.HashIndexes.Count; i++)
+		IndexDescriptor[] indexDescs = new IndexDescriptor[prepareData.Indexes.Count];
+		for (int i = 0; i < prepareData.Indexes.Count; i++)
 		{
-			hashIndexDescs[i] = prepareData.HashIndexes[i].Contains('.') ? Model.GetHashIndex(prepareData.HashIndexes[i])
-				: Model.GetHashIndex($"{base.NamespaceName}.{prepareData.HashIndexes[i]}");
+			indexDescs[i] = prepareData.Indexes[i].Contains('.') ? Model.GetIndex(prepareData.Indexes[i])
+				: Model.GetIndex($"{base.NamespaceName}.{prepareData.Indexes[i]}");
 
-			if (hashIndexDescs[i] == null)
-				Throw.UnknownHashIndex(FullName, prepareData.HashIndexes[i]);
+			if (indexDescs[i] == null)
+				Throw.UnknownIndex(FullName, prepareData.Indexes[i]);
 
-			hashIndexDescs[i].AddClass(this);
+			indexDescs[i].AddClass(this);
 		}
 
-		hashIndexes = new ReadOnlyArray<HashIndexDescriptor>(hashIndexDescs);
+		indexes = new ReadOnlyArray<IndexDescriptor>(indexDescs);
 	}
 
-	public void PreparePropertyToHashIndexMapping()
+	public void PreparePropertyToIndexMapping()
 	{
 		List<int>[] l = new List<int>[Properties.Length];
-		for (int i = 0; i < hashIndexes.Length; i++)
+		for (int i = 0; i < indexes.Length; i++)
 		{
-			HashIndexDescriptor hdesc = hashIndexes[i];
+			IndexDescriptor hdesc = indexes[i];
 			for (int j = 0; j < hdesc.Properties.Length; j++)
 			{
 				PropertyDescriptor propDesc = hdesc.Properties[j];
@@ -347,7 +364,7 @@ internal class ClassDescriptor : TypeDescriptor
 				t[i] = new ReadOnlyArray<int>(l[i].ToArray());
 		}
 
-		propertyHashIndexIndexes = new ReadOnlyArray<ReadOnlyArray<int>>(t);
+		propertyIndexIndexes = new ReadOnlyArray<ReadOnlyArray<int>>(t);
 	}
 
 	private void CreateProperties()
@@ -586,7 +603,7 @@ internal class ClassDescriptor : TypeDescriptor
 		}
 
 		PrepareProperties();
-		PreparePropertyToHashIndexMapping();
+		PreparePropertyToIndexMapping();
 	}
 
 	public override void Serialize(BinaryWriter writer, ModelDescriptorSerializerContext ctx)
@@ -615,8 +632,8 @@ internal class ClassDescriptor : TypeDescriptor
 			ctx.Serialize(pd, writer);
 		}
 
-		writer.Write((byte)hashIndexes.Length);
-		foreach (HashIndexDescriptor msi in hashIndexes)
+		writer.Write((byte)indexes.Length);
+		foreach (IndexDescriptor msi in indexes)
 		{
 			ctx.Serialize(msi, writer);
 		}
@@ -647,13 +664,13 @@ internal class ClassDescriptor : TypeDescriptor
 		properties = new ReadOnlyArray<PropertyDescriptor>(ps);
 
 		c = reader.ReadByte();
-		HashIndexDescriptor[] msis = new HashIndexDescriptor[c];
+		IndexDescriptor[] msis = new IndexDescriptor[c];
 		for (int i = 0; i < c; i++)
 		{
-			msis[i] = ctx.Deserialize<HashIndexDescriptor>(reader);
+			msis[i] = ctx.Deserialize<IndexDescriptor>(reader);
 		}
 
-		hashIndexes = new ReadOnlyArray<HashIndexDescriptor>(msis);
+		indexes = new ReadOnlyArray<IndexDescriptor>(msis);
 	}
 
 	public override string ToString()
@@ -665,24 +682,24 @@ internal class ClassDescriptor : TypeDescriptor
 	{
 		string baseClass;
 		Dictionary<int, PropertyDescriptor> properties;
-		List<string> hashIndexes;
+		List<string> indexes;
 		HashSet<short> descendentClassIds;
 
 		public PreparePhaseData()
 		{
 			properties = new Dictionary<int, PropertyDescriptor>(8);
-			hashIndexes = new List<string>(0);
+			indexes = new List<string>(0);
 			descendentClassIds = new HashSet<short>(1);
 		}
 
 		public string BaseClass { get => baseClass; set => baseClass = value; }
 		public Dictionary<int, PropertyDescriptor> Properties => properties;
-		public List<string> HashIndexes => hashIndexes;
+		public List<string> Indexes => indexes;
 		public HashSet<short> DescendentClassIds => descendentClassIds;
 
 		public void Merge(ClassDescriptor owner, PreparePhaseData d)
 		{
-			hashIndexes.AddRange(d.hashIndexes);
+			indexes.AddRange(d.indexes);
 		}
 	}
 }

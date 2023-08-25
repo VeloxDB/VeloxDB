@@ -41,6 +41,8 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 	readonly object commitSync = new object();
 	CommitWorkers commitWorkers;
 
+	SortedIndex.GarbageCollectorBase sortedIndexGC;
+
 	SnapshotSemaphore snapshotController;
 
 	ConfigArtifactVersions configVersions;
@@ -68,9 +70,15 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 	}
 
 	public StorageEngine(string sysDbPath, ReplicationSettings replicationSettings = null,
+		ILeaderElector localElector = null, ILeaderElector globalElector = null, Tracing.Source trace = null) :
+		this(sysDbPath, new StorageEngineSettings(), replicationSettings, localElector, globalElector, trace)
+	{
+	}
+
+	public StorageEngine(string sysDbPath, StorageEngineSettings settings, ReplicationSettings replicationSettings = null,
 		ILeaderElector localElector = null, ILeaderElector globalElector = null, Tracing.Source trace = null)
 	{
-		this.settings = new StorageEngineSettings();
+		this.settings = settings ?? new StorageEngineSettings();
 		this.systemDbPath = sysDbPath;
 
 		Initialize(replicationSettings, localElector, globalElector, trace);
@@ -104,6 +112,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 	public bool Disposed => disposed;
 	public string SystemDbPath => systemDbPath;
 	public SnapshotSemaphore SnapshotController => snapshotController;
+	public SortedIndex.GarbageCollectorBase SortedIndexGC => sortedIndexGC;
 
 	private void Initialize(ReplicationSettings replicationSettings, ILeaderElector localElector,
 		ILeaderElector globalElector, Tracing.Source trace)
@@ -123,6 +132,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		memoryManager = new MemoryManager();
 		stringStorage = new StringStorage();
 		blobstorage = new BlobStorage(memoryManager);
+		sortedIndexGC = SortedIndex.CreateGarbageCollector(memoryManager, traceId);
 		statePublisher = new ReplicationInfoPublisher(replicationSettings);
 		replicator = CreateReplicator(replicationSettings, localElector, globalElector);
 		contextPool = new TransactionContextPool(this);
@@ -413,24 +423,44 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		}
 	}
 
-	public IHashIndexReader<TKey1> GetHashIndex<TKey1>(short hashIndexId)
+	public IHashIndexReader<TKey1> GetHashIndex<TKey1>(short indexId)
 	{
-		return databases[(int)DatabaseId.User].GetHashIndexReader<TKey1>(hashIndexId);
+		return databases[(int)DatabaseId.User].GetHashIndexReader<TKey1>(indexId);
 	}
 
-	public IHashIndexReader<TKey1, TKey2> GetHashIndex<TKey1, TKey2>(short hashIndexId)
+	public IHashIndexReader<TKey1, TKey2> GetHashIndex<TKey1, TKey2>(short indexId)
 	{
-		return databases[(int)DatabaseId.User].GetHashIndexReader<TKey1, TKey2>(hashIndexId);
+		return databases[(int)DatabaseId.User].GetHashIndexReader<TKey1, TKey2>(indexId);
 	}
 
-	public IHashIndexReader<TKey1, TKey2, TKey3> GetHashIndex<TKey1, TKey2, TKey3>(short hashIndexId)
+	public IHashIndexReader<TKey1, TKey2, TKey3> GetHashIndex<TKey1, TKey2, TKey3>(short indexId)
 	{
-		return databases[(int)DatabaseId.User].GetHashIndexReader<TKey1, TKey2, TKey3>(hashIndexId);
+		return databases[(int)DatabaseId.User].GetHashIndexReader<TKey1, TKey2, TKey3>(indexId);
 	}
 
-	public IHashIndexReader<TKey1, TKey2, TKey3, TKey4> GetHashIndex<TKey1, TKey2, TKey3, TKey4>(short hashIndexId)
+	public IHashIndexReader<TKey1, TKey2, TKey3, TKey4> GetHashIndex<TKey1, TKey2, TKey3, TKey4>(short indexId)
 	{
-		return databases[(int)DatabaseId.User].GetHashIndexReader<TKey1, TKey2, TKey3, TKey4>(hashIndexId);
+		return databases[(int)DatabaseId.User].GetHashIndexReader<TKey1, TKey2, TKey3, TKey4>(indexId);
+	}
+
+	public ISortedIndexReader<TKey1> GetSortedIndex<TKey1>(short indexId)
+	{
+		return databases[(int)DatabaseId.User].GetSortedIndexReader<TKey1>(indexId);
+	}
+
+	public ISortedIndexReader<TKey1, TKey2> GetSortedIndex<TKey1, TKey2>(short indexId)
+	{
+		return databases[(int)DatabaseId.User].GetSortedIndexReader<TKey1, TKey2>(indexId);
+	}
+
+	public ISortedIndexReader<TKey1, TKey2, TKey3> GetSortedIndex<TKey1, TKey2, TKey3>(short indexId)
+	{
+		return databases[(int)DatabaseId.User].GetSortedIndexReader<TKey1, TKey2, TKey3>(indexId);
+	}
+
+	public ISortedIndexReader<TKey1, TKey2, TKey3, TKey4> GetSortedIndex<TKey1, TKey2, TKey3, TKey4>(short indexId)
+	{
+		return databases[(int)DatabaseId.User].GetSortedIndexReader<TKey1, TKey2, TKey3, TKey4>(indexId);
 	}
 
 	public ClassScan BeginClassScan(Transaction tran, ClassDescriptor classDesc)
@@ -466,7 +496,6 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 
 		error = null;
 		ClassScan cs = @class.GetClassScan(tran, scanInherited, out long totalCost);
-		tran.AddClassScan(cs);
 		return cs;
 	}
 
@@ -474,14 +503,14 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 	{
 		TTTrace.Write(traceId, tran.Id, id);
 
-		if (!IdHelper.TryGetClassIndex(tran.Model, id, out int typeIndex))
+		if (!IdHelper.TryGetClassIndex(tran.Model, id, out int classIndex))
 			return new ObjectReader();
 
 		tran.ValidateUsage();
 		if (tran.CancelRequested)
 			CheckErrorAndRollback(DatabaseErrorDetail.Create(DatabaseErrorType.TransactionCanceled), tran);
 
-		ClassBase @class = tran.Database.GetClass(typeIndex);
+		ClassBase @class = tran.Database.GetClass(classIndex);
 
 		ObjectReader reader = @class.GetObject(tran, id, out DatabaseErrorDetail error);
 		CheckErrorAndRollback(error, tran);
@@ -517,13 +546,13 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 	}
 
 	public void ReadHashIndex(Transaction tran, HashIndex hashIndex, byte* key,
-		HashComparer comparer, ref ObjectReader[] readers, out int count)
+		KeyComparer comparer, string[] requestStrings, ref ObjectReader[] readers, out int count)
 	{
 		tran.ValidateUsage();
 		if (tran.CancelRequested)
 			CheckErrorAndRollback(DatabaseErrorDetail.Create(DatabaseErrorType.TransactionCanceled), tran);
 
-		DatabaseErrorDetail error = hashIndex.GetItems(tran, key, comparer, ref readers, out count);
+		DatabaseErrorDetail error = hashIndex.GetItems(tran, key, comparer, requestStrings, ref readers, out count);
 		CheckErrorAndRollback(error, tran);
 	}
 
@@ -613,9 +642,6 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		TTTrace.Write(traceId, tran.Id, tran.CommitVersion, (byte)tran.Type);
 
 		tran.ValidateUsage();
-		if (tran.HasActiveClassScans)
-			CheckErrorAndRollback(DatabaseErrorDetail.Create(DatabaseErrorType.ClassScansActive), tran);
-
 		if (tran.Closed)
 			throw new DatabaseException(DatabaseErrorDetail.Create(DatabaseErrorType.CommitClosedTransaction));
 
@@ -672,9 +698,6 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 			tran.Type == TransactionType.ReadWrite && tran.Source == TransactionSource.Client);
 
 		tran.ValidateUsage();
-		if (tran.HasActiveClassScans)
-			CheckErrorAndRollback(DatabaseErrorDetail.Create(DatabaseErrorType.ClassScansActive), tran);
-
 		if (tran.Closed)
 			throw new DatabaseException(DatabaseErrorDetail.Create(DatabaseErrorType.CommitClosedTransaction));
 
@@ -967,9 +990,6 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		if (tran.Type == TransactionType.Read)
 			CheckErrorAndRollback(DatabaseErrorDetail.Create(DatabaseErrorType.ReadTranWriteAttempt), tran);
 
-		if (tran.HasActiveClassScans)
-			CheckErrorAndRollback(DatabaseErrorDetail.Create(DatabaseErrorType.ClassScansActive), tran);
-
 		bool cascadeGenerated = false;
 		while (changeset != null)
 		{
@@ -1215,10 +1235,10 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 			locker?.Rewind(version);
 		}
 
-		foreach (HashIndexDescriptor mhind in database.ModelDesc.GetAllHashIndexes())
+		foreach (IndexDescriptor indexDesc in database.ModelDesc.GetAllIndexes())
 		{
-			database.GetHashIndex(mhind.Id, out HashKeyReadLocker locker);
-			locker.Rewind(version);
+			database.GetIndexById(indexDesc.Id, out KeyReadLocker locker);
+			locker?.Rewind(version);
 		}
 
 		return null;
@@ -1443,13 +1463,22 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 			readLock = (ReadLock*)l1.MoveToNext(ref phead, (byte*)readLock, ReadLock.Size);
 		}
 
-		l1 = tc.HashReadLocks;
-		HashReadLock* hashReadLock = (HashReadLock*)l1.StartIteration(out phead);
+		l1 = tc.KeyReadLocks;
+		KeyReadLock* keyReadLock = (KeyReadLock*)l1.StartIteration(out phead);
 		while (phead != null)
 		{
-			HashKeyReadLocker locker = database.GetHashIndexLocker(hashReadLock->hashIndex);
-			locker.Commit(hashReadLock->itemHandle, hashReadLock->hash, tran, hashReadLock->tranSlot);
-			hashReadLock = (HashReadLock*)l1.MoveToNext(ref phead, (byte*)hashReadLock, HashReadLock.Size);
+			if (keyReadLock->IsRange)
+			{
+				SortedIndex sortedIndex = (SortedIndex)database.GetIndex(keyReadLock->IndexIndex, out _);
+				sortedIndex.CommitRange(keyReadLock->itemHandle, tran);
+			}
+			else
+			{
+				KeyReadLocker locker = database.GetKeyLocker(keyReadLock->IndexIndex);
+				locker.CommitKey(keyReadLock->itemHandle, keyReadLock->hash, tran, keyReadLock->tranSlot);
+			}
+
+			keyReadLock = (KeyReadLock*)l1.MoveToNext(ref phead, (byte*)keyReadLock, KeyReadLock.Size);
 		}
 
 		NativeList l2 = tc.InvRefReadLocks;
@@ -1483,14 +1512,18 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 			readLock = (ReadLock*)l1.MoveToNext(ref phead, (byte*)readLock, ReadLock.Size);
 		}
 
-		l1 = tc.HashReadLocks;
-		HashReadLock* hashReadLock = (HashReadLock*)l1.StartIteration(out phead);
+		l1 = tc.KeyReadLocks;
+		KeyReadLock* keyReadLock = (KeyReadLock*)l1.StartIteration(out phead);
 		while (phead != null)
 		{
-			HashKeyReadLocker locker = database.GetHashIndexLocker(hashReadLock->hashIndex);
-			locker.RemapLockSlot(hashReadLock->itemHandle, hashReadLock->hash, hashReadLock->tranSlot, slot);
-			hashReadLock->tranSlot = slot;
-			hashReadLock = (HashReadLock*)l1.MoveToNext(ref phead, (byte*)hashReadLock, HashReadLock.Size);
+			if (!keyReadLock->IsRange)
+			{
+				KeyReadLocker locker = database.GetKeyLocker(keyReadLock->IndexIndex);
+				locker.RemapKeyLockSlot(keyReadLock->itemHandle, keyReadLock->hash, keyReadLock->tranSlot, slot);
+				keyReadLock->tranSlot = slot;
+			}
+
+			keyReadLock = (KeyReadLock*)l1.MoveToNext(ref phead, (byte*)keyReadLock, KeyReadLock.Size);
 		}
 
 		NativeList l2 = tc.InvRefReadLocks;
@@ -1533,13 +1566,22 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 			readLock++;
 		}
 
-		l1 = tc.HashReadLocks;
-		HashReadLock* hashReadLock = (HashReadLock*)l1.StartIteration(out phead);
+		l1 = tc.KeyReadLocks;
+		KeyReadLock* keyReadLock = (KeyReadLock*)l1.StartIteration(out phead);
 		for (uint i = 0; phead != null; i++)
 		{
-			HashKeyReadLocker locker = database.GetHashIndexLocker(hashReadLock->hashIndex);
-			locker.Rollback(hashReadLock->itemHandle, hashReadLock->hash, tran);
-			hashReadLock = (HashReadLock*)l1.MoveToNext(ref phead, (byte*)hashReadLock, (int)HashReadLock.Size);
+			if (keyReadLock->IsRange)
+			{
+				SortedIndex sortedIndex = (SortedIndex)database.GetIndex(keyReadLock->IndexIndex, out _);
+				sortedIndex.RollbackRange(keyReadLock->itemHandle, tran);
+			}
+			else
+			{
+				KeyReadLocker locker = database.GetKeyLocker(keyReadLock->IndexIndex);
+				locker.RollbackKey(keyReadLock->itemHandle, keyReadLock->hash, tran);
+			}
+
+			keyReadLock = (KeyReadLock*)l1.MoveToNext(ref phead, (byte*)keyReadLock, (int)KeyReadLock.Size);
 		}
 
 		count = tc.WrittenClasses->Count;
@@ -1796,14 +1838,13 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		try
 		{
 			Func<ClassDescriptor, BlockProperties> op = ReadConfigArtifactVersion(tran, IdGenerator.AssembliesVersionId).IsZero ?
-				(Func<ClassDescriptor, BlockProperties>)writer.StartInsertBlock : writer.StartUpdateBlock;
+				writer.StartInsertBlock : writer.StartUpdateBlock;
 
 			op(sysDb.ModelDesc.GetClass(SystemCode.ConfigArtifactVersion.Id)).
 				Add(SystemCode.ConfigArtifactVersion.GuidV1).Add(SystemCode.ConfigArtifactVersion.GuidV2);
 			writer.AddLong(IdGenerator.AssembliesVersionId).AddLong(assembliesVersionGuid.Low).AddLong(assembliesVersionGuid.Hight);
 
-			op = ReadConfigArtifactVersion(tran, IdGenerator.ModelVersionId).IsZero ?
-				(Func<ClassDescriptor, BlockProperties>)writer.StartInsertBlock : writer.StartUpdateBlock;
+			op = ReadConfigArtifactVersion(tran, IdGenerator.ModelVersionId).IsZero ? writer.StartInsertBlock : writer.StartUpdateBlock;
 
 			if (hasModelChanges)
 			{
@@ -2125,6 +2166,8 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		{
 			engineLock.ExitWriteLock(true);
 		}
+
+		sortedIndexGC.Dispose();
 
 		replicatorCleanup.WaitCleanup();
 

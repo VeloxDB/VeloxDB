@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 
 namespace VeloxDB.Descriptor;
@@ -11,7 +11,8 @@ internal enum ModelItemType : byte
 	SimpleProperty = 4,
 	ArrayProperty = 5,
 	ReferenceProperty = 6,
-	HashIndex = 7
+	HashIndex = 7,
+	SortedIndex = 8,
 }
 
 internal abstract class ModelItemDescriptor

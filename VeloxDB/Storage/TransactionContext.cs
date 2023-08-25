@@ -42,7 +42,7 @@ internal unsafe sealed class TransactionContext : IDisposable
 	ModifiedList affectedInvRefs;
 	ModifiedList objectReadLocks;
 	NativeList invRefReadLocks;
-	ModifiedList hashReadLocks;
+	ModifiedList keyReadLocks;
 
 	ClassIndexMultiSet* lockedClasses;
 	ClassIndexMultiSet* writtenClasses;
@@ -93,8 +93,6 @@ internal unsafe sealed class TransactionContext : IDisposable
 
 	ulong standbyOrderNum;
 
-	List<ClassScan> classScans;
-
 	Transaction[] nextPersisted;
 
 	bool isAlignmentMode;
@@ -134,7 +132,7 @@ internal unsafe sealed class TransactionContext : IDisposable
 
 		objectReadLocks = new ModifiedList(engine.MemoryManager);
 		invRefReadLocks = new NativeList(inverseReferenceReadLockCapacity, ReadLock.Size);
-		hashReadLocks = new ModifiedList(engine.MemoryManager);
+		keyReadLocks = new ModifiedList(engine.MemoryManager);
 
 		lockedClasses = ClassIndexMultiSet.Create(defLockedClassesCapacity, engine.MemoryManager);
 		writtenClasses = ClassIndexMultiSet.Create(defWrittenClassesCapacity, engine.MemoryManager);
@@ -152,8 +150,6 @@ internal unsafe sealed class TransactionContext : IDisposable
 
 		nextPersisted = new Transaction[PersistenceDescriptor.MaxLogGroups];
 
-		classScans = new List<ClassScan>(2);
-
 		ReplicationDescriptor replicationDesc = engine.ReplicationDesc;
 
 		totalMergedCount = 1;
@@ -168,7 +164,7 @@ internal unsafe sealed class TransactionContext : IDisposable
 	public NativeList InverseRefChanges => inverseRefChanges;
 	public ModifiedList ObjectReadLocks => objectReadLocks;
 	public NativeList InvRefReadLocks => invRefReadLocks;
-	public ModifiedList HashReadLocks => hashReadLocks;
+	public ModifiedList KeyReadLocks => keyReadLocks;
 	public LongHashSet ObjectReadLocksSet => objectReadLocksSet;
 	public FastHashSet<InverseReferenceKey> InvRefReadLocksSet => invRefReadLocksSet;
 	public ClassIndexMultiSet* LockedClasses { get => lockedClasses; set => lockedClasses = value; }
@@ -192,7 +188,6 @@ internal unsafe sealed class TransactionContext : IDisposable
 	public ChangesetReader ChangesetReader => changesetReader;
 	public ChangesetBlock ChangesetBlock => changesetBlock;
 	public DatabaseErrorDetail AsyncError { get => asyncError; set => asyncError = value; }
-	public List<ClassScan> ClassScans => classScans;
 	public unsafe int* InvRefGroupCounts => invRefGroupCounts;
 	public byte[] NewModelDescBinary { get => newModelDescBinary; set => newModelDescBinary = value; }
 	public byte[] NewPersistenceDescBinary { get => newPersistenceDescBinary; set => newPersistenceDescBinary = value; }
@@ -212,7 +207,7 @@ internal unsafe sealed class TransactionContext : IDisposable
 		affectedObjects.Init();
 		affectedInvRefs.Init();
 		objectReadLocks.Init();
-		hashReadLocks.Init();
+		keyReadLocks.Init();
 	}
 
 	public void SetAlignmentMode()
@@ -316,6 +311,7 @@ internal unsafe sealed class TransactionContext : IDisposable
 
 	public void Merge(Transaction owner, Transaction tran)
 	{
+		TTTrace.Write(tran.Engine.TraceId, owner.Id, tran.Id);
 		TransactionContext tc = tran.Context;
 
 		Checker.AssertTrue(originReplica == null);
@@ -333,7 +329,7 @@ internal unsafe sealed class TransactionContext : IDisposable
 		affectedObjects.MergeChanges(tc.affectedObjects);
 		affectedInvRefs.MergeChanges(tc.affectedInvRefs);
 		objectReadLocks.MergeChanges(tc.objectReadLocks);
-		hashReadLocks.MergeChanges(tc.hashReadLocks);
+		keyReadLocks.MergeChanges(tc.keyReadLocks);
 		invRefReadLocks.Append(tc.invRefReadLocks);
 		tc.invRefReadLocks.Reset(inverseReferenceReadLockCapacity);
 
@@ -434,16 +430,28 @@ internal unsafe sealed class TransactionContext : IDisposable
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public void AddHashKeyReadLock(ushort tranSlot, ulong itemHandle, int index, ulong hash)
+	public void AddKeyReadLock(ushort tranSlot, ulong itemHandle, int indexIndex, ulong hash)
 	{
-		TTTrace.Write(database.TraceId, tranId, itemHandle, index, hash);
+		TTTrace.Write(database.TraceId, tranId, itemHandle, indexIndex, hash);
 
-		HashReadLock* p = (HashReadLock*)hashReadLocks.AddItem(ModifiedType.HashReadLock, HashReadLock.Size);
+		KeyReadLock* p = (KeyReadLock*)keyReadLocks.AddItem(ModifiedType.HashReadLock, KeyReadLock.Size);
 		totalAffectedCount++;
 		p->itemHandle = itemHandle;
-		p->hashIndex = (ushort)index;
+		p->SetIsRangeAndIndex(false, (ushort)indexIndex);
 		p->hash = hash;
 		p->tranSlot = tranSlot;
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public KeyReadLockItem AddKeyRangeReadLock(ulong rangeHandle, int indexIndex)
+	{
+		TTTrace.Write(database.TraceId, tranId, indexIndex);
+
+		KeyReadLock* p = (KeyReadLock*)keyReadLocks.AddItem(ModifiedType.HashReadLock, KeyReadLock.Size);
+		totalAffectedCount++;
+		p->itemHandle = rangeHandle;
+		p->SetIsRangeAndIndex(true, (ushort)indexIndex);
+		return new KeyReadLockItem(p);
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -538,7 +546,7 @@ internal unsafe sealed class TransactionContext : IDisposable
 
 		Checker.AssertFalse(affectedObjects.NotEmpty);
 		Checker.AssertFalse(objectReadLocks.NotEmpty);
-		Checker.AssertFalse(hashReadLocks.NotEmpty);
+		Checker.AssertFalse(keyReadLocks.NotEmpty);
 		Checker.AssertFalse(affectedInvRefs.NotEmpty);
 
 		invRefReadLocks.Reset(inverseReferenceReadLockCapacity);
@@ -635,7 +643,7 @@ internal unsafe sealed class TransactionContext : IDisposable
 		Checker.AssertFalse(affectedObjects.NotEmpty);
 		Checker.AssertFalse(affectedInvRefs.NotEmpty);
 		Checker.AssertFalse(objectReadLocks.NotEmpty);
-		Checker.AssertFalse(hashReadLocks.NotEmpty);
+		Checker.AssertFalse(keyReadLocks.NotEmpty);
 
 		invRefsSorter.Dispose();
 		propagatedInvRefsSorter.Dispose();
@@ -691,7 +699,7 @@ internal unsafe struct InverseReferenceOperation
 	}
 }
 
-[StructLayout(LayoutKind.Sequential, Pack = 1, Size = DeletedObject.Size)]
+[StructLayout(LayoutKind.Sequential, Pack = 1, Size = Size)]
 internal unsafe struct DeletedObject
 {
 	public const int Size = 16;
@@ -700,7 +708,7 @@ internal unsafe struct DeletedObject
 	public ushort classIndex;
 }
 
-[StructLayout(LayoutKind.Explicit, Pack = 1, Size = ReadLock.Size)]
+[StructLayout(LayoutKind.Explicit, Pack = 1, Size = Size)]
 internal unsafe struct ReadLock
 {
 	public const int Size = 16;
@@ -730,15 +738,38 @@ internal unsafe struct ReadLock
 	}
 }
 
-[StructLayout(LayoutKind.Sequential, Pack = 1, Size = HashReadLock.Size)]
-internal unsafe struct HashReadLock
+[StructLayout(LayoutKind.Sequential, Pack = 1, Size = Size)]
+internal unsafe struct KeyReadLock
 {
 	public const int Size = 24;
 
 	public ulong itemHandle;
 	public ulong hash;
-	public ushort hashIndex;
+	public ushort isRange_indexIndex;
 	public ushort tranSlot;
+
+	public ushort IndexIndex => (ushort)(isRange_indexIndex & 0x7fff);
+	public bool IsRange => (isRange_indexIndex & 0x8000) != 0;
+
+	public void SetIsRangeAndIndex(bool isRange, ushort indexIndex)
+	{
+		this.isRange_indexIndex = (ushort)((isRange ? 0x8000 : 0x0000) | indexIndex);
+	}
+}
+
+internal unsafe struct KeyReadLockItem
+{
+	KeyReadLock* item;
+
+	public KeyReadLockItem(KeyReadLock* item)
+	{
+		this.item = item;
+	}
+
+	public void Modify(ulong rangeHandle)
+	{
+		item->itemHandle = rangeHandle;
+	}
 }
 
 internal struct InverseReferenceKey : IEquatable<InverseReferenceKey>
@@ -763,7 +794,7 @@ internal struct InverseReferenceKey : IEquatable<InverseReferenceKey>
 	}
 }
 
-[StructLayout(LayoutKind.Explicit, Pack = 1, Size = AffectedObject.Size)]
+[StructLayout(LayoutKind.Explicit, Pack = 1, Size = Size)]
 internal unsafe struct AffectedObject
 {
 	public const int Size = 16;
@@ -778,7 +809,7 @@ internal unsafe struct AffectedObject
 	public ushort classIndex;
 }
 
-[StructLayout(LayoutKind.Sequential, Pack = 1, Size = AffectedInverseReferences.Size)]
+[StructLayout(LayoutKind.Sequential, Pack = 1, Size = Size)]
 internal unsafe struct AffectedInverseReferences
 {
 	public const int Size = 24;

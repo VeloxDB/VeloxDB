@@ -1,4 +1,5 @@
-using System;
+﻿using System;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Threading;
 
@@ -42,6 +43,21 @@ internal sealed class RefCountedStringArray
 			ulong offset = index & chunkSizeMask;
 			chunks[chunk][offset] = value;
 		}
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public string ReadStringSafe(ulong index)
+	{
+		ulong chunk = index >> chunkSizeLog;
+		ulong offset = index & chunkSizeMask;
+		if (chunk >= (ulong)chunks.Length)
+			return null;
+
+		RefCountedString[] strings = chunks[chunk];
+		if (offset >= (ulong)strings.Length)
+			return null;
+
+		return strings[offset].Value;
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]

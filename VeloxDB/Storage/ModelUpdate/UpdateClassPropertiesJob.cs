@@ -22,13 +22,13 @@ internal sealed class UpdateClassPropertiesJob : ModelUpdateJob
 	ulong commitVersion;
 	ClassScan scan;
 	ObjectCopyDelegate copyDelegate;
-	HashIndexComparerPair[] hashIndexes;
+	IndexComparerPair[] indexes;
 
-	public UpdateClassPropertiesJob(ClassScan scan, ObjectCopyDelegate copyDelegate, HashIndexComparerPair[] hashIndexes, ulong commitVersion)
+	public UpdateClassPropertiesJob(ClassScan scan, ObjectCopyDelegate copyDelegate, IndexComparerPair[] indexes, ulong commitVersion)
 	{
 		this.scan = scan;
 		this.copyDelegate = copyDelegate;
-		this.hashIndexes = hashIndexes;
+		this.indexes = indexes;
 		this.commitVersion = commitVersion;
 	}
 
@@ -55,20 +55,20 @@ internal sealed class UpdateClassPropertiesJob : ModelUpdateJob
 			{
 				ObjectCopyDelegate copyDelegate = GenerateObjectCopyMethod(cu);
 
-				List<HashIndexComparerPair> hashIndexes = new List<HashIndexComparerPair>(1);
-				for (int i = 0; i < cu.ClassDesc.HashIndexes.Length; i++)
+				List<IndexComparerPair> indexes = new List<IndexComparerPair>(1);
+				for (int i = 0; i < cu.ClassDesc.Indexes.Length; i++)
 				{
-					HashIndexDescriptor hashIndexDesc = cu.ClassDesc.HashIndexes[i];
-					HashIndexDescriptor prevHashIndexDesc = database.ModelDesc.GetHashIndex(hashIndexDesc.Id);
+					IndexDescriptor indexDesc = cu.ClassDesc.Indexes[i];
+					IndexDescriptor prevIndexDesc = database.ModelDesc.GetIndex(indexDesc.Id);
 
-					if (!updateContext.TryGetNewHashIndex(hashIndexDesc.Id, out HashIndex hashIndex, out _))
-						hashIndex = database.GetHashIndex(prevHashIndexDesc.Id, out _);
+					if (!updateContext.TryGetNewIndex(indexDesc.Id, out Index index, out _))
+						index = database.GetIndexById(prevIndexDesc.Id, out _);
 
-					if (!hashIndex.PendingRefill)
+					if (!index.PendingRefill)
 					{
-						KeyComparerDesc kad = @class.ClassDesc.GetHashAccessDescByPropertyName(hashIndex.HashIndexDesc);
-						HashComparer comparer = new HashComparer(kad, null);
-						hashIndexes.Add(new HashIndexComparerPair(hashIndex, comparer));
+						KeyComparerDesc kad = @class.ClassDesc.GetIndexAccessDescByPropertyName(index.IndexDesc);
+						KeyComparer comparer = new KeyComparer(kad);
+						indexes.Add(new IndexComparerPair(index, comparer));
 					}
 				}
 
@@ -77,7 +77,7 @@ internal sealed class UpdateClassPropertiesJob : ModelUpdateJob
 
 				for (int k = 0; k < classScans.Length; k++)
 				{
-					yield return new UpdateClassPropertiesJob(classScans[k], copyDelegate, hashIndexes.ToArray(), cv);
+					yield return new UpdateClassPropertiesJob(classScans[k], copyDelegate, indexes.ToArray(), cv);
 				}
 			}
 		}
@@ -111,7 +111,7 @@ internal sealed class UpdateClassPropertiesJob : ModelUpdateJob
 			{
 				for (int i = 0; i < count; i++)
 				{
-					scan.Class.UpdateModelForObject(handles[i], copyDelegate, hashIndexes, commitVersion);
+					scan.Class.UpdateModelForObject(handles[i], copyDelegate, indexes, commitVersion);
 				}
 
 				count = handles.Length;

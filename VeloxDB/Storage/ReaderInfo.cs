@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using VeloxDB.Common;
@@ -10,6 +10,7 @@ internal unsafe struct ReaderInfo
 {
 	public const int Size = 16;
 
+	// First bit of this field is shared with the ClassTempData.hasNextVersion_nextVersion field so slot must not be greater than 15 bits.
 	[FieldOffset(0)]
 	ushort slot0;
 
@@ -137,7 +138,7 @@ internal unsafe struct ReaderInfo
 		return !set.Contains(new InverseReferenceKey(id, propertyId));
 	}
 
-	public static bool IsHashKeyInConflict(Transaction tran, ReaderInfo* rd)
+	public static bool IsKeyInConflict(Transaction tran, ReaderInfo* rd)
 	{
 		TTTrace.Write(tran.Slot, tran.ReadVersion, rd->CommReadLockVer, rd->LockCount);
 
@@ -236,7 +237,7 @@ internal unsafe struct ReaderInfo
 		tc.AddReadLock(tranSlot, handle, classIndex, false, eligibleForGC);
 	}
 
-	public static bool TryTakeHashKeyLock(Transaction tran, ReaderInfo* rd, ulong handle, int index, ulong hash)
+	public static bool TryTakeKeyLock(Transaction tran, ReaderInfo* rd, ulong handle, int index, ulong hash)
 	{
 		TTTrace.Write(tran.Id, tran.Slot, index, hash, rd->CommReadLockVer, rd->LockCount, handle);
 
@@ -262,7 +263,7 @@ internal unsafe struct ReaderInfo
 		rd->LockCount = lc + 1;
 		Checker.AssertTrue(rd->LockCount >= rd->SlotCount);
 
-		tc.AddHashKeyReadLock(tranSlot, handle, index, hash);
+		tc.AddKeyReadLock(tranSlot, handle, index, hash);
 
 		return true;
 	}
@@ -344,7 +345,7 @@ internal unsafe struct ReaderInfo
 		Checker.AssertTrue(rd->LockCount >= rd->SlotCount);
 	}
 
-	public static void FinalizeHashKeyLock(Transaction tran, ReaderInfo* rd, bool isCommit, ushort slot)
+	public static void FinalizeKeyLock(Transaction tran, ReaderInfo* rd, bool isCommit, ushort slot)
 	{
 		TTTrace.Write(tran.Id, tran.Slot, slot, rd->CommReadLockVer, rd->LockCount, tran.CommitVersion, isCommit);
 

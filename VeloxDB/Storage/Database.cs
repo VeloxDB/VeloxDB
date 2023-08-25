@@ -12,6 +12,7 @@ using static VeloxDB.Storage.Persistence.DatabaseRestorer;
 using System.IO;
 using System.Threading;
 using static VeloxDB.Common.Tracing;
+using System.Globalization;
 
 namespace VeloxDB.Storage;
 
@@ -42,13 +43,13 @@ internal unsafe sealed partial class Database
 	DatabaseVersions versions;
 
 	ClassEntry[] classes;
-	Dictionary<short, int> hashIndexesMap;
-	HashIndexEntry[] hashIndexes;
+	Dictionary<short, int> indexesMap;
+	IndexEntry[] indexes;
 
 	GarbageCollector gc;
 	DatabasePersister persister;
 	TransactionCommitOrderer tranOrderer;
-	HashReadersCollection hashReaders;
+	IndexReadersCollection indexReaders;
 	ReferenceIntegrityValidator refValidator;
 	IdGenerator idGenerator;
 
@@ -75,7 +76,7 @@ internal unsafe sealed partial class Database
 
 		versions = new DatabaseVersions(this);
 		tranOrderer = new TransactionCommitOrderer(engine.Settings);
-		hashReaders = new HashReadersCollection(model);
+		indexReaders = new IndexReadersCollection(model);
 		refValidator = new ReferenceIntegrityValidator(engine, this);
 
 		InitCurrTranIds();
@@ -97,7 +98,7 @@ internal unsafe sealed partial class Database
 	public long TraceId => Engine.TraceId;
 	public Tracing.Source Trace => Engine.Trace;
 	public DatabaseVersions Versions => versions;
-	public HashReadersCollection HashReaders => hashReaders;
+	public IndexReadersCollection IndexReaders => indexReaders;
 	public DataModelDescriptor ModelDesc => modelDesc;
 	public PersistenceDescriptor PersistenceDesc => persistenceDesc;
 	public ReferenceIntegrityValidator RefValidator => refValidator;
@@ -109,7 +110,7 @@ internal unsafe sealed partial class Database
 	{
 		Database database = new Database(engine, model, persistenceDesc, id);
 		database.CreatePersister();
-		database.CreateHashIndexes(null);
+		database.CreateIndexes(null);
 		database.CreateInvRefs(null);
 		return database;
 	}
@@ -182,7 +183,7 @@ internal unsafe sealed partial class Database
 			database.persister.CreateSnapshots();
 		}
 
-		database.CreateHashIndexes(workers);
+		database.CreateIndexes(workers);
 		database.CreateInvRefs(workers);
 
 		workers.WaitAndClose();
@@ -336,8 +337,7 @@ internal unsafe sealed partial class Database
 				ObjectReader[] objects = new ObjectReader[128];
 				ClassScan scan = (ClassScan)p.ReferenceParam;
 				Class @class = scan.Class;
-				int count = objects.Length;
-				while (scan.Next(objects, 0, ref count))
+				while (scan.Next(objects, out int count))
 				{
 					for (int i = 0; i < count; i++)
 					{
@@ -507,47 +507,50 @@ internal unsafe sealed partial class Database
 					inhClass.SetInheritedClasses(newClasses);
 			}
 
-			HashIndexEntry[] newHashIndexes = new HashIndexEntry[modelDesc.HashIndexCount];
-			Dictionary<short, int> newHashIndexesMap = new Dictionary<short, int>(modelDesc.HashIndexCount);
-			HashReadersCollection newHashReaders = modelUpdateContext.NewHashReaders ?? hashReaders;
-			for (int i = 0; i < modelDesc.HashIndexCount; i++)
+			IndexEntry[] newIndexes = new IndexEntry[modelDesc.IndexCount];
+			Dictionary<short, int> newIndexesMap = new Dictionary<short, int>(modelDesc.IndexCount);
+			IndexReadersCollection newReaders = modelUpdateContext.NewIndexReaders ?? indexReaders;
+			for (int i = 0; i < modelDesc.IndexCount; i++)
 			{
-				HashIndexDescriptor hindDesc = modelDesc.GetHashIndexByIndex(i);
-				HashIndexDescriptor prevHindDesc = update.PrevModelDesc.GetHashIndex(hindDesc.Id);
+				IndexDescriptor indexDesc = modelDesc.GetIndexByIndex(i);
+				IndexDescriptor prevIndexDesc = update.PrevModelDesc.GetIndex(indexDesc.Id);
 
-				if (!modelUpdateContext.TryGetNewHashIndex(hindDesc.Id, out HashIndex hashIndex, out HashKeyReadLocker locker))
+				if (!modelUpdateContext.TryGetNewIndex(indexDesc.Id, out Index index, out KeyReadLocker locker))
 				{
-					hashIndex = hashIndexes[prevHindDesc.Index].Index;
-					locker = hashIndexes[prevHindDesc.Index].Locker;
+					index = indexes[prevIndexDesc.Index].Index;
+					locker = indexes[prevIndexDesc.Index].Locker;
 				}
 
-				if (locker == null)
+				if ( index.IndexDesc.Type == ModelItemType.HashIndex && locker == null)
 				{
-					locker = hashIndexes[prevHindDesc.Index].Locker;
+					locker = indexes[prevIndexDesc.Index].Locker;
 				}
 
-				Func<HashIndexReaderBase> creator = newHashReaders.GetReaderFactory(hindDesc.Id);
-				HashIndexReaderBase reader = creator();
-				reader.SetIndex(hashIndex);
+				ReadOnlyArray<SortOrder> sortOrders = indexDesc.Type == ModelItemType.SortedIndex ?
+					((SortedIndexDescriptor)indexDesc).PropertySortOrder : null;
 
-				hashIndex.ModelUpdated(hindDesc);
-				locker.ModelUpdated(hindDesc);
-				newHashIndexes[i] = new HashIndexEntry(hashIndex, locker, reader);
-				newHashIndexesMap.Add(hindDesc.Id, hindDesc.Index);
+				IndexReaderCreator creator = newReaders.GetReaderFactory(indexDesc.Id);
+				IndexReaderBase reader = creator(indexDesc.CultureName, indexDesc.CaseSensitive, sortOrders);
+				reader.SetIndex(index);
+
+				index.ModelUpdated(indexDesc);
+				locker?.ModelUpdated(indexDesc);
+				newIndexes[i] = new IndexEntry(index, locker, reader);
+				newIndexesMap.Add(indexDesc.Id, indexDesc.Index);
 			}
 
-			Func<int, HashIndex> finder = x => newHashIndexes[x].Index;
+			Func<int, Index> finder = x => newIndexes[x].Index;
 			for (int i = 0; i < newClasses.Length; i++)
 			{
 				Class @class = newClasses[i].Class.MainClass;
-				@class?.AssignHashIndexes(finder, newHashReaders);
+				@class?.AssignIndexes(finder, newReaders);
 			}
 
 			refValidator.ModelUpdated(modelDesc);
 			classes = newClasses;
-			hashReaders = newHashReaders;
-			hashIndexesMap = newHashIndexesMap;
-			hashIndexes = newHashIndexes;
+			indexReaders = newReaders;
+			indexesMap = newIndexesMap;
+			indexes = newIndexes;
 
 			primaryAlignCodeCache.UpdateCache(modelUpdateContext.ModelUpdate);
 			standbyAlignCodeCache.UpdateCache(modelUpdateContext.ModelUpdate);
@@ -671,22 +674,29 @@ internal unsafe sealed partial class Database
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public HashIndex GetHashIndex(short hashIndexId, out HashKeyReadLocker locker)
+	public Index GetIndexById(short indexId, out KeyReadLocker locker)
 	{
-		if (!hashIndexesMap.TryGetValue(hashIndexId, out int index))
+		if (!indexesMap.TryGetValue(indexId, out int index))
 		{
 			locker = null;
 			return null;
 		}
 
-		locker = hashIndexes[index].Locker;
-		return hashIndexes[index].Index;
+		locker = indexes[index].Locker;
+		return indexes[index].Index;
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public HashKeyReadLocker GetHashIndexLocker(int index)
+	public Index GetIndex(ushort index, out KeyReadLocker locker)
 	{
-		return hashIndexes[index].Locker;
+		locker = indexes[index].Locker;
+		return indexes[index].Index;
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public KeyReadLocker GetKeyLocker(int index)
+	{
+		return indexes[index].Locker;
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -732,16 +742,16 @@ internal unsafe sealed partial class Database
 		return (ulong)curr->Increment();
 	}
 
-	public HashIndexReaderBase<TKey1> GetHashIndexReader<TKey1>(short hashIndexId)
+	public HashIndexReaderBase<TKey1> GetHashIndexReader<TKey1>(short indexId)
 	{
-		TTTrace.Write(hashIndexId);
+		TTTrace.Write(indexId);
 
-		if (hashIndexesMap.TryGetValue(hashIndexId, out int index))
+		if (indexesMap.TryGetValue(indexId, out int index))
 		{
-			HashIndexEntry entry = hashIndexes[index];
+			IndexEntry entry = indexes[index];
 			HashIndexReaderBase<TKey1> reader = entry.Reader as HashIndexReaderBase<TKey1>;
 			if (reader == null)
-				throw new DatabaseException(DatabaseErrorDetail.Create(DatabaseErrorType.IndexPropertyWrongType));
+				throw new DatabaseException(DatabaseErrorDetail.Create(DatabaseErrorType.InvalidIndex));
 
 			return reader;
 		}
@@ -749,16 +759,16 @@ internal unsafe sealed partial class Database
 		return null;
 	}
 
-	public HashIndexReaderBase<TKey1, TKey2> GetHashIndexReader<TKey1, TKey2>(short hashIndexId)
+	public HashIndexReaderBase<TKey1, TKey2> GetHashIndexReader<TKey1, TKey2>(short indexId)
 	{
-		TTTrace.Write(hashIndexId);
+		TTTrace.Write(indexId);
 
-		if (hashIndexesMap.TryGetValue(hashIndexId, out int index))
+		if (indexesMap.TryGetValue(indexId, out int index))
 		{
-			HashIndexEntry entry = hashIndexes[index];
+			IndexEntry entry = indexes[index];
 			HashIndexReaderBase<TKey1, TKey2> reader = entry.Reader as HashIndexReaderBase<TKey1, TKey2>;
 			if (reader == null)
-				throw new DatabaseException(DatabaseErrorDetail.Create(DatabaseErrorType.IndexPropertyWrongType));
+				throw new DatabaseException(DatabaseErrorDetail.Create(DatabaseErrorType.InvalidIndex));
 
 			return reader;
 		}
@@ -766,16 +776,16 @@ internal unsafe sealed partial class Database
 		return null;
 	}
 
-	public HashIndexReaderBase<TKey1, TKey2, TKey3> GetHashIndexReader<TKey1, TKey2, TKey3>(short hashIndexId)
+	public HashIndexReaderBase<TKey1, TKey2, TKey3> GetHashIndexReader<TKey1, TKey2, TKey3>(short indexId)
 	{
-		TTTrace.Write(hashIndexId);
+		TTTrace.Write(indexId);
 
-		if (hashIndexesMap.TryGetValue(hashIndexId, out int index))
+		if (indexesMap.TryGetValue(indexId, out int index))
 		{
-			HashIndexEntry entry = hashIndexes[index];
+			IndexEntry entry = indexes[index];
 			HashIndexReaderBase<TKey1, TKey2, TKey3> reader = entry.Reader as HashIndexReaderBase<TKey1, TKey2, TKey3>;
 			if (reader == null)
-				throw new DatabaseException(DatabaseErrorDetail.Create(DatabaseErrorType.IndexPropertyWrongType));
+				throw new DatabaseException(DatabaseErrorDetail.Create(DatabaseErrorType.InvalidIndex));
 
 			return reader;
 		}
@@ -783,16 +793,16 @@ internal unsafe sealed partial class Database
 		return null;
 	}
 
-	public HashIndexReaderBase<TKey1, TKey2, TKey3, TKey4> GetHashIndexReader<TKey1, TKey2, TKey3, TKey4>(short hashIndexId)
+	public HashIndexReaderBase<TKey1, TKey2, TKey3, TKey4> GetHashIndexReader<TKey1, TKey2, TKey3, TKey4>(short indexId)
 	{
-		TTTrace.Write(hashIndexId);
+		TTTrace.Write(indexId);
 
-		if (hashIndexesMap.TryGetValue(hashIndexId, out int index))
+		if (indexesMap.TryGetValue(indexId, out int index))
 		{
-			HashIndexEntry entry = hashIndexes[index];
+			IndexEntry entry = indexes[index];
 			HashIndexReaderBase<TKey1, TKey2, TKey3, TKey4> reader = entry.Reader as HashIndexReaderBase<TKey1, TKey2, TKey3, TKey4>;
 			if (reader == null)
-				throw new DatabaseException(DatabaseErrorDetail.Create(DatabaseErrorType.IndexPropertyWrongType));
+				throw new DatabaseException(DatabaseErrorDetail.Create(DatabaseErrorType.InvalidIndex));
 
 			return reader;
 		}
@@ -800,45 +810,118 @@ internal unsafe sealed partial class Database
 		return null;
 	}
 
-	public void CreateHashIndexes(JobWorkers<CommonWorkerParam> workers)
+	public SortedIndexReaderBase<TKey1> GetSortedIndexReader<TKey1>(short indexId)
+	{
+		TTTrace.Write(indexId);
+
+		if (indexesMap.TryGetValue(indexId, out int index))
+		{
+			IndexEntry entry = indexes[index];
+			SortedIndexReaderBase<TKey1> reader = entry.Reader as SortedIndexReaderBase<TKey1>;
+			if (reader == null)
+				throw new DatabaseException(DatabaseErrorDetail.Create(DatabaseErrorType.InvalidIndex));
+
+			return reader;
+		}
+
+		return null;
+	}
+
+	public SortedIndexReaderBase<TKey1, TKey2> GetSortedIndexReader<TKey1, TKey2>(short indexId)
+	{
+		TTTrace.Write(indexId);
+
+		if (indexesMap.TryGetValue(indexId, out int index))
+		{
+			IndexEntry entry = indexes[index];
+			SortedIndexReaderBase<TKey1, TKey2> reader = entry.Reader as SortedIndexReaderBase<TKey1, TKey2>;
+			if (reader == null)
+				throw new DatabaseException(DatabaseErrorDetail.Create(DatabaseErrorType.InvalidIndex));
+
+			return reader;
+		}
+
+		return null;
+	}
+
+	public SortedIndexReaderBase<TKey1, TKey2, TKey3> GetSortedIndexReader<TKey1, TKey2, TKey3>(short indexId)
+	{
+		TTTrace.Write(indexId);
+
+		if (indexesMap.TryGetValue(indexId, out int index))
+		{
+			IndexEntry entry = indexes[index];
+			SortedIndexReaderBase<TKey1, TKey2, TKey3> reader = entry.Reader as SortedIndexReaderBase<TKey1, TKey2, TKey3>;
+			if (reader == null)
+				throw new DatabaseException(DatabaseErrorDetail.Create(DatabaseErrorType.InvalidIndex));
+
+			return reader;
+		}
+
+		return null;
+	}
+
+	public SortedIndexReaderBase<TKey1, TKey2, TKey3, TKey4> GetSortedIndexReader<TKey1, TKey2, TKey3, TKey4>(short indexId)
+	{
+		TTTrace.Write(indexId);
+
+		if (indexesMap.TryGetValue(indexId, out int index))
+		{
+			IndexEntry entry = indexes[index];
+			SortedIndexReaderBase<TKey1, TKey2, TKey3, TKey4> reader = entry.Reader as SortedIndexReaderBase<TKey1, TKey2, TKey3, TKey4>;
+			if (reader == null)
+				throw new DatabaseException(DatabaseErrorDetail.Create(DatabaseErrorType.InvalidIndex));
+
+			return reader;
+		}
+
+		return null;
+	}
+
+	public void CreateIndexes(JobWorkers<CommonWorkerParam> workers)
 	{
 		TTTrace.Write(engine.TraceId);
-		trace.Debug("Creating hash indexes for database {0}.", id);
+		trace.Debug("Creating indexes for database {0}.", id);
 
 		Dictionary<short, long> expectedCapacities = DetermineExpectedHashIndexCapacities();
 
-		hashIndexesMap = new Dictionary<short, int>(ModelDesc.GetHashIndexCount());
-		hashIndexes = new HashIndexEntry[ModelDesc.GetHashIndexCount()];
+		indexesMap = new Dictionary<short, int>(ModelDesc.GetIndexCount());
+		indexes = new IndexEntry[ModelDesc.GetIndexCount()];
 
-		foreach (HashIndexDescriptor hind in ModelDesc.GetAllHashIndexes())
+		foreach (IndexDescriptor indexDesc in ModelDesc.GetAllIndexes())
 		{
-			Func<HashIndexReaderBase> creator = hashReaders.GetReaderFactory(hind.Id);
+			IndexReaderCreator creator = indexReaders.GetReaderFactory(indexDesc.Id);
 
-			HashKeyReadLocker locker = new HashKeyReadLocker(hind, this);
-			HashIndexReaderBase reader = creator();
-			expectedCapacities.TryGetValue(hind.Id, out long cap);
+			ReadOnlyArray<SortOrder> sortOrders = indexDesc.Type == ModelItemType.SortedIndex ?
+					((SortedIndexDescriptor)indexDesc).PropertySortOrder : null;
+
+			KeyReadLocker locker = new KeyReadLocker(indexDesc, this);
+			IndexReaderBase reader = creator(indexDesc.CultureName, indexDesc.CaseSensitive, sortOrders);
+			expectedCapacities.TryGetValue(indexDesc.Id, out long cap);
 			cap = (long)(cap * 1.2);
-			HashIndex hashIndex = new HashIndex(this, hind, cap);
-			reader.SetIndex(hashIndex);
-			hashIndexes[hind.Index] = new HashIndexEntry(hashIndex, locker, reader);
-			hashIndexesMap.Add(hind.Id, hind.Index);
+			Index index = indexDesc.Type == ModelItemType.HashIndex ? new HashIndex(this, (HashIndexDescriptor)indexDesc, cap) :
+				new SortedIndex(this, (SortedIndexDescriptor)indexDesc);
+
+			reader.SetIndex(index);
+			indexes[indexDesc.Index] = new IndexEntry(index, locker, reader);
+			indexesMap.Add(indexDesc.Id, indexDesc.Index);
 		}
 
-		trace.Verbose("Assigning hash indexes to classes in database {0}.", id);
-		AssignClassHashIndexes(workers);
-		trace.Verbose("Assigning hash indexes to classes finished.", id);
+		trace.Verbose("Assigning indexes to classes in database {0}.", id);
+		AssignClassIndexes(workers);
+		trace.Verbose("Assigning indexes to classes finished.", id);
 	}
 
-	private void AssignClassHashIndexes(JobWorkers<CommonWorkerParam> workers)
+	private void AssignClassIndexes(JobWorkers<CommonWorkerParam> workers)
 	{
 		TTTrace.Write(engine.TraceId);
 
-		Func<int, HashIndex> finder = x => hashIndexes[x].Index;
+		Func<int, Index> finder = x => indexes[x].Index;
 
 		for (int i = 0; i < classes.Length; i++)
 		{
 			Class @class = classes[i].Class.MainClass;
-			@class?.AssignHashIndexes(finder, hashReaders);
+			@class?.AssignIndexes(finder, indexReaders);
 		}
 
 		if (workers == null)
@@ -857,7 +940,7 @@ internal unsafe sealed partial class Database
 				{
 					for (int j = 0; j < count; j++)
 					{
-						scan.Class.BuildHashIndexes(handles[j]);
+						scan.Class.BuildIndexes(handles[j]);
 					}
 
 					count = handles.Length;
@@ -888,13 +971,14 @@ internal unsafe sealed partial class Database
 		TTTrace.Write(engine.TraceId);
 
 		Dictionary<short, long> expectedCapacities = DetermineExpectedHashIndexCapacities(true);
-		if (expectedCapacities.Count == 0)
-			return;
 
-		for (int i = 0; i < hashIndexes.Length; i++)
+		for (int i = 0; i < indexes.Length; i++)
 		{
-			if (hashIndexes[i].Index.PendingRefill)
-				hashIndexes[i].Index.PendingRefillStarted(expectedCapacities[hashIndexes[i].Index.HashIndexDesc.Id]);
+			if (indexes[i].Index.PendingRefill)
+			{
+				expectedCapacities.TryGetValue(indexes[i].Index.IndexDesc.Id, out long expectedCapacity);
+				indexes[i].Index.PendingRefillStarted(expectedCapacity);
+			}
 		}
 
 		Action<CommonWorkerParam>[] actions = new Action<CommonWorkerParam>[workers.WorkerCount];
@@ -910,7 +994,7 @@ internal unsafe sealed partial class Database
 				{
 					for (int j = 0; j < count; j++)
 					{
-						scan.Class.BuildHashIndexes(handles[j], true);
+						scan.Class.BuildIndexes(handles[j], true);
 					}
 
 					count = handles.Length;
@@ -935,10 +1019,10 @@ internal unsafe sealed partial class Database
 
 		workers.Drain();
 
-		for (int i = 0; i < hashIndexes.Length; i++)
+		for (int i = 0; i < indexes.Length; i++)
 		{
-			if (hashIndexes[i].Index.PendingRefill)
-				hashIndexes[i].Index.PendingRefillFinished();
+			if (indexes[i].Index.PendingRefill)
+				indexes[i].Index.PendingRefillFinished();
 		}
 	}
 
@@ -950,15 +1034,18 @@ internal unsafe sealed partial class Database
 		for (int i = 0; i < classes.Length; i++)
 		{
 			ClassDescriptor classDesc = classes[i].Class.ClassDesc;
-			for (int j = 0; j < classDesc.HashIndexes.Length; j++)
+			for (int j = 0; j < classDesc.Indexes.Length; j++)
 			{
-				HashIndexDescriptor hindDesc = classDesc.HashIndexes[j];
-				if (pendingRefillOnly && !hashIndexes[hindDesc.Index].Index.PendingRefill)
+				if (classDesc.Indexes[j].Type != ModelItemType.HashIndex)
 					continue;
 
-				r.TryGetValue(hindDesc.Id, out long c);
+				HashIndexDescriptor indexDesc = (HashIndexDescriptor)classDesc.Indexes[j];
+				if (pendingRefillOnly && !indexes[indexDesc.Index].Index.PendingRefill)
+					continue;
+
+				r.TryGetValue(indexDesc.Id, out long c);
 				c += classes[i].Class.MainClass.EstimatedObjectCount;
-				r[hindDesc.Id] = c;
+				r[indexDesc.Id] = c;
 			}
 		}
 
@@ -1046,8 +1133,7 @@ internal unsafe sealed partial class Database
 			{
 				ClassScan scan = scans[j];
 
-				int count = objects.Length;
-				while (scan.Next(objects, 0, ref count))
+				while (scan.Next(objects, out int count))
 				{
 					for (int k = 0; k < count; k++)
 					{
@@ -1099,9 +1185,9 @@ internal unsafe sealed partial class Database
 			classes[i].Dispose(workers);
 		}
 
-		if (hashIndexes != null)
+		if (indexes != null)
 		{
-			foreach (HashIndexEntry item in hashIndexes)
+			foreach (IndexEntry item in indexes)
 			{
 				item.Dispose(workers);
 			}
@@ -1114,13 +1200,13 @@ internal unsafe sealed partial class Database
 		primaryAlignCodeCache = new PrimaryAlignCodeCache();
 		standbyAlignCodeCache = new StandbyAlignCodeCache();
 
-		hashReaders = new HashReadersCollection(modelDesc);
+		indexReaders = new IndexReadersCollection(modelDesc);
 
 		CreateClasses();
 
 		primaryAlignCodeCache.InitCache(modelDesc);
 
-		CreateHashIndexes(null);
+		CreateIndexes(null);
 		CreateInvRefs(null);
 
 		gc.Rewind(0);
@@ -1133,6 +1219,7 @@ internal unsafe sealed partial class Database
 
 		Checker.AssertNull(modelUpdateContext);
 
+		DrainGC();
 		gc.Dispose();
 
 		CacheLineMemoryManager.Free(currTransIdsHandle);
@@ -1146,9 +1233,9 @@ internal unsafe sealed partial class Database
 			classes[i].Dispose(workers);
 		}
 
-		if (hashIndexes != null)
+		if (indexes != null)
 		{
-			foreach (HashIndexEntry item in hashIndexes)
+			foreach (IndexEntry item in indexes)
 			{
 				item.Dispose(workers);
 			}
@@ -1212,27 +1299,27 @@ internal unsafe sealed partial class Database
 		}
 	}
 
-	internal struct HashIndexEntry
+	internal class IndexEntry
 	{
-		HashIndex index;
-		HashKeyReadLocker locker;
-		HashIndexReaderBase reader;
+		Index index;
+		KeyReadLocker locker;
+		IndexReaderBase reader;
 
-		public HashIndexEntry(HashIndex index, HashKeyReadLocker locker, HashIndexReaderBase reader)
+		public IndexEntry(Index index, KeyReadLocker locker, IndexReaderBase reader)
 		{
 			this.index = index;
 			this.locker = locker;
 			this.reader = reader;
 		}
 
-		public HashIndex Index => index;
-		public HashIndexReaderBase Reader => reader;
-		public HashKeyReadLocker Locker => locker;
+		public Index Index => index;
+		public IndexReaderBase Reader => reader;
+		public KeyReadLocker Locker => locker;
 
 		public void Dispose(JobWorkers<CommonWorkerParam> workers)
 		{
 			index.Dispose(workers);
-			locker.Dispose();
+			locker?.Dispose();
 		}
 	}
 }

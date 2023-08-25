@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 
 namespace VeloxDB.ObjectInterface;
 
@@ -18,6 +18,7 @@ public sealed class LogAttribute : Attribute
 	/// <param name="logName">Name of the log to use.</param>
     public LogAttribute(string logName)
     {
+		this.logName = logName;
     }
 
 	/// <summary>

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -22,10 +22,15 @@ internal sealed class ObjectModelSettings : ModelSettings
 		if (usedUp)
 			throw new InvalidOperationException("Additional classes are not allowed. Meta model has already been instantiated.");
 
-		foreach (Type classType in assembly.GetExportedTypes())
+		foreach (Type classType in assembly.GetTypes())
 		{
 			if (classType.IsDefined(typeof(DatabaseClassAttribute)))
+			{
+				if (!classType.IsPublic)
+					Throw.DatabaseClassNotPublic(classType.FullName);
+
 				AddClass(classType);
+			}
 		}
 	}
 
@@ -64,22 +69,22 @@ internal sealed class ObjectModelSettings : ModelSettings
 	}
 
 	public Dictionary<Type, ObjectModelClass> CreateObjectModelClasses(DataModelDescriptor previousModel,
-		out short lastClassId, out short lastHashId, out int lastPropertyId)
+		out short lastClassId, out short lastIndexId, out int lastPropertyId)
 	{
 		lastClassId = 0;
-		lastHashId = 0;
+		lastIndexId = 0;
 		lastPropertyId = 0;
 		if (previousModel != null)
 		{
 			lastClassId = previousModel.LastUsedClassId;
 			lastPropertyId = previousModel.LastUsedPropertyId;
-			lastHashId = previousModel.LastUsedHashIndexId;
+			lastIndexId = previousModel.LastUsedIndexId;
 		}
 
 		Dictionary<Type, ObjectModelClass> classes = new Dictionary<Type, ObjectModelClass>(512, ReferenceEqualityComparer<Type>.Instance);
 		foreach (Type rootClass in classTypes)
 		{
-			CreateObjectModelClass(classes, rootClass, previousModel, ref lastClassId, ref lastPropertyId, ref lastHashId);
+			CreateObjectModelClass(classes, rootClass, previousModel, ref lastClassId, ref lastPropertyId, ref lastIndexId);
 		}
 
 		ValidateInverseReferenceTargets(classes);
@@ -206,7 +211,7 @@ internal sealed class ObjectModelSettings : ModelSettings
 
 		List<ObjectModelProperty> properties = new List<ObjectModelProperty>(pis.Length);
 		List<ObjectModelInverseReferenceProperty> inverseReferences = new List<ObjectModelInverseReferenceProperty>(2);
-		List<ObjectModelHashIndex> hashIndexes = GetHashIndexes(previousModel, classType, ref lastHashId);
+		List<ObjectModelIndex> indexes = GetIndexes(previousModel, classType, ref lastHashId);
 
 		foreach (PropertyInfo pi in pis)
 		{
@@ -274,7 +279,7 @@ internal sealed class ObjectModelSettings : ModelSettings
 
 		bool isAbstract = classType.GetCustomAttribute<DatabaseClassAttribute>().IsAbstract;
 		string logName = GetClassLogName(classType);
-		classes.Add(classType, new ObjectModelClass(classId, isAbstract, classType, logName, properties, inverseReferences, hashIndexes));
+		classes.Add(classType, new ObjectModelClass(classId, isAbstract, classType, logName, properties, inverseReferences, indexes));
 	}
 
 	private string GetClassLogName(Type classType)
@@ -294,25 +299,39 @@ internal sealed class ObjectModelSettings : ModelSettings
 		return null;
 	}
 
-	private static List<ObjectModelHashIndex> GetHashIndexes(DataModelDescriptor previousModel, Type classType, ref short lastHashId)
+	private static List<ObjectModelIndex> GetIndexes(DataModelDescriptor previousModel, Type classType, ref short lastHashId)
 	{
-		List<ObjectModelHashIndex> l = new List<ObjectModelHashIndex>();
-		foreach (HashIndexAttribute ha in classType.GetCustomAttributes<HashIndexAttribute>())
-		{
-			string name = $"{classType.Namespace}.{ha.Name}";
+		List<ObjectModelIndex> l = new List<ObjectModelIndex>();
+		var ias = classType.GetCustomAttributes<HashIndexAttribute>().Cast<IndexAttribute>().
+			Union(classType.GetCustomAttributes<SortedIndexAttribute>().Cast<IndexAttribute>());
 
-			short hashIndexId;
-			HashIndexDescriptor prevHashDesc = previousModel?.GetHashIndex(name);
+		foreach (IndexAttribute ia in ias)
+		{
+			string name = $"{classType.Namespace}.{ia.Name}";
+
+			short indexId;
+			IndexDescriptor prevHashDesc = previousModel?.GetIndex(name);
 			if (prevHashDesc != null)
 			{
-				hashIndexId = prevHashDesc.Id;
+				indexId = prevHashDesc.Id;
 			}
 			else
 			{
-				hashIndexId = ++lastHashId;
+				indexId = ++lastHashId;
 			}
 
-			l.Add(new ObjectModelHashIndex(classType, hashIndexId, name, ha.IsUnique, ha.Properties));
+			if (ia is HashIndexAttribute)
+			{
+				l.Add(new ObjectModelHashIndex(classType, indexId, name, ia.CultureName, ia.CaseSensitive, ia.IsUnique, ((HashIndexAttribute)ia).Properties));
+			}
+			else
+			{
+				SortedIndexAttribute sia = (SortedIndexAttribute)ia;
+				var properties = new ReadOnlyArray<string>(((SortedIndexAttribute)ia).Properties.Select(x => x.Name).ToArray());
+				var sortOrders = new ReadOnlyArray<SortOrder>(((SortedIndexAttribute)ia).Properties.Select(x => x.Order).ToArray());
+				l.Add(new ObjectModelSortedIndex(classType, indexId, name, ia.CultureName, ia.CaseSensitive,
+					ia.IsUnique, properties, sortOrders));
+			}
 		}
 
 		return l;

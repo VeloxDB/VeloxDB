@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -8,7 +9,7 @@ namespace VeloxDB.Common;
 
 internal unsafe sealed partial class MemoryManager : IDisposable
 {
-	const int bufferSizesCount = 14;
+	const int bufferSizesCount = 15;
 	const byte largeBufferSizeIndex = 0x7f;
 	const ulong bufferAddressMask = 0x0000ffffffffffff;
 	const int bufferSizeIndexPos = 56;
@@ -29,7 +30,7 @@ internal unsafe sealed partial class MemoryManager : IDisposable
 
 	static MemoryManager()
 	{
-		short[] sizes = new short[bufferSizesCount] { 16, 32, 64, 96, 128, 192, 256, 384, 512, 768, 1024, 2048, 4098, 8192 };
+		short[] sizes = new short[bufferSizesCount] { 16, 32, 64, 96, 128, 192, 256, 384, 512, 768, 1024, 2048, 4096, 6144, 8192 };
 		bufferSizes = (short*)AlignedAllocator.Allocate(sizes.Length * sizeof(short));
 		for (int i = 0; i < sizes.Length; i++)
 		{
@@ -128,11 +129,15 @@ internal unsafe sealed partial class MemoryManager : IDisposable
 			return (ulong)buffer | ((ulong)largeBufferSizeIndex << bufferSizeIndexPos);
 		}
 
+		ulong handle;
 #if HUNT_CORRUPT
-		return AllocateFixed(bufferSize - 8, bufferSizes[sizeIndex], sizeIndex);
+		handle = AllocateFixed(bufferSize - 8, bufferSizes[sizeIndex], sizeIndex);
 #else
-		return AllocateFixed(bufferSize, bufferSizes[sizeIndex], sizeIndex);
+		handle = AllocateFixed(bufferSize, bufferSizes[sizeIndex], sizeIndex);
 #endif
+
+		TTTrace.Write(handle);
+		return handle;
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -142,12 +147,20 @@ internal unsafe sealed partial class MemoryManager : IDisposable
 		int procNum = ProcessorNumber.GetCore();
 		byte* buffer = perCPUData[procNum]->Alloc(bufferSize, sizeIndex, blocks, freeLists[sizeIndex]);
 
+#if TEST_BUILD
+		byte* limit2 = (byte*)buffer + originalSize;
+		TTTrace.Write((ulong)buffer, (ulong)limit2);
+		Utils.FillMemory(buffer, originalSize, 0xbf);
+#endif
+
 #if HUNT_CORRUPT
 		*((uint*)buffer) = (uint)originalSize;
 		*((uint*)(buffer + 4 + originalSize)) = (uint)originalSize;
 #endif
 
-		return (ulong)buffer | ((ulong)sizeIndex << bufferSizeIndexPos);
+		ulong handle = (ulong)buffer | ((ulong)sizeIndex << bufferSizeIndexPos);
+		TTTrace.Write(handle);
+		return handle;
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -162,6 +175,8 @@ internal unsafe sealed partial class MemoryManager : IDisposable
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public void Free(ulong handle)
 	{
+		TTTrace.Write(handle);
+
 		int sizeIndex = GetSizeIndex(handle);
 		byte* buffer = (byte*)(handle & bufferAddressMask);
 
@@ -179,6 +194,12 @@ internal unsafe sealed partial class MemoryManager : IDisposable
 		uint originalSize2 = *((uint*)(buffer + 4 + originalSize));
 		if (originalSize != originalSize2)
 			throw new CriticalDatabaseException();
+#endif
+
+#if TEST_BUILD
+		byte* limit2 = (byte*)buffer + bufferSizes[sizeIndex];
+		TTTrace.Write((ulong)buffer, (ulong)limit2);
+		Utils.FillMemory(buffer, bufferSizes[sizeIndex], 0xeb);
 #endif
 
 		int procNum = ProcessorNumber.GetCore();

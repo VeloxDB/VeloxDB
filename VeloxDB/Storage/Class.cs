@@ -10,6 +10,7 @@ using VeloxDB.Common;
 using VeloxDB.Descriptor;
 using VeloxDB.Storage.ModelUpdate;
 using VeloxDB.Storage.Replication;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 using static VeloxDB.Common.SegmentBinaryWriter;
 
 namespace VeloxDB.Storage;
@@ -42,14 +43,14 @@ internal unsafe sealed partial class Class : ClassBase
 
 	bool hasStringsOrBlobs;
 
-	HashIndexComparerPair[] hashIndexes;
-	Dictionary<short, HashComparer> hashComparers;
-	bool uniqueHashIndexesExist;
+	IndexComparerPair[] indexes;
+	FastDictionary<short, KeyComparer> keyComparers;
+	bool uniqueIndexesExist;
 
 	PendingRestoreDelegate pendingRestorer;
 	bool isPersistanceActive;
 
-	HashIndexDeleteDelegate hashIndexDeleteDelegate;
+	IndexDeleteDelegate indexDeleteDelegate;
 
 	ModelUpdateData modelUpdateData;
 
@@ -70,7 +71,7 @@ internal unsafe sealed partial class Class : ClassBase
 
 		storage = new ObjectStorage(this, objectSize);
 		pendingRestorer = (p, t, b) => RestorePendingChange((PendingRestoreObjectHeader*)p, (ulong*)t, b);
-		hashIndexDeleteDelegate = (o, h, i) => DeleteFromAffectedHashIndex(h, o, i);
+		indexDeleteDelegate = (o, h, i) => DeleteFromAffectedIndex(h, o, i);
 
 		minCapacity = database.Id == DatabaseId.User ? ParallelResizeCounter.SingleThreadedLimit * 2 : 64;
 
@@ -101,7 +102,7 @@ internal unsafe sealed partial class Class : ClassBase
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public static byte* GetHashKey(ulong objectHandle, out ClassObject* @object)
+	public static byte* GetKey(ulong objectHandle, out ClassObject* @object)
 	{
 		@object = (ClassObject*)ObjectStorage.GetBuffer(objectHandle);
 		return ClassObject.ToDataPointer(@object);
@@ -150,7 +151,7 @@ internal unsafe sealed partial class Class : ClassBase
 		classIndex = (ushort)ClassDesc.Index;
 	}
 
-	public void UpdateModelForObject(ulong objectHandle, ObjectCopyDelegate copyDelegate, HashIndexComparerPair[] hashIndexes, ulong commitVersion)
+	public void UpdateModelForObject(ulong objectHandle, ObjectCopyDelegate copyDelegate, IndexComparerPair[] indexes, ulong commitVersion)
 	{
 		ClassObject* obj = GetObjectByHandle(objectHandle);
 		Checker.AssertTrue(obj->nextVersionHandle == 0);
@@ -170,7 +171,7 @@ internal unsafe sealed partial class Class : ClassBase
 		Bucket* bucket = buckets + CalculateBucket(obj->id);
 		ulong* handlePointer = Bucket.LockAccess(bucket);
 
-		RefreshHashIndexHandles(objectHandle, obj, newObjHandle, hashIndexes);
+		RefreshIndexHandles(objectHandle, obj, newObjHandle, indexes);
 		FindObject(handlePointer, obj->id, out ulong* pObjPointer);
 
 		newObj->nextCollisionHandle = obj->nextCollisionHandle;
@@ -197,68 +198,65 @@ internal unsafe sealed partial class Class : ClassBase
 			resizeCounter.Dec(lockHandle);
 	}
 
-	public void AssignHashIndexes(Func<int, HashIndex> indexFinder, HashReadersCollection hashReaders)
+	public void AssignIndexes(Func<int, Index> indexFinder, IndexReadersCollection indexReaders)
 	{
 		TTTrace.Write(TraceId, ClassDesc.Id);
 
-		uniqueHashIndexesExist = false;
+		uniqueIndexesExist = false;
 
-		this.hashIndexes = new HashIndexComparerPair[ClassDesc.HashIndexes.Length];
-		hashComparers = new Dictionary<short, HashComparer>(ClassDesc.HashIndexes.Length);
-		for (int k = 0; k < ClassDesc.HashIndexes.Length; k++)
+		this.indexes = new IndexComparerPair[ClassDesc.Indexes.Length];
+		keyComparers = new FastDictionary<short, KeyComparer>(ClassDesc.Indexes.Length);
+		for (int k = 0; k < ClassDesc.Indexes.Length; k++)
 		{
-			HashIndexDescriptor hindDesc = ClassDesc.HashIndexes[k];
-			TTTrace.Write(TraceId, ClassDesc.Id, hindDesc.Id, hindDesc.IsUnique);
-			HashIndex hashIndex = indexFinder(hindDesc.Index);
-			HashComparer comparer = new HashComparer(ClassDesc.GetHashAccessDesc(hindDesc), null);
-			this.hashIndexes[k] = new HashIndexComparerPair(hashIndex, comparer);
-			hashComparers.Add(hindDesc.Id, comparer);
-			uniqueHashIndexesExist |= hindDesc.IsUnique;
+			IndexDescriptor indexDesc = ClassDesc.Indexes[k];
+			TTTrace.Write(TraceId, ClassDesc.Id, indexDesc.Id, indexDesc.IsUnique);
+			Index index = indexFinder(indexDesc.Index);
+			KeyComparer comparer = new KeyComparer(ClassDesc.GetIndexAccessDesc(indexDesc));
+			this.indexes[k] = new IndexComparerPair(index, comparer);
+			keyComparers.Add(indexDesc.Id, comparer);
+			uniqueIndexesExist |= indexDesc.IsUnique;
 		}
 	}
 
 	public bool HasPendingRefillIndexes()
 	{
-		for (int i = 0; i < hashIndexes.Length; i++)
+		for (int i = 0; i < indexes.Length; i++)
 		{
-			if (hashIndexes[i].Index.PendingRefill)
+			if (indexes[i].Index.PendingRefill)
 				return true;
 		}
 
 		return false;
 	}
 
-	public void BuildHashIndexes(ulong objectHandle, bool pendingRefillOnly = false)
+	public void BuildIndexes(ulong objectHandle, bool pendingRefillOnly = false)
 	{
 		ClassObject* obj = (ClassObject*)ObjectStorage.GetBuffer(objectHandle);
-		InsertIntoHashIndexes(null, objectHandle, obj, pendingRefillOnly);
+		InsertIntoIndexes(null, objectHandle, obj, pendingRefillOnly);
 	}
 
-	public DatabaseErrorDetail BuildHashIndex(ulong objectHandle, HashIndex index, HashComparer comparer,
-		bool checkUniqueness, Func<short, HashComparer> comparerFinder)
+	public DatabaseErrorDetail BuildIndex(ulong objectHandle, Index index,
+		KeyComparer comparer, Func<short, KeyComparer> comparerFinder)
 	{
 		ClassObject* obj = (ClassObject*)ObjectStorage.GetBuffer(objectHandle);
-		TTTrace.Write(TraceId, ClassDesc.Id, obj->id, obj->version, objectHandle, index.HashIndexDesc.Id, checkUniqueness);
+		TTTrace.Write(TraceId, ClassDesc.Id, obj->id, obj->version, objectHandle, index.IndexDesc.Id);
 
 		byte* key = ClassObject.ToDataPointer(obj);
-		if (checkUniqueness && index.ContainsKey(key, comparer, comparerFinder))
-			return DatabaseErrorDetail.CreateUniquenessConstraint(index.HashIndexDesc.FullName);
-
-		return index.Insert(null, objectHandle, key, comparer);
+		return index.Insert(null, obj->id, objectHandle, key, comparer, comparerFinder);
 	}
 
-	public void DeleteFromHashIndex(ulong objectHandle, HashIndex index, HashComparer comparer)
+	public void DeleteFromIndex(ulong objectHandle, Index index, KeyComparer comparer)
 	{
 		ClassObject* obj = (ClassObject*)ObjectStorage.GetBuffer(objectHandle);
-		TTTrace.Write(TraceId, ClassDesc.Id, obj->id, obj->version, objectHandle, index.HashIndexDesc.Id);
+		TTTrace.Write(TraceId, ClassDesc.Id, obj->id, obj->version, objectHandle, index.IndexDesc.Id);
 		byte* key = ClassObject.ToDataPointer(obj);
-		index.Delete(null, objectHandle, key, comparer);
+		index.Delete(objectHandle, key, obj->id, comparer);
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public HashComparer GetHashedComparer(short id, bool mandatoryFind)
+	public KeyComparer GetKeyComparer(short id, bool mandatoryFind)
 	{
-		if (!hashComparers.TryGetValue(id, out HashComparer comparer))
+		if (!keyComparers.TryGetValue(id, out KeyComparer comparer))
 		{
 			if (mandatoryFind)
 				throw new CriticalDatabaseException();
@@ -267,63 +265,36 @@ internal unsafe sealed partial class Class : ClassBase
 		return comparer;
 	}
 
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	private DatabaseErrorDetail CheckUniquenessConstraints(Transaction tran, ClassObject* obj)
-	{
-		TTTrace.Write(TraceId, ClassDesc.Id, tran.Id, obj->id, obj->version);
-
-		if (tran.Source == TransactionSource.Replication || !uniqueHashIndexesExist)
-			return null;
-
-		byte* key = ClassObject.ToDataPointer(obj);
-		for (int i = 0; i < hashIndexes.Length; i++)
-		{
-			HashIndex hind = hashIndexes[i].Index;
-			if (!hind.HashIndexDesc.IsUnique)
-				continue;
-
-			hashIndexes[i].Comparer.TTTraceKeys(TraceId, tran.Id, hind.HashIndexDesc.Index, key, stringStorage, 1);
-			bool exists = hind.ContainsKey(tran, key, hashIndexes[i].Comparer, obj->id, out DatabaseErrorDetail error);
-			if (error != null)
-				return error;
-
-			if (exists)
-				return DatabaseErrorDetail.CreateUniquenessConstraint(hind.HashIndexDesc.FullName);
-		}
-
-		return null;
-	}
-
-	private void RefreshHashIndexHandles(ulong objectHandle, ClassObject* obj, ulong newObjectHandle, HashIndexComparerPair[] hashIndexes)
+	private void RefreshIndexHandles(ulong objectHandle, ClassObject* obj, ulong newObjectHandle, IndexComparerPair[] indexes)
 	{
 		TTTrace.Write(TraceId, ClassDesc.Id, objectHandle, newObjectHandle, obj->id, obj->version);
 
 		byte* key = ClassObject.ToDataPointer(obj);
-		for (int i = 0; i < hashIndexes.Length; i++)
+		for (int i = 0; i < indexes.Length; i++)
 		{
-			if (!hashIndexes[i].Index.PendingRefill)
-				hashIndexes[i].Index.ReplaceObjectHandle(objectHandle, newObjectHandle, key, hashIndexes[i].Comparer);
+			if (!indexes[i].Index.PendingRefill)
+				indexes[i].Index.ReplaceObjectHandle(objectHandle, newObjectHandle, key, obj->id, indexes[i].Comparer);
 		}
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	private DatabaseErrorDetail InsertIntoHashIndexes(Transaction tran, ulong objectHandle, ClassObject* obj, bool pendingRefillOnly = false)
+	private DatabaseErrorDetail InsertIntoIndexes(Transaction tran, ulong objectHandle, ClassObject* obj, bool pendingRefillOnly = false)
 	{
 		TTTrace.Write(TraceId, ClassDesc.Id, objectHandle, obj->id, obj->version, pendingRefillOnly);
 		Checker.AssertFalse(obj->IsDeleted);
 
 		byte* key = ClassObject.ToDataPointer(obj);
-		for (int i = 0; i < hashIndexes.Length; i++)
+		for (int i = 0; i < indexes.Length; i++)
 		{
-			if (pendingRefillOnly && !hashIndexes[i].Index.PendingRefill)
+			if (pendingRefillOnly && !indexes[i].Index.PendingRefill)
 				continue;
 
-			DatabaseErrorDetail err = hashIndexes[i].Index.Insert(tran, objectHandle, key, hashIndexes[i].Comparer);
+			DatabaseErrorDetail err = indexes[i].Index.Insert(tran, obj->id, objectHandle, key, indexes[i].Comparer);
 			if (err != null)
 			{
 				for (int j = 0; j < i; j++)
 				{
-					hashIndexes[j].Index.Delete(tran, objectHandle, key, hashIndexes[j].Comparer);
+					indexes[j].Index.Delete(objectHandle, key, obj->id, indexes[j].Comparer);
 				}
 
 				return err;
@@ -334,7 +305,7 @@ internal unsafe sealed partial class Class : ClassBase
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	private void DeleteFromHashIndexes(Transaction tran, ulong objectHandle, ClassObject* obj)
+	private void DeleteFromIndexes(ulong objectHandle, ClassObject* obj)
 	{
 		TTTrace.Write(TraceId, ClassDesc.Id, objectHandle, obj->id, obj->version, obj->IsDeleted);
 
@@ -342,27 +313,27 @@ internal unsafe sealed partial class Class : ClassBase
 			return;
 
 		Byte* key = ClassObject.ToDataPointer(obj);
-		for (int j = 0; j < hashIndexes.Length; j++)
+		for (int j = 0; j < indexes.Length; j++)
 		{
-			if (!hashIndexes[j].Index.PendingRefill)
-				hashIndexes[j].Index.Delete(tran, objectHandle, key, hashIndexes[j].Comparer);
+			if (!indexes[j].Index.PendingRefill)
+				indexes[j].Index.Delete(objectHandle, key, obj->id, indexes[j].Comparer);
 		}
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	private void InsertIntoAffectedHashIndexes(ulong objectHandle, ClassObject* obj, ulong affectedIndexesMask)
+	private void InsertIntoAffectedIndexes(ulong objectHandle, ClassObject* obj, ulong affectedIndexesMask)
 	{
-		TTTrace.Write(TraceId, ClassDesc.Id, objectHandle, obj->id, obj->version, affectedIndexesMask, hashIndexes.Length);
+		TTTrace.Write(TraceId, ClassDesc.Id, objectHandle, obj->id, obj->version, affectedIndexesMask, indexes.Length);
 		Checker.AssertFalse(obj->IsDeleted);
 
 		if (affectedIndexesMask != 0)
 		{
 			byte* key = ClassObject.ToDataPointer(obj);
-			for (int j = 0; j < hashIndexes.Length; j++)
+			for (int j = 0; j < indexes.Length; j++)
 			{
-				if ((affectedIndexesMask & ((ulong)1 << j)) != 0 && !hashIndexes[j].Index.PendingRefill)
+				if ((affectedIndexesMask & ((ulong)1 << j)) != 0 && !indexes[j].Index.PendingRefill)
 				{
-					DatabaseErrorDetail err = hashIndexes[j].Index.Insert(null, objectHandle, key, hashIndexes[j].Comparer);
+					DatabaseErrorDetail err = indexes[j].Index.Insert(null, obj->id, objectHandle, key, indexes[j].Comparer);
 					Checker.AssertNull(err);
 				}
 			}
@@ -370,16 +341,16 @@ internal unsafe sealed partial class Class : ClassBase
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	private void DeleteFromAffectedHashIndex(ulong objectHandle, ClassObject* obj, int hashIndexIndex)
+	private void DeleteFromAffectedIndex(ulong objectHandle, ClassObject* obj, int indexIndex)
 	{
 		TTTrace.Write(TraceId, ClassDesc.Id, objectHandle, obj->id, obj->version,
-			obj->IsDeleted, hashIndexes[hashIndexIndex].Index.HashIndexDesc.Id);
+			obj->IsDeleted, indexes[indexIndex].Index.IndexDesc.Id);
 
-		if (hashIndexes[hashIndexIndex].Index.PendingRefill)
+		if (indexes[indexIndex].Index.PendingRefill)
 			return;
 
 		byte* bp = ClassObject.ToDataPointer(obj);
-		hashIndexes[hashIndexIndex].Index.Delete(null, objectHandle, bp, hashIndexes[hashIndexIndex].Comparer);
+		indexes[indexIndex].Index.Delete(objectHandle, bp, obj->id, indexes[indexIndex].Comparer);
 	}
 
 	public ObjectReader GetScanObjectIfInTransaction(ulong handle, Transaction tran)
@@ -392,12 +363,13 @@ internal unsafe sealed partial class Class : ClassBase
 		// Also, during releasing, version is guaranteed to be incremented before the buffer is actually released.
 		// We first start checking whether the buffer is actually used in the class (and remember the version with which we confirmed that).
 		// Once we determine that the object is visible to the transaction, we recheck whether the version of the buffer is still the same.
-		// Couple of memory barriers ensures that version checks are not reordered with the transaction check.
+		// Couple of memory barriers ensure that version checks are not reordered with the transaction check.
 
 		if (!ObjectStorage.IsBufferUsed(handle, out ulong bufferVersion))
 			return new ObjectReader();
 
-		// IsBufferUsed performs memory barrier internally so we are certain that version check will not be reordered with transaction check.
+		// IsBufferUsed performs memory barrier internally (on ARM) so we are
+		// certain that version check will not be reordered with transaction check.
 
 		ClassObject* obj = (ClassObject*)ObjectStorage.GetBuffer(handle);
 
@@ -418,8 +390,10 @@ internal unsafe sealed partial class Class : ClassBase
 		}
 
 		// We need to make sure that the transaction check is not reordered with the next version check.
-		// This is needed for both x64 and ARM since both memory models allow for loads to be reordered with other loads.
+		// This is not needed on x64 since loads are never reordered with other loads.
+#if !X86_64
 		Thread.MemoryBarrier();
+#endif
 
 		if (!visible || !ObjectStorage.IsVersionEqual(handle, bufferVersion))
 			return new ObjectReader();
@@ -427,92 +401,57 @@ internal unsafe sealed partial class Class : ClassBase
 		return new ObjectReader(ClassObject.ToDataPointer(obj), this);
 	}
 
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public ObjectReader GetHashedObject(Transaction tran, ulong handle, bool skipLocking, out DatabaseErrorDetail err)
+	public DatabaseErrorDetail ReadLockObjectFromIndex(Transaction tran, ulong handle, short indexId)
 	{
-		err = null;
 		ClassObject* obj = GetObjectByHandle(handle);
-
-		int lockHandle = 0;
-		if (!skipLocking)
-			lockHandle = resizeCounter.EnterReadLock();
-
-		TTTrace.Write(TraceId, ClassDesc.Id, tran.Id, obj->id, handle, skipLocking);
-
-		bool hasConflict = false;
-		ClassObject* foundObj;
-		if (!skipLocking && tran.Type == TransactionType.ReadWrite)
-		{
-			foundObj = GetHashedObjectReadLock(tran, handle, obj, out hasConflict);
-		}
-		else
-		{
-			foundObj = GetObjectInternalRead(tran, obj->id, out _);
-		}
-
-		if (!skipLocking)
-			resizeCounter.ExitReadLock(lockHandle);
-
-		if (hasConflict)
-		{
-			err = DatabaseErrorDetail.CreateConflict(obj->id, ClassDesc.FullName);
-			return new ObjectReader();
-		}
-
-		if (foundObj != obj)
-		{
-			err = null;
-			return new ObjectReader();
-		}
-
-		TTTrace.Write(foundObj->IsDeleted, foundObj->version);
-		return new ObjectReader(ClassObject.ToDataPointer(foundObj), this);
-	}
-
-	private ClassObject* GetHashedObjectReadLock(Transaction tran, ulong handle, ClassObject* obj, out bool hasConflict)
-	{
 		TTTrace.Write(TraceId, ClassDesc.Id, tran.Id, obj->id);
+		Checker.AssertFalse(obj->IsDeleted);
 
+		int lockHandle = resizeCounter.EnterReadLock();
 		Bucket* bucket = buckets + CalculateBucket(obj->id);
 		ulong* handlePointer = Bucket.LockAccess(bucket);
 
-		Checker.AssertFalse(obj->IsDeleted);
-
 		try
 		{
-			ClassObject* currObj = FindObject(handlePointer, obj->id, out _);
-			hasConflict = false;
-
-			while (currObj != null)
+			if (obj->NewerVersion != 0)
 			{
-				TTTrace.Write(currObj->version, currObj->IsDeleted, currObj->nextVersionHandle);
-				if (currObj->version > tran.ReadVersion && currObj->version != tran.Id) // This also covers uncommited versions
-				{
-					hasConflict = true;
-					currObj = (ClassObject*)ObjectStorage.GetBuffer(currObj->nextVersionHandle);
-				}
-				else
-				{
-					break;
-				}
+				ClassObject* newerObj = FindObject(handlePointer, obj->id, out _);
+				if (HasKeyBeenModified(newerObj, obj, indexId))
+					return DatabaseErrorDetail.Create(DatabaseErrorType.IndexConflict);
+
+				return DatabaseErrorDetail.CreateConflict(obj->id, ClassDesc.FullName);
 			}
 
-			if (currObj == obj)
-			{
-				if (!hasConflict && Database.IsCommited(obj->version))
-					ReaderInfo.TakeObjectLock(tran, currObj->id, classIndex, &currObj->readerInfo, handle);
-			}
-			else
-			{
-				hasConflict = false;
-			}
+			if (Database.IsCommited(obj->version))
+				ReaderInfo.TakeObjectLock(tran, obj->id, classIndex, &obj->readerInfo, handle);
 
-			return currObj;
+			return null;
 		}
 		finally
 		{
 			Bucket.UnlockAccess(bucket);
+			resizeCounter.ExitReadLock(lockHandle);
 		}
+	}
+
+	private bool HasKeyBeenModified(ClassObject* newerObj, ClassObject* obj, short indexId)
+	{
+		byte* objKey = ClassObject.ToDataPointer(obj);
+
+		KeyComparer comparer = GetKeyComparer(indexId, true);
+		while (newerObj != obj)
+		{
+			if (newerObj->IsDeleted)
+				return true;
+
+			byte* newerKey = ClassObject.ToDataPointer(newerObj);
+			if (!comparer.Equals(newerKey, null, objKey, comparer, stringStorage))
+				return true;
+
+			newerObj = (ClassObject*)ObjectStorage.GetBuffer(newerObj->nextVersionHandle);
+		}
+
+		return false;
 	}
 
 	public override ObjectReader GetObjectNoReadLock(Transaction tran, long id)
@@ -718,13 +657,6 @@ internal unsafe sealed partial class Class : ClassBase
 
 				c++;
 				tc.AddAffectedObject(classIndex, objHandle);
-
-				error = CheckUniquenessConstraints(tran, obj);
-				if (error != null)
-				{
-					storage.FreeMultiple(objHandles + i + 1, executeCount - i - 1);
-					break;
-				}
 			}
 
 			operationCount -= executeCount;
@@ -853,16 +785,6 @@ internal unsafe sealed partial class Class : ClassBase
 
 					tc.AddAffectedObject(classIndex, objHandle);
 					ObjectStorage.MarkBufferAsUsed(objHandle);
-				}
-
-				if (finalObject != null)
-				{
-					error = CheckUniquenessConstraints(tran, finalObject);
-					if (error != null)
-					{
-						storage.FreeMultiple(objHandles + i + 1, executeCount - i - 1);
-						break;
-					}
 				}
 			}
 
@@ -1151,7 +1073,7 @@ internal unsafe sealed partial class Class : ClassBase
 			TTTrace.Write(TraceId, ClassDesc.Id, obj->id, obj->IsDeleted, obj->nextVersionHandle);
 
 			if (!obj->IsDeleted)
-				DeleteFromHashIndexes(null, handle, obj);
+				DeleteFromIndexes(handle, obj);
 
 			ClassObject* nextVerObj = (ClassObject*)ObjectStorage.GetBuffer(obj->nextVersionHandle);
 			if (nextVerObj == null)
@@ -1465,13 +1387,13 @@ internal unsafe sealed partial class Class : ClassBase
 			Utils.CopyMemory((byte*)defaultValues + ClassObject.UserPropertiesOffset,
 				(byte*)obj + ClassObject.UserPropertiesOffset, objectSize - ClassObject.UserPropertiesOffset);
 			alignDelegate(obj, stringStorage, blobStorage, tran.Context, reader, ClassDesc, null, 0);
-			InsertIntoAffectedHashIndexes(objHandle, obj, 0xffffffffffffffff);
+			InsertIntoAffectedIndexes(objHandle, obj, 0xffffffffffffffff);
 		}
 		else
 		{
 			ulong affectedIndexes = alignDelegate(obj, stringStorage, blobStorage,
-				tran.Context, reader, ClassDesc, hashIndexDeleteDelegate, finalObjectHandle);
-			InsertIntoAffectedHashIndexes(finalObjectHandle, obj, affectedIndexes);
+				tran.Context, reader, ClassDesc, indexDeleteDelegate, finalObjectHandle);
+			InsertIntoAffectedIndexes(finalObjectHandle, obj, affectedIndexes);
 		}
 	}
 
@@ -1504,7 +1426,7 @@ internal unsafe sealed partial class Class : ClassBase
 		DatabaseErrorDetail err;
 		if (bucket->Handle == 0)
 		{
-			err = InsertIntoHashIndexes(tran, objHandle, obj);
+			err = InsertIntoIndexes(tran, objHandle, obj);
 			if (err != null)
 				return err;
 
@@ -1520,7 +1442,7 @@ internal unsafe sealed partial class Class : ClassBase
 			if (!existingObj->IsDeleted)
 				return DatabaseErrorDetail.CreateNonUniqueId(obj->id, ClassDesc.FullName);
 
-			err = InsertIntoHashIndexes(tran, objHandle, obj);
+			err = InsertIntoIndexes(tran, objHandle, obj);
 			if (err != null)
 				return err;
 
@@ -1531,7 +1453,7 @@ internal unsafe sealed partial class Class : ClassBase
 			return null;
 		}
 
-		err = InsertIntoHashIndexes(tran, objHandle, obj);
+		err = InsertIntoIndexes(tran, objHandle, obj);
 		if (err != null)
 			return err;
 
@@ -1635,10 +1557,10 @@ internal unsafe sealed partial class Class : ClassBase
 			{
 				TTTrace.Write();
 
-				DeleteFromHashIndexes(tran, *existingObjPointer, existingObj);
+				DeleteFromIndexes(*existingObjPointer, existingObj);
 				err = PopulateObjectFromChangeset(tc, reader, existingObj, true, true, true);
 				if (err == null)
-					err = InsertIntoHashIndexes(tran, *existingObjPointer, existingObj);
+					err = InsertIntoIndexes(tran, *existingObjPointer, existingObj);
 
 				if (err != null)
 					return err;
@@ -1654,7 +1576,7 @@ internal unsafe sealed partial class Class : ClassBase
 
 			err = UpdateObjectFromChangeset(tc, reader, existingObj, obj, true);
 			if (err == null)
-				err = InsertIntoHashIndexes(tran, objHandle, obj);
+				err = InsertIntoIndexes(tran, objHandle, obj);
 
 			if (err != null)
 			{
@@ -1676,7 +1598,7 @@ internal unsafe sealed partial class Class : ClassBase
 			Utils.CopyMemory((byte*)defaultValues + ClassObject.UserPropertiesOffset,
 				(byte*)obj + ClassObject.UserPropertiesOffset, objectSize - ClassObject.UserPropertiesOffset);
 			PopulateObjectFromChangeset(tc, reader, obj, false, false, true);
-			InsertIntoHashIndexes(tran, objHandle, obj);
+			InsertIntoIndexes(tran, objHandle, obj);
 
 			obj->nextCollisionHandle = bucket->Handle;
 			*handlePointer = objHandle;
@@ -1867,7 +1789,7 @@ internal unsafe sealed partial class Class : ClassBase
 
 		if (existingObj->version == tran.Id || tran.IsAlignment)
 		{
-			DeleteFromHashIndexes(tran, *pObjPointer, existingObj);
+			DeleteFromIndexes(*pObjPointer, existingObj);
 			FreeStringsAndBlobs(existingObj);
 
 			opHead.WritePreviousVersion(0);
@@ -1995,7 +1917,7 @@ internal unsafe sealed partial class Class : ClassBase
 			TTTrace.Write(TraceId, ClassDesc.Id, obj->id, obj->IsDeleted, obj->version);
 
 			ulong nextHandle = obj->nextVersionHandle;
-			DeleteFromHashIndexes(null, objHandle, obj);
+			DeleteFromIndexes(objHandle, obj);
 
 			if (!obj->IsDeleted)
 				FreeStringsAndBlobs(obj);
@@ -3203,12 +3125,12 @@ internal unsafe sealed partial class Class : ClassBase
 	}
 }
 
-internal struct HashIndexComparerPair
+internal struct IndexComparerPair
 {
-	public HashIndex Index { get; set; }
-	public HashComparer Comparer { get; set; }
+	public Index Index { get; set; }
+	public KeyComparer Comparer { get; set; }
 
-	public HashIndexComparerPair(HashIndex index, HashComparer comparer)
+	public IndexComparerPair(Index index, KeyComparer comparer)
 	{
 		this.Index = index;
 		this.Comparer = comparer;
@@ -3249,29 +3171,29 @@ internal unsafe struct ClassTempData
 {
 	// Used for object versions that have newer versions available (top bit set) which do not require read locking
 	[FieldOffset(0)]
-	public ulong hasNextVersion_nextVersion;
+	public ulong hasNextVersion_newerVersion;
 
 	// Used for newly created versions (uncommitted) that still do not require read locking.
 	// Represents address (inside the changeset) of the "previous version slot" of the operation that created this version.
 	[FieldOffset(8)]
 	public byte* FlagLocation;
 
-	public ulong NextVersion
+	public ulong NewerVersion
 	{
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
 		get
 		{
-			if ((hasNextVersion_nextVersion & 0x8000000000000000) == 0)
+			if ((hasNextVersion_newerVersion & 0x8000000000000000) == 0)
 				return 0;
 
-			return hasNextVersion_nextVersion & 0x7fffffffffffffff;
+			return hasNextVersion_newerVersion & 0x7fffffffffffffff;
 		}
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
 		set
 		{
 			Checker.AssertTrue(value != 0);
-			hasNextVersion_nextVersion = value | 0x8000000000000000;
+			hasNextVersion_newerVersion = value | 0x8000000000000000;
 		}
 	}
 }
@@ -3306,9 +3228,9 @@ internal unsafe struct ClassObject
 
 	// This property uses the tempData (which overlappes readLockData) as the storage but is only used when the
 	// object version is no longer the latest version of the object in which case it does not get read-locked.
-	public ulong NewerVersion { get => tempData.NextVersion; set => tempData.NextVersion = value; }
+	public ulong NewerVersion { get => tempData.NewerVersion; set => tempData.NewerVersion = value; }
 
-	// This property uses the tempData (which overlappes readLockData) as the storage but is only used when the object
+	// This property uses the tempData (which overlapps readLockData) as the storage but is only used when the object
 	// version is first created in a transaction and until it is committed, during which time read lock data is not used.
 	public byte* FlagLocation { get => tempData.FlagLocation; set => tempData.FlagLocation = value; }
 

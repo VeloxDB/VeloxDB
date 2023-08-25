@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Reflection.Emit;
@@ -59,8 +59,8 @@ internal sealed class ClassData
 	static MethodInfo invalidateInvRefArrayMethod = typeof(InverseReferenceSet).GetMethod(nameof(InverseReferenceSet.Invalidate), BindingFlags.Instance | BindingFlags.NonPublic);
 	static MethodInfo referenceModifiedMethod = typeof(ObjectModel).GetMethod(nameof(ObjectModel.ReferenceModified), BindingFlags.Instance | BindingFlags.NonPublic);
 	static MethodInfo referenceArrayModifiedMethod = typeof(ObjectModel).GetMethod(nameof(ObjectModel.ReferenceArrayModified), BindingFlags.Instance | BindingFlags.NonPublic);
-	static MethodInfo stringEqualsMethod = typeof(string).GetMethod(nameof(string.Equals), BindingFlags.Static | BindingFlags.Public, null,
-		new Type[] { typeof(string), typeof(string), typeof(StringComparison) }, null);
+	static MethodInfo stringEqualsMethod = typeof(StringComparer).GetMethod(nameof(StringComparer.Equals), BindingFlags.Instance | BindingFlags.Public, null,
+		new Type[] { typeof(string), typeof(string) }, null);
 	static MethodInfo dateTimeEqualsMethod = typeof(DateTime).GetMethod(nameof(DateTime.Equals), BindingFlags.Static | BindingFlags.Public, null,
 		new Type[] { typeof(DateTime), typeof(DateTime) }, null);
 	static MethodInfo setContainsIdMethod = typeof(LongHashSet).GetMethod(nameof(LongHashSet.Contains), BindingFlags.Instance | BindingFlags.Public);
@@ -72,6 +72,7 @@ internal sealed class ClassData
 	int bufferSize;
 	int bitFieldByteSize;
 	Type generatedType;
+	int[] classIndexes;
 
 	Dictionary<int, InverseReferenceInvalidator> inverseRefInvalidators;
 
@@ -113,12 +114,19 @@ internal sealed class ClassData
 	private ClassData(ClassDescriptor classDesc)
 	{
 		this.classDesc = classDesc;
+		classIndexes = new int[classDesc.DescendentClassIds.Length + 1];
+		classIndexes[0] = classDesc.Index;
+		for (int i = 0; i < classDesc.DescendentClassIds.Length; i++)
+		{
+			ClassDescriptor dclassDesc = classDesc.Model.GetClass(classDesc.DescendentClassIds[i]);
+			classIndexes[i + 1] = dclassDesc.Index;
+		}
 	}
 
 	private ClassData(ClassDescriptor classDesc, DatabaseObjectCreatorDelegate creator, Type generatedType,
-		Dictionary<int, InverseReferenceInvalidator> inverseRefInvalidators)
+		Dictionary<int, InverseReferenceInvalidator> inverseRefInvalidators) :
+		this(classDesc)
 	{
-		this.classDesc = classDesc;
 		this.creator = creator;
 		this.generatedType = generatedType;
 
@@ -143,6 +151,7 @@ internal sealed class ClassData
 	public int ObjectSize => bufferSize - bitFieldByteSize;
 	public Type GeneratedType => generatedType;
 	public int BufferSize => bufferSize;
+	public int[] ClassIndexes => classIndexes;
 
 	public InverseReferenceInvalidator GetInverseReferenceInvalidator(int propertyId)
 	{
@@ -202,35 +211,36 @@ internal sealed class ClassData
 		return (ReferenceCheckerDelegate)checker.CreateDelegate(typeof(ReferenceCheckerDelegate));
 	}
 
-	public static Delegate CreateHashIndexComparer(HashIndexDescriptor hashIndexDesc)
+	public static Delegate CreateIndexComparer(IndexDescriptor indexDesc)
 	{
-		Type definingType = hashIndexDesc.DefiningObjectModelClass.ClassType;
+		Type definingType = indexDesc.DefiningObjectModelClass.ClassType;
 
 		List<Type> args = new List<Type>(5);
 		args.Add(definingType);
+		args.Add(typeof(StringComparer));
 
-		for (int i = 0; i < hashIndexDesc.Properties.Length; i++)
+		for (int i = 0; i < indexDesc.Properties.Length; i++)
 		{
-			PropertyDescriptor pd = hashIndexDesc.Properties[i];
+			PropertyDescriptor pd = indexDesc.Properties[i];
 			args.Add(PropertyTypesHelper.PropertyTypeToManagedType(pd.PropertyType));
 		}
 
 		DynamicMethod comparer = new DynamicMethod("__" + Guid.NewGuid(), typeof(bool), args.ToArray());
 		ILGenerator il = comparer.GetILGenerator();
 
-		for (int i = 0; i < hashIndexDesc.Properties.Length; i++)
+		for (int i = 0; i < indexDesc.Properties.Length; i++)
 		{
-			PropertyDescriptor pd = hashIndexDesc.Properties[i];
+			PropertyDescriptor pd = indexDesc.Properties[i];
 			MethodInfo getter = GetPublicProperty(definingType, pd.Name).GetGetMethod();
 
 			Label lab = il.DefineLabel();
 			if (pd.PropertyType == PropertyType.String)
 			{
+				il.Emit(OpCodes.Ldarg_1);	// Comparer
 				il.Emit(OpCodes.Ldarg_0);
 				il.Emit(OpCodes.Callvirt, getter);
-				il.Emit(OpCodes.Ldarg, i + 1);
-				il.Emit(OpCodes.Ldc_I4, (int)StringComparison.Ordinal);
-				il.Emit(OpCodes.Call, stringEqualsMethod);
+				il.Emit(OpCodes.Ldarg, i + 2);
+				il.Emit(OpCodes.Callvirt, stringEqualsMethod);
 				il.Emit(OpCodes.Brtrue, lab);
 				il.Emit(OpCodes.Ldc_I4_0);
 				il.Emit(OpCodes.Ret);
@@ -240,7 +250,7 @@ internal sealed class ClassData
 			{
 				il.Emit(OpCodes.Ldarg_0);
 				il.Emit(OpCodes.Callvirt, getter);
-				il.Emit(OpCodes.Ldarg, i + 1);
+				il.Emit(OpCodes.Ldarg, i + 2);
 				il.Emit(OpCodes.Call, dateTimeEqualsMethod);
 				il.Emit(OpCodes.Brtrue, lab);
 				il.Emit(OpCodes.Ldc_I4_0);
@@ -251,7 +261,7 @@ internal sealed class ClassData
 			{
 				il.Emit(OpCodes.Ldarg_0);
 				il.Emit(OpCodes.Callvirt, getter);
-				il.Emit(OpCodes.Ldarg, i + 1);
+				il.Emit(OpCodes.Ldarg, i + 2);
 				il.Emit(OpCodes.Ceq);
 				il.Emit(OpCodes.Brtrue, lab);
 				il.Emit(OpCodes.Ldc_I4_0);
@@ -264,21 +274,21 @@ internal sealed class ClassData
 		il.Emit(OpCodes.Ret);
 
 		Type delegateType;
-		if (hashIndexDesc.Properties.Length == 1)
-		{
-			delegateType = typeof(Func<,,>).MakeGenericType(args[0], args[1], typeof(bool));
-		}
-		else if (hashIndexDesc.Properties.Length == 2)
+		if (indexDesc.Properties.Length == 1)
 		{
 			delegateType = typeof(Func<,,,>).MakeGenericType(args[0], args[1], args[2], typeof(bool));
 		}
-		else if (hashIndexDesc.Properties.Length == 3)
+		else if (indexDesc.Properties.Length == 2)
 		{
 			delegateType = typeof(Func<,,,,>).MakeGenericType(args[0], args[1], args[2], args[3], typeof(bool));
 		}
-		else
+		else if (indexDesc.Properties.Length == 3)
 		{
 			delegateType = typeof(Func<,,,,,>).MakeGenericType(args[0], args[1], args[2], args[3], args[4], typeof(bool));
+		}
+		else
+		{
+			delegateType = typeof(Func<,,,,,,>).MakeGenericType(args[0], args[1], args[2], args[3], args[4], args[5], typeof(bool));
 		}
 
 		return comparer.CreateDelegate(delegateType);

@@ -88,10 +88,10 @@ public enum DatabaseErrorType
 	LogCountLimitExceeeded = 7,
 
 	/// <summary>
-	/// One or more index property types are invalid.
+	/// Index type is invalid or one or more index property types are invalid.
 	/// </summary>
-	[ErrorCode("One or more index property types are invalid.")]
-	IndexPropertyWrongType = 8,
+	[ErrorCode("Index type is invalid or one or more index property types are invalid.")]
+	InvalidIndex = 8,
 
 	/// <summary>
 	/// Assembly with same name already exist.
@@ -137,12 +137,6 @@ public enum DatabaseErrorType
 	AbstractClassWriteAttempt = 15,
 
 	/// <summary>
-	/// Operation attempted while active class scans were present in the database.
-	/// </summary>
-	[ErrorCode("Operation attempted while active class scans were present in the database.")]
-	ClassScansActive = 16,
-
-	/// <summary>
 	/// Invalid property modification detected.
 	/// </summary>
 	[ErrorCode("Invalid property modification detected for property {4} in class {5}.")]
@@ -155,12 +149,11 @@ public enum DatabaseErrorType
 	InsertedReferencePropertyMultiplicity = 18,
 
 	/// <summary>
-	/// Hash index has been added to an existing class, with a newly inserted property.
-	/// This has to be done as two separate transactions. For information about adding
-	/// indexes see <see href="~/guide/data_model.md#hash-indexes">Indexes</see>.
+	/// Index has been added to an existing class, with a newly inserted property.
+	/// This has to be done as two separate transactions.
 	/// </summary>
-	[ErrorCode("Hash index has been added to an existing class {5} with a newly inserted property {4}.")]
-	InsertedPropertyClassAddedToHashIndex = 19,
+	[ErrorCode("Index has been added to an existing class {5} with a newly inserted property {4}.")]
+	InsertedPropertyClassAddedToIndex = 19,
 
 	/// <summary>
 	///  Server called with null argument.
@@ -223,16 +216,16 @@ public enum DatabaseErrorType
 	InvalidClassId = 29,
 
 	/// <summary>
-	/// Maximum number of hash indexes per single class exceeded for class.
+	/// Maximum number of indexes per single class exceeded for class.
 	/// </summary>
-	[ErrorCode("Maximum number of hash indexes per single class exceeded for class {5}.")]
-	MaximumNumberOfHashIndexesPerClassExceeded = 30,
+	[ErrorCode("Maximum number of indexes per single class exceeded for class {5}.")]
+	MaximumNumberOfIndexesPerClassExceeded = 30,
 
 	/// <summary>
-	/// Class contains unknown hash index.
+	/// Class contains unknown index.
 	/// </summary>
-	[ErrorCode("Class {5} contains nonexisting hash index {3}.")]
-	UnknownHashIndex = 31,
+	[ErrorCode("Class {5} contains unknown index {3}.")]
+	UnknownIndex = 31,
 
 	/// <summary>
 	/// Number of properties in a class exceeds maximum allowed count.
@@ -271,10 +264,10 @@ public enum DatabaseErrorType
 	DuplicatePropertyId = 37,
 
 	/// <summary>
-	/// Hash index does not have a unique full name.
+	/// Index does not have a unique full name.
 	/// </summary>
-	[ErrorCode("Invalid model. Hash index {5} with id {0} does not have a unique full name.")]
-	DuplicateHashIndexName = 38,
+	[ErrorCode("Invalid model. Index {5} with id {0} does not have a unique full name.")]
+	DuplicateIndexName = 38,
 
 	/// <summary>
 	/// Class with duplicated Id detected.
@@ -289,40 +282,40 @@ public enum DatabaseErrorType
 	DuplicateClassName = 40,
 
 	/// <summary>
-	/// Hash index does not define any properties.
+	/// Index does not define any properties.
 	/// </summary>
-	[ErrorCode("Hash index {5} does not define any properties.")]
-	HashIndexWithoutProperties = 41,
+	[ErrorCode("Index {5} does not define any properties.")]
+	IndexWithoutProperties = 41,
 
 	/// <summary>
-	/// No classes indexed by the hash index.
+	/// No classes indexed by the index.
 	/// </summary>
-	[ErrorCode("No classes indexed by the hash index {5}.")]
-	HashIndexWithoutClasses = 42,
+	[ErrorCode("No classes indexed by the index {5}.")]
+	IndexWithoutClasses = 42,
 
 	/// <summary>
-	/// Maximum number of properties exceeded in hash index.
+	/// Maximum number of properties exceeded in an index.
 	/// </summary>
-	[ErrorCode("Maximum number of properties exceeded in hash index {5}.")]
-	MaximumNumberOfPropertiesInHashIndexExceeded = 43,
+	[ErrorCode("Maximum number of properties exceeded in an index {5}.")]
+	MaximumNumberOfPropertiesInIndexExceeded = 43,
 
 	/// <summary>
-	/// Class may not be indexed by the hash index because it does not contain referenced property.
-	/// </summary>Hash index {5} indexes invalid property {4}.
-	[ErrorCode("Class {5} may not be indexed by the hash index {3} because it does not contain property {4}.")]
-	HashIndexIndexesUnknownProperty = 44,
+	/// Class may not be indexed by the index because it does not contain referenced property.
+	/// </summary>Index {5} indexes invalid property {4}.
+	[ErrorCode("Class {5} may not be indexed by the index {3} because it does not contain property {4}.")]
+	IndexIndexesUnknownProperty = 44,
 
 	/// <summary>
-	/// Hash index indexes invalid property.
+	/// Index indexes invalid property.
 	/// </summary>
-	[ErrorCode("Hash index {5} indexes invalid property {4}.")]
-	HashIndexIndexesInvalidProperty = 45,
+	[ErrorCode("Index {5} indexes invalid property {4}.")]
+	IndexIndexesInvalidProperty = 45,
 
 	/// <summary>
-	/// Property is indexed multiple times by the hash index.
+	/// Property is indexed multiple times by the same index.
 	/// </summary>
-	[ErrorCode("Property {4} is indexed multiple times by the hash index {5}.")]
-	HashIndexIndexesPropertyMultipleTimes = 46,
+	[ErrorCode("Property {4} is indexed multiple times by the same index {5}.")]
+	IndexIndexesPropertyMultipleTimes = 46,
 
 	/// <summary>
 	/// Reference property references invalid class.
@@ -512,6 +505,12 @@ public enum DatabaseErrorType
 	TransactionClosed = 77,
 
 	/// <summary>
+	/// Database class is not public.
+	/// </summary>
+	[ErrorCode("Database class {5} is not public.")]
+	DatabaseClassNotPublic = 78,
+
+	/// <summary>
 	/// Base error for all DbAPI errors.
 	/// </summary>
 	DbAPIBaseError = 2000,
@@ -638,10 +637,11 @@ public enum DatabaseErrorType
 	UnavailableCommitResult = 5006,
 
 	/// <summary>
-	/// Uniqueness constraint has been violated on the hash index.
+	/// Uniqueness constraint has been violated on the index.
 	/// </summary>
-	[ErrorCode("Uniqueness constraint has been violated on the hash index {5}.")]
+	[ErrorCode("Uniqueness constraint has been violated on the index {5}.")]
 	UniquenessConstraint = 5007,
+
 	/// <summary>
 	/// Id uniqueness constraint has been violated.
 	/// </summary>
@@ -684,16 +684,16 @@ public enum DatabaseErrorType
 	Conflict = 10001,
 
 	/// <summary>
-	/// Failed to read hash index. Limit for maximum lock contention has been exceeded.
+	/// Failed to read index key. Limit for maximum lock contention has been exceeded.
 	/// </summary>
-	[ErrorCode("Failed to read hash index {5}. Limit for maximum lock contention has been exceeded.")]
-	HashIndexLockContentionLimitExceeded = 10002,
+	[ErrorCode("Failed to read index {5} key. Limit for maximum lock contention has been exceeded.")]
+	IndexLockContentionLimitExceeded = 10002,
 
 	/// <summary>
-	/// Conflict occured on a key in a hash index.
+	/// Conflict occured on a key in an index.
 	/// </summary>
-	[ErrorCode("Conflict occured on a key in a hash index.")]
-	HashIndexConflict = 10003,
+	[ErrorCode("Conflict occured on a key in an index.")]
+	IndexConflict = 10003,
 
 	/// <summary>
 	/// Transaction hase been closed internally by the database.
@@ -864,9 +864,9 @@ public sealed class DatabaseErrorDetail
 		return new DatabaseErrorDetail(errorType, message: message);
 	}
 
-	internal static DatabaseErrorDetail CreateUniquenessConstraint(string hashName)
+	internal static DatabaseErrorDetail CreateUniquenessConstraint(string indexName)
 	{
-		return new DatabaseErrorDetail(DatabaseErrorType.UniquenessConstraint, 0, null, null, 0, 0, hashName);
+		return new DatabaseErrorDetail(DatabaseErrorType.UniquenessConstraint, 0, null, null, 0, 0, indexName);
 	}
 
 	internal static DatabaseErrorDetail CreateAbstractClassWriteAttempt(string className)
@@ -935,9 +935,9 @@ public sealed class DatabaseErrorDetail
 		return new DatabaseErrorDetail(DatabaseErrorType.NonUniqueId, id, null, null, 0, 0, className);
 	}
 
-	internal static DatabaseErrorDetail CreateHashIndexLockContentionLimitExceeded(string hashName)
+	internal static DatabaseErrorDetail CreateIndexLockContentionLimitExceeded(string indexName)
 	{
-		return new DatabaseErrorDetail(DatabaseErrorType.HashIndexLockContentionLimitExceeded, 0, null, null, 0, 0, hashName);
+		return new DatabaseErrorDetail(DatabaseErrorType.IndexLockContentionLimitExceeded, 0, null, null, 0, 0, indexName);
 	}
 	internal static DatabaseErrorDetail CreateInvalidPropertyTypeModification(string className, string propertyName)
 	{
@@ -949,9 +949,9 @@ public sealed class DatabaseErrorDetail
 		return new DatabaseErrorDetail(DatabaseErrorType.InsertedReferencePropertyMultiplicity, 0, null, propertyName, 0, 0, className);
 	}
 
-	internal static DatabaseErrorDetail CreateInsertedPropertyClassAddedToHashIndex(string className, string propertyName)
+	internal static DatabaseErrorDetail CreateInsertedPropertyClassAddedToIndex(string className, string propertyName)
 	{
-		return new DatabaseErrorDetail(DatabaseErrorType.InsertedPropertyClassAddedToHashIndex, 0, null, propertyName, 0, 0, className);
+		return new DatabaseErrorDetail(DatabaseErrorType.InsertedPropertyClassAddedToIndex, 0, null, propertyName, 0, 0, className);
 	}
 
 	/// <summary>
@@ -1055,16 +1055,16 @@ internal static class Throw
 
 	[DoesNotReturnAttribute]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public static void MaximumNumberOfHashIndexesPerClassExceeded(string className)
+	public static void MaximumNumberOfIndexesPerClassExceeded(string className)
 	{
-		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.MaximumNumberOfHashIndexesPerClassExceeded, primaryName: className));
+		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.MaximumNumberOfIndexesPerClassExceeded, primaryName: className));
 	}
 
 	[DoesNotReturnAttribute]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public static void UnknownHashIndex(string className, string indexName)
+	public static void UnknownIndex(string className, string indexName)
 	{
-		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.UnknownHashIndex, primaryName: className, secondaryName: indexName));
+		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.UnknownIndex, primaryName: className, secondaryName: indexName));
 	}
 
 	[DoesNotReturnAttribute]
@@ -1118,9 +1118,9 @@ internal static class Throw
 
 	[DoesNotReturnAttribute]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public static void DuplicateHashIndexName(string indexName, short id)
+	public static void DuplicateIndexName(string indexName, short id)
 	{
-		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.DuplicateHashIndexName, primaryName: indexName, id: id));
+		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.DuplicateIndexName, primaryName: indexName, id: id));
 	}
 
 	[DoesNotReturnAttribute]
@@ -1139,47 +1139,47 @@ internal static class Throw
 
 	[DoesNotReturnAttribute]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public static void HashIndexWithoutProperties(string indexName)
+	public static void IndexWithoutProperties(string indexName)
 	{
-		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.HashIndexWithoutProperties, primaryName: indexName));
+		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.IndexWithoutProperties, primaryName: indexName));
 	}
 
 	[DoesNotReturnAttribute]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public static void HashIndexWithoutClasses(string indexName)
+	public static void IndexWithoutClasses(string indexName)
 	{
-		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.HashIndexWithoutClasses, primaryName: indexName));
+		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.IndexWithoutClasses, primaryName: indexName));
 	}
 
 	[DoesNotReturnAttribute]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public static void MaximumNumberOfPropertiesInHashIndexExceeded(string indexName)
+	public static void MaximumNumberOfPropertiesInIndexExceeded(string indexName)
 	{
-		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.MaximumNumberOfPropertiesInHashIndexExceeded,
+		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.MaximumNumberOfPropertiesInIndexExceeded,
 															primaryName: indexName));
 	}
 
 	[DoesNotReturnAttribute]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public static void HashIndexIndexesUnknownProperty(string className, string indexName, string propName)
+	public static void IndexIndexesUnknownProperty(string className, string indexName, string propName)
 	{
-		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.HashIndexIndexesUnknownProperty, primaryName: className,
+		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.IndexIndexesUnknownProperty, primaryName: className,
 															secondaryName: indexName, memberName: propName));
 	}
 
 	[DoesNotReturnAttribute]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public static void HashIndexIndexesInvalidProperty(string indexName, string propName)
+	public static void IndexIndexesInvalidProperty(string indexName, string propName)
 	{
-		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.HashIndexIndexesInvalidProperty, primaryName: indexName,
+		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.IndexIndexesInvalidProperty, primaryName: indexName,
 															memberName: propName));
 	}
 
 	[DoesNotReturnAttribute]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public static void HashIndexIndexesPropertyMultipleTimes(string indexName, string propName)
+	public static void IndexIndexesPropertyMultipleTimes(string indexName, string propName)
 	{
-		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.HashIndexIndexesPropertyMultipleTimes,
+		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.IndexIndexesPropertyMultipleTimes,
 															primaryName: indexName, memberName: propName));
 	}
 
@@ -1313,6 +1313,13 @@ internal static class Throw
 	{
 		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.InvalidInverseReferenceTarget,
 			primaryName: className, memberName: propertyName));
+	}
+
+	[DoesNotReturnAttribute]
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static void DatabaseClassNotPublic(string className)
+	{
+		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.DatabaseClassNotPublic, primaryName: className));
 	}
 
 	[DoesNotReturnAttribute]

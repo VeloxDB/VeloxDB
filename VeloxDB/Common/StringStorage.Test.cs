@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Collections.Generic;
 using VeloxDB.Common;
@@ -33,7 +33,7 @@ internal unsafe sealed partial class StringStorage
 		Dictionary<ulong, int> d = CollectAndValidateRefCounts();
 		foreach (KeyValuePair<ulong, int> kv in d)
 		{
-			if (kv.Key >= 2)
+			if (kv.Key >= ReservedCount)
 			{
 				if (!refCountValues.TryGetValue(kv.Key, out int rc) || rc != kv.Value)
 					throw new InvalidOperationException();

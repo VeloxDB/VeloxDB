@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -12,7 +12,7 @@ internal sealed class NamespaceDescriptor : ModelItemDescriptor
 	string name;
 
 	ReadOnlyArray<ClassDescriptor> classes;
-	ReadOnlyArray<HashIndexDescriptor> hashIndexes;
+	ReadOnlyArray<IndexDescriptor> indexes;
 
 	DataModelDescriptor model;
 
@@ -27,20 +27,26 @@ internal sealed class NamespaceDescriptor : ModelItemDescriptor
 		this.name = objectModelClasses.First().ClassType.Namespace;
 
 		List<ClassDescriptor> cls = new List<ClassDescriptor>(objectModelClasses.Count());
-		List<HashIndexDescriptor> hinds = new List<HashIndexDescriptor>();
+		List<IndexDescriptor> inds = new List<IndexDescriptor>();
 		foreach (ObjectModelClass objectModelClass in objectModelClasses)
 		{
 			cls.Add(new ClassDescriptor(this, objectModelClass));
-			hinds.AddRange(objectModelClass.HashIndexes.Select(x => new HashIndexDescriptor(this, x)));
+			inds.AddRange(objectModelClass.Indexes.Select<ObjectModelIndex, IndexDescriptor>(x =>
+			{
+				if (x is ObjectModelHashIndex)
+					return new HashIndexDescriptor(this, (ObjectModelHashIndex)x);
+				else
+					return new SortedIndexDescriptor(this, (ObjectModelSortedIndex)x);
+			}));
 		}
 
 		cls.Sort((x, y) => x.Name.CompareTo(y.Name));
 
 		classes = new ReadOnlyArray<ClassDescriptor>(cls.ToArray());
-		hashIndexes = new ReadOnlyArray<HashIndexDescriptor>(hinds.ToArray());
+		indexes = new ReadOnlyArray<IndexDescriptor>(inds.ToArray());
 	}
 
-	public NamespaceDescriptor(string name, ClassDescriptor[] clss, HashIndexDescriptor[] hinds)
+	public NamespaceDescriptor(string name, ClassDescriptor[] clss, IndexDescriptor[] inds)
 	{
 		this.name = name;
 
@@ -49,15 +55,15 @@ internal sealed class NamespaceDescriptor : ModelItemDescriptor
 			clss[i].Namespace = this;
 		}
 
-		for (int i = 0; i < hinds.Length; i++)
+		for (int i = 0; i < inds.Length; i++)
 		{
-			hinds[i].Namespace = this;
+			inds[i].Namespace = this;
 		}
 
 		Array.Sort(clss, (x, y) => x.Name.CompareTo(y.Name));
 
 		classes = new ReadOnlyArray<ClassDescriptor>(clss.ToArray());
-		hashIndexes = new ReadOnlyArray<HashIndexDescriptor>(hinds.ToArray());
+		indexes = new ReadOnlyArray<IndexDescriptor>(inds.ToArray());
 	}
 
 	public NamespaceDescriptor(XmlReader reader, DataModelDescriptor model)
@@ -65,7 +71,7 @@ internal sealed class NamespaceDescriptor : ModelItemDescriptor
 		this.model = model;
 
 		List<ClassDescriptor> cls = new List<ClassDescriptor>();
-		List<HashIndexDescriptor> hinds = new List<HashIndexDescriptor>();
+		List<IndexDescriptor> inds = new List<IndexDescriptor>();
 
 		reader.Read();
 		name = reader.GetAttribute("Name");
@@ -82,14 +88,19 @@ internal sealed class NamespaceDescriptor : ModelItemDescriptor
 			
 			if (reader.Name.Equals("HashIndex"))
 			{
-				hinds.Add(new HashIndexDescriptor(reader.ReadSubtree(), this));
+				inds.Add(new HashIndexDescriptor(reader.ReadSubtree(), this));
+			}
+
+			if (reader.Name.Equals("SortedIndex"))
+			{
+				inds.Add(new SortedIndexDescriptor(reader.ReadSubtree(), this));
 			}
 		}
 
 		cls.Sort((x, y) => x.Name.CompareTo(y.Name));
 
 		classes = new ReadOnlyArray<ClassDescriptor>(cls.ToArray());
-		hashIndexes = new ReadOnlyArray<HashIndexDescriptor>(hinds.ToArray());
+		indexes = new ReadOnlyArray<IndexDescriptor>(inds.ToArray());
 
 		reader.Dispose();
 	}
@@ -98,7 +109,7 @@ internal sealed class NamespaceDescriptor : ModelItemDescriptor
 	public DataModelDescriptor Model { get => model; set => model = value; }
 	public string Name => name;
 	public ReadOnlyArray<ClassDescriptor> Classes => classes;
-	public ReadOnlyArray<HashIndexDescriptor> HashIndexes => hashIndexes;
+	public ReadOnlyArray<IndexDescriptor> Indexes => indexes;
 
 	public override string ToString()
 	{
@@ -117,10 +128,10 @@ internal sealed class NamespaceDescriptor : ModelItemDescriptor
 			context.Serialize(classes[i], writer);
 		}
 
-		writer.Write(hashIndexes.Length);
-		for (int i = 0; i < hashIndexes.Length; i++)
+		writer.Write(indexes.Length);
+		for (int i = 0; i < indexes.Length; i++)
 		{
-			context.Serialize(hashIndexes[i], writer);
+			context.Serialize(indexes[i], writer);
 		}
 	}
 
@@ -140,12 +151,12 @@ internal sealed class NamespaceDescriptor : ModelItemDescriptor
 		classes = new ReadOnlyArray<ClassDescriptor>(cls);
 
 		c = reader.ReadInt32();
-		HashIndexDescriptor[] hinds = new HashIndexDescriptor[c];
+		IndexDescriptor[] inds = new IndexDescriptor[c];
 		for (int i = 0; i < c; i++)
 		{
-			hinds[i] = context.Deserialize<HashIndexDescriptor>(reader);
+			inds[i] = context.Deserialize<IndexDescriptor>(reader);
 		}
 
-		hashIndexes = new ReadOnlyArray<HashIndexDescriptor>(hinds);
+		indexes = new ReadOnlyArray<IndexDescriptor>(inds);
 	}
 }
