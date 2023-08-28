@@ -164,7 +164,7 @@ public unsafe sealed partial class ObjectModel
 			return obj.IsDeleted ? null : obj;
 
 		if (!modelData.TryGetClassByTypeId(IdHelper.GetClassId(id), out ClassData cd))
-			throw new ArgumentException("Invalid object type.");
+			return null;
 
 		if (deletedSet.Contains(id))
 			return null;
