@@ -5,134 +5,181 @@ using VeloxDB.Common;
 
 namespace VeloxDB.Storage;
 
+internal enum LockType : ushort
+{
+	Standard = 0x0000,
+	Existance = 0x2000,
+}
+
 [StructLayout(LayoutKind.Explicit, Pack = 1, Size = ReaderInfo.Size)]
 internal unsafe struct ReaderInfo
 {
-	public const int Size = 16;
+	public const int Size = 8;
 
-	// First bit of this field is shared with the ClassTempData.hasNextVersion_nextVersion field so slot must not be greater than 15 bits.
+	// 1-bit - Is in newer version mode
+	// 1-bit - IsDeleted in ClassObject
+	// 9-bit standard lock count
+	// 9-bit existance lock count
+	// 2-bit slot count
+	// 3*14=42 bit slots (13 bit slots + 1 bit lock type)
+
 	[FieldOffset(0)]
-	ushort slot0;
+	public ulong bits;
 
-	[FieldOffset(2)]
-	ushort slot1;
+	public int HighestTwoBits => (int)((bits & 0xc000000000000000) >> 62);
 
-	[FieldOffset(4)]
-	ushort slot2;
-
-	[FieldOffset(6)]
-	public ushort lockCount_slotCount;
-
-	[FieldOffset(8)]
-	public ulong unusedBit_commReadLockVer;
-
-	public ulong CommReadLockVer
+	public int SecondHighestBit
 	{
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		get => unusedBit_commReadLockVer & 0x7fffffffffffffff;
+		get => (int)((bits & 0x4000000000000000) >> 62);
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		set => unusedBit_commReadLockVer = (unusedBit_commReadLockVer & 0x8000000000000000) | value;
+		set => bits = (bits & 0xbfffffffffffffff) | ((ulong)value << 62);
 	}
 
-	public byte UnusedBit
+	public int StandardLockCount
 	{
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		get => (byte)(unusedBit_commReadLockVer >> 63);
+		get => (int)((bits & 0x3fe0000000000000) >> 53);
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		set => unusedBit_commReadLockVer = (unusedBit_commReadLockVer & 0x7fffffffffffffff) | ((ulong)value << 63);
+		set
+		{
+			Checker.AssertTrue(value >= 0 && value < 512);
+			bits = (bits & 0xc01fffffffffffff) | ((ulong)value << 53);
+		}
 	}
 
-	public int LockCount
+	public int ExistanceLockCount
 	{
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		get => lockCount_slotCount >> 2;
+		get => (int)((bits & 0x001ff00000000000) >> 44);
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		set => lockCount_slotCount = (ushort)((lockCount_slotCount & 0x03) | (value << 2));
+		set
+		{
+			Checker.AssertTrue(value >= 0 && value < 512);
+			bits = (bits & 0xffe00fffffffffff) | ((ulong)value << 44);
+		}
 	}
+
+	public int TotalLockCount => StandardLockCount + ExistanceLockCount;
 
 	public int SlotCount
 	{
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		get => lockCount_slotCount & 0x03;
+		get => (int)((bits & 0x00000c0000000000) >> 42);
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		set => lockCount_slotCount = (ushort)((lockCount_slotCount & 0xfffc) | value);
+		set
+		{
+			Checker.AssertTrue(value >= 0 && value <= 3);
+			bits = (bits & 0xfffff3ffffffffff) | ((ulong)value << 42);
+		}
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public static void Init(ReaderInfo* p, ulong commitedVersion)
+	public static ushort GetSlot(ReaderInfo* p, int index)
 	{
-		*((ulong*)p) = 0;
-		p->unusedBit_commReadLockVer = (p->unusedBit_commReadLockVer & 0x8000000000000000) | commitedVersion;
+		int shift = index * 14;
+		return (ushort)((p->bits >> shift) & 0x3fff);
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public static void Init(ReaderInfo* p)
+	public static void SetSlot(ReaderInfo* p, int index, ushort slot)
 	{
-		*((ulong*)p) = 0;
-		p->unusedBit_commReadLockVer &= 0x8000000000000000;
+		Checker.AssertTrue(((uint)slot & 0xc000) == 0);
+		int shift = index * 14;
+		ulong mask = ~((ulong)0x3fff << shift);
+		p->bits = (p->bits & mask) | ((ulong)slot << shift);
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public static void InitWithUnusedBit(ReaderInfo* p)
+	public static void Clear(ReaderInfo* p)
 	{
 		*((ulong*)p) = 0;
-		p->unusedBit_commReadLockVer = 0;
 	}
 
-	public static bool IsObjectInConflict(Transaction tran, long id, ReaderInfo* rd)
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static void ClearWithoutSecondHighestBit(ReaderInfo* p)
 	{
-		TTTrace.Write(tran.Slot, tran.ReadVersion, id, rd->CommReadLockVer, rd->LockCount);
+		*((ulong*)p) &= 0x4000000000000000;
+	}
 
-		if (rd->CommReadLockVer > tran.ReadVersion)
-			return true;
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static ushort UnpackValue(ushort value, out LockType lockType)
+	{
+		lockType = (LockType)(value & (uint)LockType.Existance);
+		return (ushort)(value & ~(uint)LockType.Existance);
+	}
 
-		int lc = rd->LockCount;
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static ushort PackValue(ushort value, LockType lockType)
+	{
+		return (ushort)(value | (uint)lockType);
+	}
+
+	public static bool IsObjectInUpdateConflict(Transaction tran, long id, ReaderInfo* rd)
+	{
+		TTTrace.Write(tran.Slot, tran.ReadVersion, id, rd->SlotCount, rd->StandardLockCount, rd->ExistanceLockCount);
+
+		LockType type;
+		int slc = rd->StandardLockCount;
+		if (slc != 1)
+			return slc > 1;
+
 		int sc = rd->SlotCount;
-
-		ushort* slots = (ushort*)rd;
 		for (int i = 0; i < sc; i++)
 		{
-			if (slots[i] != tran.Slot)
-				return true;
+			ushort slot = UnpackValue(GetSlot(rd, i), out type);
+			TTTrace.Write(tran.Slot, slot, (ushort)type);
+			if (type == LockType.Standard)
+				return slot != tran.Slot;
 		}
 
-		if (lc == sc)
-			return false;
-
-		if (lc > 1)
+		LongDictionary<LockType> set = tran.Context.ObjectReadLocksSet;
+		if (!set.TryGetValue(id, out type))
 			return true;
 
-		LongHashSet set = tran.Context.ObjectReadLocksSet;
-		return !set.Contains(id);
+		TTTrace.Write(tran.Slot, (ushort)type);
+		return type != LockType.Standard;
+	}
+
+	public static bool IsObjectInDeleteConflict(Transaction tran, long id, ReaderInfo* rd)
+	{
+		TTTrace.Write(tran.Slot, tran.ReadVersion, id, rd->SlotCount, rd->StandardLockCount, rd->ExistanceLockCount);
+
+		int lc = rd->TotalLockCount;
+		if (lc != 1)
+			return lc > 1;
+
+		int sc = rd->SlotCount;
+		Checker.AssertTrue(sc <= 1);
+
+		if (sc == 1)
+		{
+			ushort slot = UnpackValue(GetSlot(rd, 0), out LockType type);
+			TTTrace.Write(tran.Slot, slot, (ushort)type);
+			return slot != tran.Slot;
+		}
+
+		LongDictionary<LockType> set = tran.Context.ObjectReadLocksSet;
+		return !set.TryGetValue(id, out _);
 	}
 
 	public static bool IsInvRefInConflict(Transaction tran, long id, int propertyId, ReaderInfo* rd)
 	{
-		TTTrace.Write(tran.Slot, tran.Id, tran.ReadVersion, id, rd->CommReadLockVer, rd->LockCount);
+		TTTrace.Write(tran.Slot, tran.Id, tran.ReadVersion, id, rd->StandardLockCount);
 
-		if (rd->CommReadLockVer > tran.ReadVersion)
-			return true;
+		int lc = rd->StandardLockCount;
+		if (lc != 1)
+			return lc > 1;
 
-		int lc = rd->LockCount;
 		int sc = rd->SlotCount;
-		Checker.AssertTrue(lc >= sc);
+		Checker.AssertTrue(sc <= 1);
 
-		ushort* slots = (ushort*)rd;
-		for (int i = 0; i < sc; i++)
-		{
-			if (slots[i] != tran.Slot)
-				return true;
-		}
-
-		if (lc == sc)
-			return false;
-
-		if (lc > 1)
-			return true;
+		if (sc == 1)
+			return GetSlot(rd, 0) != tran.Slot;
 
 		FastHashSet<InverseReferenceKey> set = tran.Context.InvRefReadLocksSet;
 		return !set.Contains(new InverseReferenceKey(id, propertyId));
@@ -140,59 +187,105 @@ internal unsafe struct ReaderInfo
 
 	public static bool IsKeyInConflict(Transaction tran, ReaderInfo* rd)
 	{
-		TTTrace.Write(tran.Slot, tran.ReadVersion, rd->CommReadLockVer, rd->LockCount);
+		TTTrace.Write(tran.Slot, tran.Id, tran.ReadVersion, rd->StandardLockCount);
 
-		if (rd->CommReadLockVer > tran.ReadVersion)
-			return true;
+		int lc = rd->StandardLockCount;
+		if (lc != 1)
+			return lc > 1;
 
 		int sc = rd->SlotCount;
-		Checker.AssertTrue(rd->LockCount >= sc);
+		Checker.AssertTrue(sc == lc);
 
-		ushort* slots = (ushort*)rd;
-		for (int i = 0; i < sc; i++)
-		{
-			if (slots[i] != tran.Slot)
-				return true;
-		}
-
-		return false;
+		return GetSlot(rd, 0) != tran.Slot;
 	}
 
-	public static void TakeObjectLock(Transaction tran, long id, ushort classIndex, ReaderInfo* rd, ulong handle)
+	public static void TakeObjectStandardLock(Transaction tran, long id, ushort classIndex, ReaderInfo* rd, ulong handle)
 	{
-		TTTrace.Write(tran.Id, tran.Slot, id, classIndex, rd->CommReadLockVer, rd->LockCount);
+		TTTrace.Write(tran.Id, tran.Slot, id, classIndex, rd->StandardLockCount, rd->ExistanceLockCount, rd->SlotCount, rd->SecondHighestBit);
 
-		TransactionContext tc = tran.Context;
 		ushort tranSlot = tran.Slot;
 
-		int lc = rd->LockCount;
+		LockType type;
 		int sc = rd->SlotCount;
-		Checker.AssertTrue(lc >= sc);
 
-		ushort* slots = (ushort*)rd;
 		for (int i = 0; i < sc; i++)
 		{
-			TTTrace.Write(slots[i]);
-			if (slots[i] == tranSlot)
+			ushort slot = UnpackValue(GetSlot(rd, i), out type);
+			if (slot == tranSlot)
+			{
+				if (type != LockType.Standard)
+					SetSlot(rd, i, PackValue(slot, LockType.Standard));
+
 				return;
+			}
 		}
 
-		LongHashSet set = tc.ObjectReadLocksSet;
-		if (lc > sc && set.Contains(id))
+		TransactionContext tc = tran.Context;
+		LongDictionary<LockType> set = tc.ObjectReadLocksSet;
+
+		int slc = rd->StandardLockCount;
+		int elc = rd->ExistanceLockCount;
+
+		if (slc + elc > sc && set.TryGetValue(id, out type))
+		{
+			if (type != LockType.Standard)
+				set[id] = LockType.Standard;
+
 			return;
+		}
 
 		if (sc < 3)
 		{
-			slots[sc++] = tranSlot;
+			SetSlot(rd, sc++, PackValue(tranSlot, LockType.Standard));
 			rd->SlotCount = sc;
 		}
 		else
 		{
-			set.Add(id);
+			set.Add(id, LockType.Standard);
 		}
 
-		rd->LockCount = lc + 1;
-		Checker.AssertTrue(rd->LockCount >= rd->SlotCount);
+		rd->StandardLockCount = slc + 1;
+		Checker.AssertTrue(rd->StandardLockCount + elc >= rd->SlotCount);
+
+		tc.AddReadLock(tranSlot, handle, classIndex, true, true);
+	}
+
+	public static void TakeObjectExistanceLock(Transaction tran, long id, ushort classIndex, ReaderInfo* rd, ulong handle)
+	{
+		TTTrace.Write(tran.Id, tran.Slot, id, classIndex, rd->StandardLockCount, rd->ExistanceLockCount, rd->SlotCount);
+
+		ushort tranSlot = tran.Slot;
+
+		int sc = rd->SlotCount;
+
+		for (int i = 0; i < sc; i++)
+		{
+			ushort slot = UnpackValue(GetSlot(rd, i), out _);
+			if (slot == tranSlot)
+				return;
+		}
+
+		TransactionContext tc = tran.Context;
+		LongDictionary<LockType> set = tc.ObjectReadLocksSet;
+
+		int slc = rd->StandardLockCount;
+		int elc = rd->ExistanceLockCount;
+
+		if (slc + elc > sc && set.TryGetValue(id, out _))
+			return;
+
+		if (sc < 3)
+		{
+			SetSlot(rd, sc++, PackValue(tranSlot, LockType.Existance));
+			rd->SlotCount = sc;
+		}
+		else
+		{
+			set.Add(id, LockType.Existance);
+		}
+
+		rd->ExistanceLockCount = elc + 1;
+		Checker.AssertTrue(rd->ExistanceLockCount + slc >= rd->SlotCount);
 
 		tc.AddReadLock(tranSlot, handle, classIndex, true, true);
 	}
@@ -200,20 +293,19 @@ internal unsafe struct ReaderInfo
 	public static void TakeInvRefLock(Transaction tran, long id, int propertyId, ushort classIndex,
 		bool eligibleForGC, ReaderInfo* rd, ulong handle)
 	{
-		TTTrace.Write(tran.Id, tran.Slot, id, propertyId, classIndex, rd->CommReadLockVer, rd->LockCount);
+		TTTrace.Write(tran.Id, tran.Slot, id, propertyId, classIndex, rd->StandardLockCount);
 
 		TransactionContext tc = tran.Context;
 		ushort tranSlot = tran.Slot;
 
-		int lc = rd->LockCount;
+		int lc = rd->StandardLockCount;
 		int sc = rd->SlotCount;
 		Checker.AssertTrue(lc >= sc);
 
-		ushort* slots = (ushort*)rd;
 		for (int i = 0; i < sc; i++)
 		{
-			TTTrace.Write(slots[i]);
-			if (slots[i] == tranSlot)
+			TTTrace.Write(GetSlot(rd, i));
+			if (GetSlot(rd, i) == tranSlot)
 				return;
 		}
 
@@ -223,7 +315,7 @@ internal unsafe struct ReaderInfo
 
 		if (sc < 3)
 		{
-			slots[sc++] = tranSlot;
+			SetSlot(rd, sc++, tranSlot);
 			rd->SlotCount = sc;
 		}
 		else
@@ -231,37 +323,36 @@ internal unsafe struct ReaderInfo
 			set.Add(new InverseReferenceKey(id, propertyId));
 		}
 
-		rd->LockCount = lc + 1;
-		Checker.AssertTrue(rd->LockCount >= rd->SlotCount);
+		rd->StandardLockCount = lc + 1;
+		Checker.AssertTrue(rd->StandardLockCount >= rd->SlotCount);
 
 		tc.AddReadLock(tranSlot, handle, classIndex, false, eligibleForGC);
 	}
 
 	public static bool TryTakeKeyLock(Transaction tran, ReaderInfo* rd, ulong handle, int index, ulong hash)
 	{
-		TTTrace.Write(tran.Id, tran.Slot, index, hash, rd->CommReadLockVer, rd->LockCount, handle);
+		TTTrace.Write(tran.Id, tran.Slot, index, hash, rd->StandardLockCount, handle);
 
 		TransactionContext tc = tran.Context;
 		ushort tranSlot = tran.Slot;
 
-		int lc = rd->LockCount;
+		int lc = rd->StandardLockCount;
 		int sc = rd->SlotCount;
 		Checker.AssertTrue(lc >= sc);
 
-		ushort* slots = (ushort*)rd;
 		for (int i = 0; i < sc; i++)
 		{
-			if (slots[i] == tranSlot)
+			if (GetSlot(rd, i) == tranSlot)
 				return true;
 		}
 
 		if (sc == 3)
 			return false;
 
-		slots[sc] = tranSlot;
+		SetSlot(rd, sc, tranSlot);
 		rd->SlotCount = sc + 1;
-		rd->LockCount = lc + 1;
-		Checker.AssertTrue(rd->LockCount >= rd->SlotCount);
+		rd->StandardLockCount = lc + 1;
+		Checker.AssertTrue(rd->StandardLockCount >= rd->SlotCount);
 
 		tc.AddKeyReadLock(tranSlot, handle, index, hash);
 
@@ -270,113 +361,92 @@ internal unsafe struct ReaderInfo
 
 	public static void FinalizeObjectLock(Transaction tran, long id, ReaderInfo* rd, bool isCommit, ushort slot)
 	{
-		TTTrace.Write(tran.Id, id, tran.Slot, slot, rd->CommReadLockVer, rd->LockCount, tran.CommitVersion, isCommit);
+		TTTrace.Write(tran.Id, id, tran.Slot, slot, rd->StandardLockCount, rd->ExistanceLockCount, rd->SecondHighestBit, tran.CommitVersion, isCommit);
 
-		if (isCommit)
+		if (!isCommit)
 		{
-			if (tran.CommitVersion > rd->CommReadLockVer)
-				rd->CommReadLockVer = tran.CommitVersion;
-		}
-		else
-		{
-			if (rd->LockCount == 0)
+			if (rd->StandardLockCount == 0)
 				return;
 		}
 
-		Checker.AssertTrue(rd->LockCount != 0);
+		Checker.AssertTrue(rd->StandardLockCount != 0);
 
-		int lc = rd->LockCount;
+		int lc = rd->StandardLockCount;
 		int sc = rd->SlotCount;
 		Checker.AssertTrue(lc >= sc);
 
-		ushort* slots = (ushort*)rd;
-
 		for (int i = 0; i < sc; i++)
 		{
-			if (slots[i] == slot)
+			if (GetSlot(rd, i) == slot)
 			{
-				slots[i] = slots[sc - 1];
+				SetSlot(rd, i, GetSlot(rd, sc - 1));
 				rd->SlotCount = sc - 1;
-				rd->LockCount = lc - 1;
-				Checker.AssertTrue(rd->LockCount >= rd->SlotCount);
+				rd->StandardLockCount = lc - 1;
+				Checker.AssertTrue(rd->StandardLockCount >= rd->SlotCount);
 				return;
 			}
 		}
 
-		rd->LockCount = lc - 1;
-		Checker.AssertTrue(rd->LockCount >= rd->SlotCount);
+		rd->StandardLockCount = lc - 1;
+		Checker.AssertTrue(rd->StandardLockCount >= rd->SlotCount);
 	}
 
 	public static void FinalizeInvRefLock(Transaction tran, long id, int propertyId, ReaderInfo* rd, bool isCommit, ushort slot)
 	{
-		TTTrace.Write(tran.Id, tran.Slot, id, propertyId, slot, rd->CommReadLockVer, rd->LockCount, tran.CommitVersion, isCommit);
+		TTTrace.Write(tran.Id, tran.Slot, id, propertyId, slot, rd->StandardLockCount, tran.CommitVersion, isCommit);
 
-		if (isCommit)
+		if (!isCommit)
 		{
-			if (tran.CommitVersion > rd->CommReadLockVer)
-				rd->CommReadLockVer = tran.CommitVersion;
-		}
-		else
-		{
-			if (rd->LockCount == 0)
+			if (rd->StandardLockCount == 0)
 				return;
 		}
 
-		Checker.AssertTrue(rd->LockCount != 0);
+		Checker.AssertTrue(rd->StandardLockCount != 0);
 
-		int lc = rd->LockCount;
+		int lc = rd->StandardLockCount;
 		int sc = rd->SlotCount;
 		Checker.AssertTrue(lc >= sc);
 
-		ushort* slots = (ushort*)rd;
-
 		for (int i = 0; i < sc; i++)
 		{
-			if (slots[i] == slot)
+			if (GetSlot(rd, i) == slot)
 			{
-				slots[i] = slots[sc - 1];
+				SetSlot(rd, i, GetSlot(rd, sc - 1));
 				rd->SlotCount = sc - 1;
-				rd->LockCount = lc - 1;
-				Checker.AssertTrue(rd->LockCount >= rd->SlotCount);
+				rd->StandardLockCount = lc - 1;
+				Checker.AssertTrue(rd->StandardLockCount >= rd->SlotCount);
 			}
 		}
 
-		rd->LockCount = lc - 1;
-		Checker.AssertTrue(rd->LockCount >= rd->SlotCount);
+		rd->StandardLockCount = lc - 1;
+		Checker.AssertTrue(rd->StandardLockCount >= rd->SlotCount);
 	}
 
-	public static void FinalizeKeyLock(Transaction tran, ReaderInfo* rd, bool isCommit, ushort slot)
+	public static bool FinalizeKeyLock(Transaction tran, ReaderInfo* rd, bool isCommit, ushort slot)
 	{
-		TTTrace.Write(tran.Id, tran.Slot, slot, rd->CommReadLockVer, rd->LockCount, tran.CommitVersion, isCommit);
+		TTTrace.Write(tran.Id, tran.Slot, slot, rd->StandardLockCount, tran.CommitVersion, isCommit);
 
-		if (isCommit)
+		if (!isCommit)
 		{
-			if (tran.CommitVersion > rd->CommReadLockVer)
-				rd->CommReadLockVer = tran.CommitVersion;
-		}
-		else
-		{
-			if (rd->LockCount == 0)
-				return;
+			if (rd->StandardLockCount == 0)
+				return true;
 		}
 
-		Checker.AssertTrue(rd->LockCount != 0);
+		Checker.AssertTrue(rd->StandardLockCount != 0);
 
-		int lc = rd->LockCount;
+		int lc = rd->StandardLockCount;
 		int sc = rd->SlotCount;
 		Checker.AssertTrue(lc >= sc);
 
-		ushort* slots = (ushort*)rd;
-
 		for (int i = 0; i < sc; i++)
 		{
-			if (slots[i] == slot)
+			if (GetSlot(rd, i) == slot)
 			{
-				slots[i] = slots[sc - 1];
+				SetSlot(rd, i, GetSlot(rd, sc - 1));
 				rd->SlotCount = sc - 1;
-				rd->LockCount = lc - 1;
-				Checker.AssertTrue(rd->LockCount >= rd->SlotCount);
-				return;
+				rd->StandardLockCount = lc - 1;
+				Checker.AssertTrue(rd->StandardLockCount >= rd->SlotCount);
+				return rd->StandardLockCount == 0;
 			}
 		}
 
@@ -385,16 +455,14 @@ internal unsafe struct ReaderInfo
 
 	public static void RemapSlot(ReaderInfo* rd, ushort prevSlot, ushort newSlot)
 	{
-		TTTrace.Write(prevSlot, newSlot, rd->CommReadLockVer, rd->LockCount);
+		TTTrace.Write(prevSlot, newSlot, rd->StandardLockCount);
 
 		int sc = rd->SlotCount;
-		ushort* slots = (ushort*)rd;
-
 		for (int i = 0; i < sc; i++)
 		{
-			if (slots[i] == prevSlot)
+			if (GetSlot(rd, i) == prevSlot)
 			{
-				slots[i] = newSlot;
+				SetSlot(rd, i, newSlot);
 				return;
 			}
 		}

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Runtime.CompilerServices;
 using VeloxDB.Common;
 
@@ -34,7 +34,7 @@ internal unsafe class TransactionContextPool : IDisposable
 			pools[i] = new TransactionContext[poolCapacity];
 			for (int j = 0; j < poolCapacity; j++)
 			{
-				pools[i][j] = new TransactionContext(engine, i, (ushort)(++slotCounter));
+				pools[i][j] = new TransactionContext(engine, i, (ushort)(slotCounter++));
 			}
 		}
 

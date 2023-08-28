@@ -1223,21 +1223,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 
 		for (int i = 0; i < database.ModelDesc.ClassCount; i++)
 		{
-			Class @class = database.GetClass(i).MainClass;
-			if (@class != null)
-				@class.Rewind(version);
-
-			InverseReferenceMap invRefMap = database.GetInvRefs(i);
-			if (invRefMap != null)
-				invRefMap.Rewind(version);
-
 			ClassLocker locker = database.GetClassLocker(i);
-			locker?.Rewind(version);
-		}
-
-		foreach (IndexDescriptor indexDesc in database.ModelDesc.GetAllIndexes())
-		{
-			database.GetIndexById(indexDesc.Id, out KeyReadLocker locker);
 			locker?.Rewind(version);
 		}
 
@@ -1470,12 +1456,12 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 			if (keyReadLock->IsRange)
 			{
 				SortedIndex sortedIndex = (SortedIndex)database.GetIndex(keyReadLock->IndexIndex, out _);
-				sortedIndex.CommitRange(keyReadLock->itemHandle, tran);
+				sortedIndex.FinalizeRangeLock(keyReadLock->itemHandle);
 			}
 			else
 			{
 				KeyReadLocker locker = database.GetKeyLocker(keyReadLock->IndexIndex);
-				locker.CommitKey(keyReadLock->itemHandle, keyReadLock->hash, tran, keyReadLock->tranSlot);
+				locker.FinalizeKeyLock(keyReadLock->itemHandle, keyReadLock->hash, tran, keyReadLock->tranSlot);
 			}
 
 			keyReadLock = (KeyReadLock*)l1.MoveToNext(ref phead, (byte*)keyReadLock, KeyReadLock.Size);
@@ -1573,12 +1559,12 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 			if (keyReadLock->IsRange)
 			{
 				SortedIndex sortedIndex = (SortedIndex)database.GetIndex(keyReadLock->IndexIndex, out _);
-				sortedIndex.RollbackRange(keyReadLock->itemHandle, tran);
+				sortedIndex.FinalizeRangeLock(keyReadLock->itemHandle);
 			}
 			else
 			{
 				KeyReadLocker locker = database.GetKeyLocker(keyReadLock->IndexIndex);
-				locker.RollbackKey(keyReadLock->itemHandle, keyReadLock->hash, tran);
+				locker.FinalizeKeyLock(keyReadLock->itemHandle, keyReadLock->hash, tran, tran.Slot);
 			}
 
 			keyReadLock = (KeyReadLock*)l1.MoveToNext(ref phead, (byte*)keyReadLock, (int)KeyReadLock.Size);

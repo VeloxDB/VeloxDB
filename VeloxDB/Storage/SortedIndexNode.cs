@@ -153,7 +153,6 @@ internal unsafe sealed partial class SortedIndex
 		{
 			get
 			{
-				CheckLocked(false);
 				return (notUsed_isLeaf_count & (ushort)NodeFlags.Used) != 0;
 			}
 
@@ -836,7 +835,8 @@ internal unsafe sealed partial class SortedIndex
 		public static bool IsInConflict(Transaction tran, Range* range, KeyComparer comparer,
 			byte* key, long id, ulong handle, KeyComparer keyComparer, StringStorage stringStorage)
 		{
-			if (tran.ReadVersion >= range->version || range->version == tran.Id)
+			Checker.AssertFalse(Database.IsCommited(range->version));
+			if (range->version == tran.Id)
 				return false;
 
 			bool isBefore = keyComparer.IsBefore(key, id, handle, null,

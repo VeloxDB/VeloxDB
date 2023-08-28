@@ -10,10 +10,10 @@ namespace VeloxDB.ObjectInterface;
 [AttributeUsage(AttributeTargets.Property, Inherited = false, AllowMultiple = false)]
 public sealed class DatabasePropertyAttribute : Attribute
 {
-	string defaultValue;
+	object defaultValue;
 
 	/// <param name="defaultValue">Specifies the default value for the property.</param>
-	public DatabasePropertyAttribute(string defaultValue = null)
+	public DatabasePropertyAttribute(object defaultValue = null)
 	{
 		this.defaultValue = defaultValue;
 	}
@@ -21,5 +21,5 @@ public sealed class DatabasePropertyAttribute : Attribute
 	/// <summary>
 	/// Gets the default value for the property.
 	/// </summary>
-	public string DefaultValue => defaultValue;
+	public object DefaultValue => defaultValue;
 }

@@ -51,8 +51,8 @@ internal sealed class StorageEngineSettings
 		collectionGrowthFactor = 2.0f;
 
 		gcWorkerCount = Math.Max(2, ProcessorNumber.CoreCount / 4);
-		gcTranCountThreshold = 128;
-		gcItemCountThreshold = 128 * 1024;
+		gcTranCountThreshold = 64;
+		gcItemCountThreshold = 32 * 1024;
 
 		allowInternalParallelization = true;
 		allowUnexistingDirectoryForLog = true;

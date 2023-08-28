@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -14,7 +14,6 @@ internal unsafe sealed class ClassLocker : IDisposable
 	WriterState* writerStates;
 
 	uint readerCount;
-	ulong commitedReadLockVer;
 
 	MemoryManager memoryManager;
 
@@ -75,11 +74,10 @@ internal unsafe sealed class ClassLocker : IDisposable
 	/// </summary>
 	public bool TryAddWriter(Transaction tran)
 	{
-		TTTrace.Write(tran.Id, commitedReadLockVer, tran.ReadVersion, readerCount);
+		TTTrace.Write(tran.Id, tran.ReadVersion, readerCount);
 
 		TransactionContext tc = tran.Context;
-		if (commitedReadLockVer > tran.ReadVersion || readerCount > 1 ||
-			(readerCount > 0 && !ClassIndexMultiSet.Contains(tc.LockedClasses, classIndex)))
+		if (readerCount > 1 || (readerCount > 0 && !ClassIndexMultiSet.Contains(tc.LockedClasses, classIndex)))
 		{
 			return false;
 		}
@@ -105,8 +103,6 @@ internal unsafe sealed class ClassLocker : IDisposable
 
 		readerCount--;
 		Checker.AssertTrue(readerCount >= 0);
-		if (commitVersion > commitedReadLockVer)
-			commitedReadLockVer = commitVersion;
 	}
 
 	/// <summary>
@@ -143,7 +139,6 @@ internal unsafe sealed class ClassLocker : IDisposable
 	/// </summary>
 	public void Rewind(ulong version)
 	{
-		commitedReadLockVer = 0;
 		int count = ProcessorNumber.CoreCount;
 		for (int i = 0; i < count; i++)
 		{

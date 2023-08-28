@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -59,7 +60,7 @@ internal unsafe sealed class TransactionContext : IDisposable
 
 	NativeList deleted;
 
-	LongHashSet objectReadLocksSet;
+	LongDictionary<LockType> objectReadLocksSet;
 	FastHashSet<InverseReferenceKey> invRefReadLocksSet;
 
 	long* origTempInvRefs;
@@ -101,9 +102,6 @@ internal unsafe sealed class TransactionContext : IDisposable
 
 	public TransactionContext(StorageEngine engine, int physCorePool, ushort slot)
 	{
-		if (slot == 0)
-			throw new CriticalDatabaseException();
-
 		this.engine = engine;
 		this.poolIndex = physCorePool;
 		this.slot = slot;
@@ -127,7 +125,7 @@ internal unsafe sealed class TransactionContext : IDisposable
 
 		deleted = new NativeList(deletedObjectsCapacity, DeletedObject.Size);
 
-		objectReadLocksSet = new LongHashSet(objectReadLockMapCapacity + 1);
+		objectReadLocksSet = new LongDictionary<LockType>(objectReadLockMapCapacity + 1);
 		invRefReadLocksSet = new FastHashSet<InverseReferenceKey>(objectReadLockMapCapacity + 1);
 
 		objectReadLocks = new ModifiedList(engine.MemoryManager);
@@ -165,7 +163,7 @@ internal unsafe sealed class TransactionContext : IDisposable
 	public ModifiedList ObjectReadLocks => objectReadLocks;
 	public NativeList InvRefReadLocks => invRefReadLocks;
 	public ModifiedList KeyReadLocks => keyReadLocks;
-	public LongHashSet ObjectReadLocksSet => objectReadLocksSet;
+	public LongDictionary<LockType> ObjectReadLocksSet => objectReadLocksSet;
 	public FastHashSet<InverseReferenceKey> InvRefReadLocksSet => invRefReadLocksSet;
 	public ClassIndexMultiSet* LockedClasses { get => lockedClasses; set => lockedClasses = value; }
 	public ClassIndexMultiSet* WrittenClasses { get => writtenClasses; set => writtenClasses = value; }
@@ -434,7 +432,7 @@ internal unsafe sealed class TransactionContext : IDisposable
 	{
 		TTTrace.Write(database.TraceId, tranId, itemHandle, indexIndex, hash);
 
-		KeyReadLock* p = (KeyReadLock*)keyReadLocks.AddItem(ModifiedType.HashReadLock, KeyReadLock.Size);
+		KeyReadLock* p = (KeyReadLock*)keyReadLocks.AddItem(ModifiedType.KeyReadLock, KeyReadLock.Size);
 		totalAffectedCount++;
 		p->itemHandle = itemHandle;
 		p->SetIsRangeAndIndex(false, (ushort)indexIndex);
@@ -447,7 +445,7 @@ internal unsafe sealed class TransactionContext : IDisposable
 	{
 		TTTrace.Write(database.TraceId, tranId, indexIndex);
 
-		KeyReadLock* p = (KeyReadLock*)keyReadLocks.AddItem(ModifiedType.HashReadLock, KeyReadLock.Size);
+		KeyReadLock* p = (KeyReadLock*)keyReadLocks.AddItem(ModifiedType.KeyReadLock, KeyReadLock.Size);
 		totalAffectedCount++;
 		p->itemHandle = rangeHandle;
 		p->SetIsRangeAndIndex(true, (ushort)indexIndex);
@@ -599,7 +597,7 @@ internal unsafe sealed class TransactionContext : IDisposable
 			}
 			else
 			{
-				objectReadLocksSet = new LongHashSet(objectReadLockMapCapacity + 1);
+				objectReadLocksSet = new LongDictionary<LockType>(objectReadLockMapCapacity + 1);
 			}
 		}
 

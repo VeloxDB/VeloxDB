@@ -1,8 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using VeloxDB.Common;
 using VeloxDB.Descriptor;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace VeloxDB.Storage;
 
@@ -600,24 +602,10 @@ descend:
 		pendingRefill = false;
 	}
 
-	public void CommitRange(ulong rangeHandle, Transaction tran)
+	public void FinalizeRangeLock(ulong rangeHandle)
 	{
 		Range* range = (Range*)memoryManager.GetBuffer(rangeHandle);
 
-		while (range != null)
-		{
-			Node* node = LockRangeNode(true, range);
-			TTTrace.Write(traceId, indexDesc.Id, (ulong)range, (ulong)node, tran.Id, tran.CommitVersion);
-			Checker.AssertTrue(range->version == tran.Id);
-			range->version = tran.CommitVersion;
-			range = range->nextInScan;
-			node->ExitWriteLock();
-		}
-	}
-
-	public void GarbageCollectRange(ulong rangeHandle)
-	{
-		Range* range = (Range*)memoryManager.GetBuffer(rangeHandle);
 		while (range != null)
 		{
 			Node* node = LockRangeNode(true, range);
@@ -627,18 +615,9 @@ descend:
 
 			Range* next = range->nextInScan;
 			Range.ReleaseStrings(range, localComparer, stringStorage);
+			range->version = 0;
 			gc.AddGarbage(range);
 			range = next;
-		}
-	}
-
-	public void RollbackRange(ulong rangeHandle, Transaction tran)
-	{
-		Range* range = (Range*)memoryManager.GetBuffer(rangeHandle);
-		while (range != null)
-		{
-			Range.Rollback(range);
-			range = range->nextInScan;
 		}
 	}
 
@@ -765,7 +744,7 @@ beggining:
 			Node* child = null;
 			if (index < NodeCapacity)
 			{
-				TTTrace.Write(traceId, (ulong)curr, (ulong)parent);
+				TTTrace.Write(traceId, (ulong)curr, (ulong)parent, index);
 				child = child = Node.GetEntry(curr, index, entrySize)->child;
 			}
 
@@ -785,6 +764,7 @@ beggining:
 			TTTrace.Write(traceId, (ulong)curr, (ulong)parent, currVersion);
 		}
 
+		scan.InitialClearingDone = false;
 		while (objects.Count <= fetchCountLimit - curr->Count)
 		{
 			TTTrace.Write(traceId, (ulong)curr, currVersion, index, curr->Count);
@@ -795,6 +775,7 @@ beggining:
 				curr->DowngradeWriteLockToRead();
 			}
 
+			bool added = false;
 			for (int i = index; i < curr->Count; i++)
 			{
 				ulong* entry = Node.GetLeafEntry(curr, i);
@@ -833,9 +814,15 @@ beggining:
 					}
 
 					if (isVisible)
+					{
 						objects.Add(new ObjectReader((byte*)*entry, @class));
+						added = true;
+					}
 				}
 			}
+
+			if (added)
+				WriteLastScannedToStartKey(scan, objects);
 
 			Node* right = curr->Right;
 			Checker.AssertTrue(right != null);
@@ -846,7 +833,6 @@ beggining:
 			index = 0;
 		}
 
-		WriteFirstKeyAsStart(scan, curr);
 		curr->ExitLock(tran.Type == TransactionType.ReadWrite);
 		return null;
 	}
@@ -1043,7 +1029,7 @@ beggining:
 			range = Range.CreateForwardNext(rangeManager, stringStorage, scan, lastKey, id, *entry, comparer);
 		}
 
-		TTTrace.Write(traceId, indexDesc.Id, (ulong)range, (ulong)curr);
+		TTTrace.Write(traceId, indexDesc.Id, (ulong)range, (ulong)curr, scan.LeafLockCount);
 		localComparer.TTTraceKeys(traceId, scan.Tran.Id, indexDesc.Id, Range.GetStart(range), null, stringStorage, 18);
 		localComparer.TTTraceKeys(traceId, scan.Tran.Id, indexDesc.Id, Range.GetEnd(range, localComparer.KeySize), null, stringStorage, 19);
 
@@ -1152,6 +1138,7 @@ beggining:
 				scan.RemoveLeafLock();
 				Range* next = currRange->nextInScan;
 				Range.ReleaseStrings(currRange, localComparer, stringStorage);
+				currRange->version = 0;
 				gc.AddGarbage(currRange);
 
 				if (currRange == lastRange)
@@ -1205,11 +1192,12 @@ beggining:
 		itemComparer.TTTraceKeys(traceId, scan.Tran.Id, indexDesc.Id, objectKey, null, stringStorage, 20);
 	}
 
-	private void WriteFirstKeyAsStart(RangeScanBase scan, Node* node)
+	private void WriteLastScannedToStartKey(RangeScanBase scan, IList<ObjectReader> objects)
 	{
-		ulong* entry = Node.GetLeafEntry(node, 0);
-		byte* objectKey = GetKeyAndComparer(*entry, true, out KeyComparer itemComparer, out long id, out _);
-		scan.WriteStartKey(objectKey, id, *entry, false, itemComparer, stringStorage);
+		ulong entry = (ulong)objects[objects.Count - 1].RawObject;
+
+		byte* objectKey = GetKeyAndComparer(entry, true, out KeyComparer itemComparer, out long id, out _);
+		scan.WriteStartKey(objectKey, id, entry, true, itemComparer, stringStorage);
 
 		TTTrace.Write(traceId, indexDesc.Id, scan.Tran.Id);
 		itemComparer.TTTraceKeys(traceId, scan.Tran.Id, indexDesc.Id, objectKey, null, stringStorage, 20);
@@ -1219,6 +1207,7 @@ beggining:
 	{
 		if (rootParent->TryEnterWriteLock())
 		{
+			TTTrace.Write((ulong)root);
 			root->NotUsed = true;
 			Node* child = Node.GetEntry(root, 0, entrySize)->child;
 			child->EnterWriteLock();
@@ -1240,6 +1229,7 @@ beggining:
 				return;
 			}
 
+			TTTrace.Write((ulong)root);
 			root->NotUsed = true;
 			Node* child = Node.GetEntry(root, 0, entrySize)->child;
 			child->EnterWriteLock();
@@ -1407,6 +1397,7 @@ beggining:
 		if (right->Right != null)
 			right->Right->Left = node;
 
+		TTTrace.Write((ulong)right);
 		right->NotUsed = true;
 		gc.AddGarbage(right);
 

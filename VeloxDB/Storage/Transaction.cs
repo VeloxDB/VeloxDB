@@ -38,11 +38,8 @@ internal enum WriteTransactionFlags
 
 internal unsafe sealed partial class Transaction : IDisposable
 {
-	// Must not be greater than 2^14 because ReaderInfo struct counts how many transactions read-locked a record
-	// and this number is 2^14. We might introduce in the future a limitation on how many transactions can read lock a single record
-	// and remove this limitation.
-	// In any case, transactions lot must be less than 2^15 since one bit is used inside the ReaderInfo class.
-	public const int MaxConcurrentTrans = 16384;
+	// Limited by the ReaderInfo slot space (13-bits)
+	public const int MaxConcurrentTrans = 8192;
 
 	Database database;
 	Thread managedThread;
@@ -280,14 +277,14 @@ internal unsafe sealed partial class Transaction : IDisposable
 
 		if (Type == TransactionType.ReadWrite)
 		{
-			PrepareForGarbageCollection();
+			PrepareForGarbageCollection(isCommited);
 			database.ProcessGarbage(this);
 		}
 
 		Closed = true;
 	}
 
-	private void PrepareForGarbageCollection()
+	private void PrepareForGarbageCollection(bool isCommited)
 	{
 		TTTrace.Write(database.TraceId, id);
 
@@ -306,8 +303,8 @@ internal unsafe sealed partial class Transaction : IDisposable
 
 		garbage.objects = context.AffectedObjects.TakeContent();
 		garbage.invRefs = context.AffectedInvRefs.TakeContent();
-		garbage.hashReadLocks = context.KeyReadLocks.TakeContent();
 
+		context.KeyReadLocks.FreeMemory();
 		context.ObjectReadLocks.FreeMemory();
 	}
 
@@ -365,6 +362,5 @@ internal unsafe sealed partial class Transaction : IDisposable
 	{
 		public ulong objects;
 		public ulong invRefs;
-		public ulong hashReadLocks;
 	}
 }

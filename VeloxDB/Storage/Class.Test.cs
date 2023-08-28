@@ -83,7 +83,7 @@ internal unsafe sealed partial class Class : ClassBase
 
 				ulong verObjHandle = objHandle;
 				ClassObject* verObj = obj;
-				if (verObj->readerInfo.LockCount > 0 || verObj->tempData.NewerVersion != 0)
+				if (verObj->readerInfo.StandardLockCount > 0 || verObj->readerInfo.ExistanceLockCount > 0 || verObj->NewerVersion != 0)
 					throw new InvalidOperationException();
 
 				while (verObj != null)
@@ -91,8 +91,11 @@ internal unsafe sealed partial class Class : ClassBase
 					if (verObj->nextVersionHandle == ClassObject.AlignedFlag || verObj->id == 0)
 						throw new InvalidOperationException();
 
-					if (Database.IsCommited(verObj->version) && (verObj->version > maxVersion || verObj->readerInfo.LockCount > 0 || verObj->readerInfo.CommReadLockVer > maxVersion))
+					if (Database.IsCommited(verObj->version) && (verObj->version > maxVersion ||
+						verObj->readerInfo.StandardLockCount > 0 || verObj->readerInfo.ExistanceLockCount > 0))
+					{
 						throw new InvalidOperationException();
+					}
 
 					ValidateHashIndexes(verObjHandle, verObj);
 
@@ -252,7 +255,7 @@ internal unsafe sealed partial class Class : ClassBase
 					continue;
 
 				ReaderInfo* rd = &obj->readerInfo;
-				if (rd != null && rd->LockCount != 0)
+				if (rd != null && rd->StandardLockCount + rd->ExistanceLockCount != 0)
 					throw new InvalidOperationException();
 
 				ClassDescriptor cd = base.ClassDesc;

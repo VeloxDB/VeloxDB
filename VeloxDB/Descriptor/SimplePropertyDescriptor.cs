@@ -49,16 +49,35 @@ internal sealed class SimplePropertyDescriptor : PropertyDescriptor
 
 		if (objectModelProperty.DefaultValue != null)
 		{
-			if (objectModelProperty.PropertyInfo.PropertyType.IsEnum)
+			if (objectModelProperty.DefaultValue is string)
 			{
-				if (!Enum.TryParse(objectModelProperty.PropertyInfo.PropertyType, objectModelProperty.DefaultValue, out defaultValue))
+				string sv = (string)objectModelProperty.DefaultValue;
+				if (objectModelProperty.PropertyInfo.PropertyType.IsEnum)
 				{
-					Throw.InvalidDefaultValue(OwnerClass.FullName, Name);
+					if (!Enum.TryParse(objectModelProperty.PropertyInfo.PropertyType, sv, out defaultValue))
+					{
+						Throw.InvalidDefaultValue(OwnerClass.FullName, Name);
+					}
+				}
+				else
+				{
+					ValidateAndParseDefaultValue(sv);
 				}
 			}
 			else
 			{
-				ValidateAndParseDefaultValue(objectModelProperty.DefaultValue);
+				object sv = (string)objectModelProperty.DefaultValue;
+				if (objectModelProperty.PropertyInfo.PropertyType.IsEnum)
+				{
+					if (sv.GetType() != objectModelProperty.PropertyInfo.PropertyType)
+						Throw.InvalidDefaultValue(OwnerClass.FullName, Name);
+
+					defaultValue = sv;
+				}
+				else
+				{
+					ValidateAndParseDefaultValueObject(sv);
+				}
 			}
 		}
 		else
@@ -103,19 +122,31 @@ internal sealed class SimplePropertyDescriptor : PropertyDescriptor
 			Throw.StringPropertyCantHaveDefaultValue(OwnerClass.FullName, Name);
 		}
 
-		if (!ParseDefaultValue(value, null, out this.defaultValue))
+		if (!ParseDefaultValue(value, out this.defaultValue))
 		{
 			Throw.InvalidDefaultValue(OwnerClass.FullName, Name);
 		}
 	}
 
-	private bool ParseDefaultValue(string defaultValueString, Type managedType, out object value)
+	private void ValidateAndParseDefaultValueObject(object value)
+	{
+		if (PropertyType == PropertyType.String)
+		{
+			Throw.StringPropertyCantHaveDefaultValue(OwnerClass.FullName, Name);
+		}
+
+		if (!ParseDefaultValueObject(ref value))
+		{
+			Throw.InvalidDefaultValue(OwnerClass.FullName, Name);
+		}
+
+		this.defaultValue = value;
+	}
+
+	private bool ParseDefaultValue(string defaultValueString, out object value)
 	{
 		try
 		{
-			if (managedType != null && managedType.IsEnum)
-				return Enum.TryParse(managedType, defaultValueString, out value);
-
 			switch (base.PropertyType)
 			{
 				case PropertyType.Byte:
@@ -161,6 +192,56 @@ internal sealed class SimplePropertyDescriptor : PropertyDescriptor
 		catch (FormatException)
 		{
 			value = null;
+			return false;
+		}
+
+		return true;
+	}
+
+	private bool ParseDefaultValueObject(ref object value)
+	{
+		try
+		{
+			switch (base.PropertyType)
+			{
+				case PropertyType.Byte:
+					value = Convert.ToByte(value);
+					break;
+
+				case PropertyType.Short:
+					value = Convert.ToInt16(value);
+					break;
+
+				case PropertyType.Int:
+					value = Convert.ToInt32(value);
+					break;
+
+				case PropertyType.Long:
+					value = Convert.ToInt64(value);
+					break;
+
+				case PropertyType.Float:
+					value = Convert.ToSingle(value);
+					break;
+
+				case PropertyType.Double:
+					value = Convert.ToDouble(value);
+					break;
+
+				case PropertyType.Bool:
+					value = Convert.ToBoolean(value);
+					break;
+
+				case PropertyType.DateTime:
+					value = Convert.ToDateTime(value);
+					break;
+
+				default:
+					throw new InvalidOperationException();  // Should never end up here
+			}
+		}
+		catch
+		{
 			return false;
 		}
 

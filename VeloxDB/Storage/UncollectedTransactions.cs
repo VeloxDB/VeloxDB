@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Runtime.CompilerServices;
 using VeloxDB.Common;
 
@@ -132,9 +132,6 @@ internal unsafe sealed class UncollectedTransactions
 
 		if (affected.invRefs != 0)
 			EnqueueCommandBuffers(affected.invRefs, readVersion);
-
-		if (affected.hashReadLocks != 0)
-			EnqueueCommandBuffers(affected.hashReadLocks, readVersion);
 
 		if (affected.objects != 0)
 			EnqueueCommandBuffers(affected.objects, readVersion);

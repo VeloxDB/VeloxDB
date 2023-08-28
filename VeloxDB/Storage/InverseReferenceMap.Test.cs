@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using VeloxDB.Common;
@@ -54,8 +54,7 @@ internal unsafe sealed partial class InverseReferenceMap
 					if (bitem2->IsDeleted)
 						throw new InvalidOperationException();
 
-					if (checkEmpty && (bitem2->nextDelta | (uint)bitem2->Count | bitem2->readerInfo.lockCount_slotCount) == 0 &&
-						bitem2->readerInfo.CommReadLockVer <= readVersion)
+					if (checkEmpty && (bitem2->nextDelta == 0 && (uint)bitem2->Count == 0 && bitem2->readerInfo.TotalLockCount == 0))
 					{
 						throw new InvalidOperationException();
 					}
@@ -116,7 +115,7 @@ internal unsafe sealed partial class InverseReferenceMap
 				InvRefBaseItem* vitem = bitem;
 				while (vitem != null)
 				{
-					if (vitem->readerInfo.LockCount > 0)
+					if (vitem->readerInfo.TotalLockCount > 0)
 						throw new InvalidOperationException();
 
 					if (Database.IsUncommited(vitem->Version))

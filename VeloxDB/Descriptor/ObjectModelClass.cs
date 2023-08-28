@@ -54,9 +54,9 @@ internal class ObjectModelProperty
 	PropertyInfo propertyInfo;
 	PropertyType propertyType;
 	int id;
-	string defaultValue;
+	object defaultValue;
 
-	public ObjectModelProperty(PropertyInfo propertyInfo, int id, string defaultValue)
+	public ObjectModelProperty(PropertyInfo propertyInfo, int id, object defaultValue)
 	{
 		this.propertyInfo = propertyInfo;
 		this.id = id;
@@ -69,7 +69,7 @@ internal class ObjectModelProperty
 
 	public PropertyInfo PropertyInfo => propertyInfo;
 	public int Id => id;
-	public string DefaultValue => defaultValue;
+	public object DefaultValue => defaultValue;
 	public virtual PropertyType PropertyType => propertyType;
 }
 

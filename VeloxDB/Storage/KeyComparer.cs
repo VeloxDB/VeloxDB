@@ -61,7 +61,7 @@ internal unsafe sealed class KeyComparer
 		comparers[(int)PropertyType.Float] = CompareFloat;
 		comparers[(int)PropertyType.Double] = CompareDouble;
 		comparers[(int)PropertyType.Bool] = CompareByte;
-		comparers[(int)PropertyType.DateTime] = CompareLong;
+		comparers[(int)PropertyType.DateTime] = CompareDateTime;
 		comparers[(int)PropertyType.String] = CompareString;
 
 		stringifiers = new Stringifier[(int)PropertyType.String + 1];
@@ -432,6 +432,14 @@ internal unsafe sealed class KeyComparer
 		sb.Append(@"""");
 		sb.Append(s);
 		sb.Append(@"""");
+	}
+
+	private static long CompareDateTime(byte* p1, KeyComparer comparer1, byte* p2,
+		KeyComparer comparer2, string[] requestStrings, StringStorage stringStorage)
+	{
+		DateTime v1 = DateTime.FromBinary(((long*)p1)[0]);
+		DateTime v2 = DateTime.FromBinary(((long*)p2)[0]);
+		return v1.CompareTo(v2);
 	}
 
 	private static ulong Advance1(ulong h, byte* p, KeyComparer comparer, string[] requestStrings, StringStorage stringStorage)

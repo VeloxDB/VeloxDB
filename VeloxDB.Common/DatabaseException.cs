@@ -738,6 +738,12 @@ public enum DatabaseErrorType
 	/// </summary>
 	[ErrorCode("This operation is not applicable.")]
 	NotApplicable = 10010,
+
+	/// <summary>
+	/// Failed to read object. Limit for maximum lock contention has been exceeded.
+	/// </summary>
+	[ErrorCode("Failed to read object of type {5}. Limit for maximum lock contention has been exceeded.")]
+	ObjectLockContentionLimitExceeded = 10011,
 }
 
 /// <summary>
@@ -939,6 +945,12 @@ public sealed class DatabaseErrorDetail
 	{
 		return new DatabaseErrorDetail(DatabaseErrorType.IndexLockContentionLimitExceeded, 0, null, null, 0, 0, indexName);
 	}
+
+	internal static DatabaseErrorDetail CreateObjectLockContentionLimitExceeded(string className)
+	{
+		return new DatabaseErrorDetail(DatabaseErrorType.ObjectLockContentionLimitExceeded, 0, null, null, 0, 0, className);
+	}
+
 	internal static DatabaseErrorDetail CreateInvalidPropertyTypeModification(string className, string propertyName)
 	{
 		return new DatabaseErrorDetail(DatabaseErrorType.InvalidPropertyTypeModification, 0, null, propertyName, 0, 0, className);

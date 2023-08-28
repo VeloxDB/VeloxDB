@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -11,7 +11,7 @@ internal enum ModifiedType : int
 	Class = 0,
 	InverseReference = 1,
 	ObjectReadLock = 3,
-	HashReadLock = 4,
+	KeyReadLock = 4,
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 1, Size = 1)]

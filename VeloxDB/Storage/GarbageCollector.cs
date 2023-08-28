@@ -227,34 +227,10 @@ internal unsafe sealed class GarbageCollector
 				GarbageCollectClasses(cp);
 			else if (cp->modificationType == ModifiedType.InverseReference)
 				GarbageCollectInvRefs(cp);
-			else if (cp->modificationType == ModifiedType.HashReadLock)
-				GarbageCollectHashReadLocks(cp);
 
 			ModifiedBufferHeader* nextCP = cp->nextQueueGroup;
 			database.Engine.MemoryManager.Free(cp->handle);
 			cp = nextCP;
-		}
-	}
-
-	private unsafe void GarbageCollectHashReadLocks(ModifiedBufferHeader* cp)
-	{
-		TTTrace.Write(database.TraceId);
-
-		KeyReadLock* rl = (KeyReadLock*)((byte*)cp + ModifiedBufferHeader.Size);
-		for (int i = 0; i < cp->count; i++)
-		{
-			if (rl->IsRange)
-			{
-				SortedIndex sortedIndex = (SortedIndex)database.GetIndex(rl->IndexIndex, out _);
-				sortedIndex.GarbageCollectRange(rl->itemHandle);
-			}
-			else
-			{
-				KeyReadLocker locker = database.GetKeyLocker(rl->IndexIndex);
-				locker.GarbageCollectKey(rl->itemHandle, rl->hash, cp->readVersion);
-			}
-
-			rl++;
 		}
 	}
 

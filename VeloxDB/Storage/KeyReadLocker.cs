@@ -112,18 +112,19 @@ internal unsafe sealed partial class KeyReadLocker : IDisposable
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public void CommitKey(ulong itemHandle, ulong hash, Transaction tran, ushort slot)
+	public void FinalizeKeyLock(ulong itemHandle, ulong hash, Transaction tran, ushort slot)
 	{
 		int lockHandle = resizeCounter.EnterReadLock();
 
 		KeyLockerItem* item = (KeyLockerItem*)memoryManager.GetBuffer(itemHandle);
 
-		TTTrace.Write(engine.TraceId, tran.Id, item->readerInfo.CommReadLockVer, item->readerInfo.LockCount);
+		TTTrace.Write(engine.TraceId, tran.Id, item->readerInfo.StandardLockCount, item->readerInfo.ExistanceLockCount);
 
 		Bucket* bucket = buckets + CalculateBucket(hash);
-		Bucket.LockAccess(bucket);
+		ulong* pbnHandle = Bucket.LockAccess(bucket);
 
-		ReaderInfo.FinalizeKeyLock(tran, &item->readerInfo, true, slot);
+		if (ReaderInfo.FinalizeKeyLock(tran, &item->readerInfo, true, slot))
+			FindKeyAndRemove(bucket, pbnHandle, itemHandle);
 
 		Bucket.UnlockAccess(bucket);
 		resizeCounter.ExitReadLock(lockHandle);
@@ -136,7 +137,7 @@ internal unsafe sealed partial class KeyReadLocker : IDisposable
 
 		KeyLockerItem* item = (KeyLockerItem*)memoryManager.GetBuffer(itemHandle);
 
-		TTTrace.Write(engine.TraceId, prevSlot, newSlot, item->readerInfo.CommReadLockVer, item->readerInfo.LockCount);
+		TTTrace.Write(engine.TraceId, prevSlot, newSlot, item->readerInfo.StandardLockCount, item->readerInfo.ExistanceLockCount);
 
 		Bucket* bucket = buckets + CalculateBucket(hash);
 		Bucket.LockAccess(bucket);
@@ -144,58 +145,6 @@ internal unsafe sealed partial class KeyReadLocker : IDisposable
 		ReaderInfo.RemapSlot(&item->readerInfo, prevSlot, newSlot);
 
 		Bucket.UnlockAccess(bucket);
-		resizeCounter.ExitReadLock(lockHandle);
-	}
-
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public void GarbageCollectKey(ulong itemHandle, ulong hash, ulong oldestReadVersion)
-	{
-		int lockHandle = resizeCounter.EnterReadLock();
-
-		Bucket* bucket = buckets + CalculateBucket(hash);
-		ulong* pbnHandle = Bucket.LockAccess(bucket);
-		FindKeyAndGarbageCollect(bucket, pbnHandle, itemHandle, oldestReadVersion);
-		Bucket.UnlockAccess(bucket);
-		resizeCounter.ExitReadLock(lockHandle);
-	}
-
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public void RollbackKey(ulong itemHandle, ulong hash, Transaction tran)
-	{
-		Checker.AssertTrue(tran.NextMerged == null);
-
-		int lockHandle = resizeCounter.EnterReadLock();
-
-		KeyLockerItem* item = (KeyLockerItem*)memoryManager.GetBuffer(itemHandle);
-
-		Bucket* bucket = buckets + CalculateBucket(hash);
-		Bucket.LockAccess(bucket);
-
-		TTTrace.Write(engine.TraceId, tran.Id, item->readerInfo.CommReadLockVer, item->readerInfo.LockCount);
-
-		ReaderInfo.FinalizeKeyLock(tran, &item->readerInfo, false, tran.Slot);
-
-		Bucket.UnlockAccess(bucket);
-		resizeCounter.ExitReadLock(lockHandle);
-	}
-
-	public void Rewind(ulong version)
-	{
-		TTTrace.Write(engine.TraceId, indexDesc.Id, version);
-
-		int lockHandle = resizeCounter.EnterReadLock();
-
-		for (long i = 0; i < capacity; i++)
-		{
-			ulong handle = buckets[i].Handle;
-			while (handle != 0)
-			{
-				KeyLockerItem* item = (KeyLockerItem*)memoryManager.GetBuffer(handle);
-				item->readerInfo.CommReadLockVer = 0;
-				handle = item->nextCollision;
-			}
-		}
-
 		resizeCounter.ExitReadLock(lockHandle);
 	}
 
@@ -226,7 +175,7 @@ internal unsafe sealed partial class KeyReadLocker : IDisposable
 			itemHandle = memoryManager.Allocate(KeyLockerItem.Size + (int)indexDesc.KeySize);
 			item = (KeyLockerItem*)memoryManager.GetBuffer(itemHandle);
 			item->nextCollision = bucket->Handle;
-			ReaderInfo.Init(&item->readerInfo);
+			ReaderInfo.Clear(&item->readerInfo);
 			comparer.CopyWithStringStorage(key, requestStrings, KeyLockerItem.GetKey(item), stringStorage);
 			bucket->Handle = itemHandle;
 			resize = resizeCounter.Add(1);
@@ -242,15 +191,15 @@ internal unsafe sealed partial class KeyReadLocker : IDisposable
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	private void FindKeyAndGarbageCollect(Bucket* bucket, ulong* pbnHandle, ulong itemHandle, ulong oldestReadVersion)
+	private void FindKeyAndRemove(Bucket* bucket, ulong* pbnHandle, ulong itemHandle)
 	{
 		ulong* pHandle = pbnHandle;
 		while (*pHandle != 0)
 		{
 			KeyLockerItem* item = (KeyLockerItem*)memoryManager.GetBuffer(*pHandle);
-			TTTrace.Write(engine.TraceId, pHandle[0], item->readerInfo.CommReadLockVer, item->readerInfo.LockCount);
+			TTTrace.Write(engine.TraceId, pHandle[0], item->readerInfo.StandardLockCount, item->readerInfo.ExistanceLockCount);
 
-			if (*pHandle == itemHandle && item->readerInfo.LockCount == 0 && item->readerInfo.CommReadLockVer <= oldestReadVersion)
+			if (*pHandle == itemHandle && item->readerInfo.TotalLockCount == 0)
 			{
 				ulong handle = *pHandle;
 				*pHandle = item->nextCollision;
@@ -403,7 +352,7 @@ internal unsafe sealed partial class KeyReadLocker : IDisposable
 [StructLayout(LayoutKind.Sequential, Pack = 1, Size = 1)]
 internal unsafe struct KeyLockerItem
 {
-	public const int Size = 24;
+	public const int Size = 16;
 
 	public ReaderInfo readerInfo;
 	public ulong nextCollision;
