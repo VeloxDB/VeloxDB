@@ -21,7 +21,7 @@ internal sealed class DataModelUpdate
 	ReadOnlyHashMap<short, ClassUpdate> updatedClasses;
 	ReadOnlyArray<InverseMapInsert> insertedInvRefMaps;
 	ReadOnlyArray<InverseMapDelete> deletedInvRefMaps;
-	ReadOnlyArray<InverseMapUpdate> updatedInvRefMaps;
+	ReadOnlyArray<InverseRefMapUpdate> updatedInvRefMaps;
 	ReadOnlyHashMap<short, IndexInsert> insertedIndexes;
 	ReadOnlyHashMap<short, IndexDelete> deletedIndexes;
 	ReadOnlyHashMap<short, IndexUpdate> updatedIndexes;
@@ -55,7 +55,7 @@ internal sealed class DataModelUpdate
 	public ReadOnlyHashMap<short, ClassUpdate> UpdatedClasses => updatedClasses;
 	public ReadOnlyArray<InverseMapInsert> InsertedInvRefMaps => insertedInvRefMaps;
 	public ReadOnlyArray<InverseMapDelete> DeletedInvRefMaps => deletedInvRefMaps;
-	public ReadOnlyArray<InverseMapUpdate> UpdatedInvRefMaps => updatedInvRefMaps;
+	public ReadOnlyArray<InverseRefMapUpdate> UpdatedInvRefMaps => updatedInvRefMaps;
 	public ReadOnlyHashMap<short, IndexInsert> InsertedIndexes => insertedIndexes;
 	public ReadOnlyHashMap<short, IndexDelete> DeletedIndexes => deletedIndexes;
 	public ReadOnlyHashMap<short, IndexUpdate> UpdatedIndexes => updatedIndexes;
@@ -125,7 +125,7 @@ internal sealed class DataModelUpdate
 		updatedIndexes = new ReadOnlyHashMap<short, IndexUpdate>(state.UpdatedIndexes);
 		deletedIndexes = new ReadOnlyHashMap<short, IndexDelete>(state.DeletedIndexes);
 		insertedInvRefMaps = ReadOnlyArray<InverseMapInsert>.FromNullable(state.InsertedInvRefMaps);
-		updatedInvRefMaps = ReadOnlyArray<InverseMapUpdate>.FromNullable(state.UpdatedInvRefMaps);
+		updatedInvRefMaps = ReadOnlyArray<InverseRefMapUpdate>.FromNullable(state.UpdatedInvRefMaps);
 		deletedInvRefMaps = ReadOnlyArray<InverseMapDelete>.FromNullable(state.DeletedInvRefMaps);
 	}
 
@@ -356,7 +356,7 @@ internal sealed class DataModelUpdate
 	}
 
 	private void DetectInverseRefMapUpdate(ClassDescriptor prevClassDesc, ClassDescriptor classDesc,
-		List<InverseMapUpdate> updatedMaps, Dictionary<int, ReferencePropertyDescriptor> temp)
+		List<InverseRefMapUpdate> updatedMaps, Dictionary<int, ReferencePropertyDescriptor> temp)
 	{
 		if (classDesc.IsAbstract)
 			return;
@@ -413,9 +413,12 @@ internal sealed class DataModelUpdate
 			ClassDescriptor prevDefiningClassDesc = prevRefPropDesc.OwnerClass;
 			ClassDescriptor definingClassDesc = classDesc.Model.GetClass(prevDefiningClassDesc.Id);
 
-			if (definingClassDesc == null || definingClassDesc.GetProperty(prevRefPropDesc.Id) == null)
+			ReferencePropertyDescriptor rpropDesc = (ReferencePropertyDescriptor)definingClassDesc?.GetProperty(prevRefPropDesc.Id);
+			if (definingClassDesc == null || rpropDesc == null)
 			{
 				// Reference property has been removed completely
+				Checker.AssertFalse(classDesc.InverseReferences.Any(x => x.Id == prevRefPropDesc.Id));
+
 				if (deletedReferences == null)
 					deletedReferences = new List<PropertyDescriptor>();
 
@@ -442,7 +445,7 @@ internal sealed class DataModelUpdate
 		if (untrackedReferences != null || trackedReferences != null ||
 			deletedReferences != null || partiallyDeletedReferences != null || insertedReferences != null)
 		{
-			updatedMaps.Add(new InverseMapUpdate(classDesc, untrackedReferences,
+			updatedMaps.Add(new InverseRefMapUpdate(classDesc, untrackedReferences,
 				trackedReferences, deletedReferences, insertedReferences, partiallyDeletedReferences));
 		}
 	}
@@ -515,7 +518,7 @@ internal sealed class DataModelUpdate
 		List<PropertyUpdate> updatedProps = null;
 		bool isAbstratModified = prevClassDesc.IsAbstract != classDesc.IsAbstract;
 		bool isLogModified = !string.Equals(prevClassDesc.LogName, classDesc.LogName, StringComparison.OrdinalIgnoreCase);
-		bool indexedPropertiesModified = IndexedPropertiesModified(prevClassDesc.PropertyIndexIndexes, classDesc.PropertyIndexIndexes);
+		bool indexedPropertiesModified = IndexedPropertiesModified(prevClassDesc, classDesc);
 
 		bool isPrevInherited = prevClassDesc.DescendentClassIds.Length > 0 || prevClassDesc.IsAbstract;
 		bool isInherited = classDesc.DescendentClassIds.Length > 0 || classDesc.IsAbstract;
@@ -596,8 +599,11 @@ internal sealed class DataModelUpdate
 		return prevClassDesc.BaseClass.Id != classDesc.BaseClass.Id;
 	}
 
-	private bool IndexedPropertiesModified(ReadOnlyArray<ReadOnlyArray<int>> p1, ReadOnlyArray<ReadOnlyArray<int>> p2)
+	private bool IndexedPropertiesModified(ClassDescriptor prevClassDesc, ClassDescriptor classDesc)
 	{
+		ReadOnlyArray<ReadOnlyArray<int>> p1 = prevClassDesc.PropertyIndexIndexes;
+		ReadOnlyArray<ReadOnlyArray<int>> p2 = classDesc.PropertyIndexIndexes;
+
 		if ((p1 == null) != (p2 == null))
 			return true;
 
@@ -620,9 +626,23 @@ internal sealed class DataModelUpdate
 			if (a1.Length != a2.Length)
 				return true;
 
+			if (a1.Length == 0)
+				return false;
+
+			if (a1.Length == 1)
+				return prevClassDesc.Indexes[a1[0]].Id != classDesc.Indexes[a2[0]].Id;
+
+			HashSet<short> h1 = new HashSet<short>(a1.Length);
 			for (int j = 0; j < a1.Length; j++)
 			{
-				if (a1[j] != a2[j])
+				short indexId = prevClassDesc.Indexes[a1[j]].Id;
+				Checker.AssertFalse(h1.Contains(indexId));
+				h1.Add(indexId);
+			}
+
+			for (int j = 0; j < a1.Length; j++)
+			{
+				if (!h1.Contains(classDesc.Indexes[a2[j]].Id))
 					return true;
 			}
 		}
@@ -705,7 +725,7 @@ internal sealed class DataModelUpdate
 		public Dictionary<short, ClassUpdate> UpdatedClasses { get; private set; } = new Dictionary<short, ClassUpdate>(4);
 		public List<InverseMapInsert> InsertedInvRefMaps { get; private set; } = new List<InverseMapInsert>();
 		public List<InverseMapDelete> DeletedInvRefMaps { get; private set; } = new List<InverseMapDelete>();
-		public List<InverseMapUpdate> UpdatedInvRefMaps { get; private set; } = new List<InverseMapUpdate>();
+		public List<InverseRefMapUpdate> UpdatedInvRefMaps { get; private set; } = new List<InverseRefMapUpdate>();
 		public Dictionary<short, IndexInsert> InsertedIndexes { get; private set; } = new Dictionary<short, IndexInsert>(2);
 		public Dictionary<short, IndexDelete> DeletedIndexes { get; private set; } = new Dictionary<short, IndexDelete>(2);
 		public Dictionary<short, IndexUpdate> UpdatedIndexes { get; private set; } = new Dictionary<short, IndexUpdate>(2);

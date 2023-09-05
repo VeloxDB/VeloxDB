@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -24,9 +24,9 @@ internal sealed class DeleteInverseReferencesJob : ModelUpdateJob
 	public static IEnumerable<DeleteInverseReferencesJob> Create(Database database, ModelUpdateContext updateContext)
 	{
 		HashSet<int> propIds = new HashSet<int>(2);
-		foreach (InverseMapUpdate imu in updateContext.ModelUpdate.UpdatedInvRefMaps)
+		foreach (InverseRefMapUpdate imu in updateContext.ModelUpdate.UpdatedInvRefMaps)
 		{
-			propIds.UnionWith(imu.TrackedReferences.Select(x =>
+			propIds.UnionWith(imu.UntrackedReferences.Select(x =>
 			{
 				TTTrace.Write(database.TraceId, database.Id, imu.ClassDesc.Id, x.Id);
 				return x.Id;
@@ -47,7 +47,7 @@ internal sealed class DeleteInverseReferencesJob : ModelUpdateJob
 
 		if (propIds.Count > 0)
 		{
-			foreach (InverseMapUpdate imu in updateContext.ModelUpdate.UpdatedInvRefMaps)
+			foreach (InverseRefMapUpdate imu in updateContext.ModelUpdate.UpdatedInvRefMaps)
 			{
 				database.Engine.Trace.Debug("Deleting inverse reference properties from map {0}.", imu.ClassDesc.FullName);
 				TTTrace.Write(database.TraceId, database.Id, imu.ClassDesc.FullName);

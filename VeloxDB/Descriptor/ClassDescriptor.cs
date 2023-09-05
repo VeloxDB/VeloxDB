@@ -344,10 +344,10 @@ internal class ClassDescriptor : TypeDescriptor
 		List<int>[] l = new List<int>[Properties.Length];
 		for (int i = 0; i < indexes.Length; i++)
 		{
-			IndexDescriptor hdesc = indexes[i];
-			for (int j = 0; j < hdesc.Properties.Length; j++)
+			IndexDescriptor indexDesc = indexes[i];
+			for (int j = 0; j < indexDesc.Properties.Length; j++)
 			{
-				PropertyDescriptor propDesc = hdesc.Properties[j];
+				PropertyDescriptor propDesc = indexDesc.Properties[j];
 				int propIndex = GetPropertyIndex(propDesc.Id);
 				Checker.AssertFalse(propIndex == -1);
 				if (l[propIndex] == null)

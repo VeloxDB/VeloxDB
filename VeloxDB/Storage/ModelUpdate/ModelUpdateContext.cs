@@ -101,9 +101,6 @@ internal sealed class ModelUpdateContext : IDisposable
 
 		TTTrace.Write();
 
-		workers.EnqueueWork(UntrackInverseReferencesJob.Create(database, this).Select(x => new CommonWorkerParam() { ReferenceParam = x }));
-		workers.Drain();
-
 		BuildInverseReferencesJob.Execute(database, this);
 		ResetWorkersAction();
 

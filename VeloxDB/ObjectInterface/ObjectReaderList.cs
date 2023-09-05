@@ -69,6 +69,7 @@ internal class ObjectReaderList : IList<ObjectReader>
 				break;
 
 			context.PutObjectReaders(chunks[i]);
+			chunks[i] = null;
 		}
 
 		count = 0;

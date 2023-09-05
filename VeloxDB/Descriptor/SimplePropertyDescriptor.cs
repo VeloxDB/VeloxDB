@@ -66,7 +66,7 @@ internal sealed class SimplePropertyDescriptor : PropertyDescriptor
 			}
 			else
 			{
-				object sv = (string)objectModelProperty.DefaultValue;
+				object sv = objectModelProperty.DefaultValue;
 				if (objectModelProperty.PropertyInfo.PropertyType.IsEnum)
 				{
 					if (sv.GetType() != objectModelProperty.PropertyInfo.PropertyType)
@@ -253,9 +253,9 @@ internal sealed class SimplePropertyDescriptor : PropertyDescriptor
 		for (int i = 0; i < supportedDateTimeFormats.Length; i++)
 		{
 			if (DateTime.TryParseExact(val, supportedDateTimeFormats[i],
-				CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out DateTime dt))
+				null, DateTimeStyles.AdjustToUniversal, out DateTime dt))
 			{
-				return dt.ToUniversalTime();
+				return new DateTime(dt.Ticks, DateTimeKind.Utc);
 			}
 		}
 

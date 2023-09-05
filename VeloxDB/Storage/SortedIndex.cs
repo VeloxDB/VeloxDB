@@ -447,6 +447,7 @@ descend:
 
 	public DatabaseErrorDetail ScanNext(RangeScanBase scan, IList<ObjectReader> objects, int fetchCountLimit)
 	{
+		Checker.AssertTrue(objects.Count == 0);
 		DatabaseErrorDetail error = null;
 
 		if (scan.Finished)
@@ -767,7 +768,7 @@ beggining:
 		scan.InitialClearingDone = false;
 		while (objects.Count <= fetchCountLimit - curr->Count)
 		{
-			TTTrace.Write(traceId, (ulong)curr, currVersion, index, curr->Count);
+			TTTrace.Write(traceId, (ulong)curr, currVersion, index, curr->Count, objects.Count);
 
 			if (tran.Type == TransactionType.ReadWrite)
 			{
@@ -897,7 +898,7 @@ beggining:
 		scan.InitialClearingDone = false;
 		while (objects.Count <= fetchCountLimit - curr->Count)
 		{
-			TTTrace.Write(traceId, (ulong)curr, currVersion, index);
+			TTTrace.Write(traceId, (ulong)curr, currVersion, index, curr->Count, objects.Count);
 
 			Node* left = curr->Left;
 			if (tran.Type == TransactionType.ReadWrite)
@@ -942,6 +943,7 @@ beggining:
 				{
 					ClassObject* obj = Class.GetObjectByHandle(*entry);
 					bool isVisible = IsVisible(scan.Tran, obj, out bool isConflicting);
+					TTTrace.Write(traceId, indexDesc.Id, id, obj->version, isVisible, isConflicting, i);
 					if (scan.Tran.Type == TransactionType.ReadWrite && isConflicting)
 					{
 						scan.Finished = true;
@@ -1174,6 +1176,7 @@ beggining:
 					return error;
 			}
 
+			TTTrace.Write(traceId, indexDesc.Id, scan.Tran.Id, objectHandle);
 			ObjectReader r = new ObjectReader(ClassObject.ToDataPointer(Class.GetObjectByHandle(objectHandle)), objects[i].Class);
 			objects[i] = r;
 		}
@@ -1188,7 +1191,7 @@ beggining:
 		byte* objectKey = GetKeyAndComparer(entry, true, out KeyComparer itemComparer, out long id, out _);
 		scan.WriteEndKey(objectKey, id, entry, true, itemComparer, stringStorage);
 
-		TTTrace.Write(traceId, indexDesc.Id, scan.Tran.Id);
+		TTTrace.Write(traceId, indexDesc.Id, scan.Tran.Id, id, objects.Count);
 		itemComparer.TTTraceKeys(traceId, scan.Tran.Id, indexDesc.Id, objectKey, null, stringStorage, 20);
 	}
 

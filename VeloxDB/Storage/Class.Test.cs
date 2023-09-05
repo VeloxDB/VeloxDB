@@ -250,7 +250,7 @@ internal unsafe sealed partial class Class : ClassBase
 				handle = obj->nextCollisionHandle;
 
 				DatabaseErrorDetail err;
-				ObjectReader reader = GetObject(tran, obj->id, out err);
+				ObjectReader reader = GetObject(tran, obj->id, false, out err);
 				if (reader.IsEmpty())
 					continue;
 
@@ -263,6 +263,10 @@ internal unsafe sealed partial class Class : ClassBase
 				{
 					PropertyDescriptor pd = cd.Properties[j];
 					if (pd.Kind != PropertyKind.Reference)
+						continue;
+
+					ReferencePropertyDescriptor rpd = (ReferencePropertyDescriptor)pd;
+					if (!rpd.TrackInverseReferences)
 						continue;
 
 					PropertyType propType = pd.PropertyType;
@@ -374,34 +378,37 @@ internal unsafe sealed partial class Class : ClassBase
 		{
 			rs[i].Object = (ClassObject*)l[i];
 
-			object[] vals = new object[ClassDesc.Properties.Length - 2];
-			for (int j = 2; j < ClassDesc.Properties.Length; j++)
+			if (!((ClassObject*)l[i])->IsDeleted)
 			{
-				PropertyDescriptor pd = ClassDesc.Properties[j];
-				byte* addr = (byte*)l[i] + ClassObject.DataOffset + ClassDesc.PropertyByteOffsets[j];
-				if (pd.PropertyType == PropertyType.Byte)
-					vals[j - 2] = ((byte*)addr)[0];
-				else if (pd.PropertyType == PropertyType.Short)
-					vals[j - 2] = ((short*)addr)[0];
-				else if (pd.PropertyType == PropertyType.Int)
-					vals[j - 2] = ((int*)addr)[0];
-				else if (pd.PropertyType == PropertyType.Long)
-					vals[j - 2] = ((long*)addr)[0];
-				else if (pd.PropertyType == PropertyType.Float)
-					vals[j - 2] = ((float*)addr)[0];
-				else if (pd.PropertyType == PropertyType.Double)
-					vals[j - 2] = ((double*)addr)[0];
-				else if (pd.PropertyType == PropertyType.Bool)
-					vals[j - 2] = ((bool*)addr)[0];
-				else if (pd.PropertyType == PropertyType.DateTime)
-					vals[j - 2] = DateTime.FromBinary(((long*)addr)[0]);
-				else if (pd.PropertyType == PropertyType.String)
-					vals[j - 2] = stringStorage.GetString(((ulong*)addr)[0]);
-				else
-					vals[j - 2] = ((ulong*)addr)[0];
-			}
+				object[] vals = new object[ClassDesc.Properties.Length - 2];
+				for (int j = 2; j < ClassDesc.Properties.Length; j++)
+				{
+					PropertyDescriptor pd = ClassDesc.Properties[j];
+					byte* addr = (byte*)l[i] + ClassObject.DataOffset + ClassDesc.PropertyByteOffsets[j];
+					if (pd.PropertyType == PropertyType.Byte)
+						vals[j - 2] = ((byte*)addr)[0];
+					else if (pd.PropertyType == PropertyType.Short)
+						vals[j - 2] = ((short*)addr)[0];
+					else if (pd.PropertyType == PropertyType.Int)
+						vals[j - 2] = ((int*)addr)[0];
+					else if (pd.PropertyType == PropertyType.Long)
+						vals[j - 2] = ((long*)addr)[0];
+					else if (pd.PropertyType == PropertyType.Float)
+						vals[j - 2] = ((float*)addr)[0];
+					else if (pd.PropertyType == PropertyType.Double)
+						vals[j - 2] = ((double*)addr)[0];
+					else if (pd.PropertyType == PropertyType.Bool)
+						vals[j - 2] = ((bool*)addr)[0];
+					else if (pd.PropertyType == PropertyType.DateTime)
+						vals[j - 2] = DateTime.FromBinary(((long*)addr)[0]);
+					else if (pd.PropertyType == PropertyType.String)
+						vals[j - 2] = stringStorage.GetString(((ulong*)addr)[0]);
+					else
+						vals[j - 2] = ((ulong*)addr)[0];
+				}
 
-			rs[i].Values = vals;
+				rs[i].Values = vals;
+			}
 		}
 
 		return rs;

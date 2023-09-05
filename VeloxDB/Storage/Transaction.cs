@@ -271,6 +271,11 @@ internal unsafe sealed partial class Transaction : IDisposable
 		context.GlobalTerm = globalTerm;
 	}
 
+	public void ProcessSetToNullAffected<T>(Action<T, long> action, T arg)
+	{
+		context.ProcessSetToNullAffected(action, arg);
+	}
+
 	public void Complete(bool isCommited)
 	{
 		TTTrace.Write(database.TraceId, id, commitVersion);

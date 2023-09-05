@@ -141,7 +141,7 @@ internal unsafe sealed partial class InverseReferenceMap
 	public void GetReferences(Transaction tran, long id, ReadOnlyArray<ReferencePropertyDescriptor> properties,
 		ref long* refs, ref int refsSize, int* refCounts)
 	{
-		TTTrace.Write(database.TraceId, classDesc.Id, tran.Id, id);
+		TTTrace.Write(database.TraceId, classDesc.Id, tran.Id, id, properties.Length);
 
 		InverseRefsStorage r = new InverseRefsStorage(refsSize, refs);
 		GetReferencesForProps(tran, id, properties, ref r, refCounts);
@@ -149,8 +149,7 @@ internal unsafe sealed partial class InverseReferenceMap
 		refsSize = r.size;
 	}
 
-	public DatabaseErrorDetail GetReferences(Transaction tran, long id, int propertyId,
-		ref long[] refs, out int refCount, out bool refsTracked)
+	public DatabaseErrorDetail GetReferences(Transaction tran, long id, int propertyId, ref long[] refs, out int refCount)
 	{
 		TTTrace.Write(database.TraceId, classDesc.Id, tran.Id, (byte)tran.Type, id, propertyId);
 
@@ -166,7 +165,7 @@ internal unsafe sealed partial class InverseReferenceMap
 		DatabaseErrorDetail error;
 		if (tran.Type == TransactionType.Read)
 		{
-			error = GetReferencesInternal(tran, bucket, pBucketHandle, id, propertyId, false, ref r, out refCount, out refsTracked, out _);
+			error = GetReferencesInternal(tran, bucket, pBucketHandle, id, propertyId, false, ref r, out refCount, out _);
 			refs = r.refs;
 			Bucket.UnlockAccess(bucket);
 			resizeCounter.ExitReadLock(lockHandle);
@@ -174,7 +173,7 @@ internal unsafe sealed partial class InverseReferenceMap
 		else
 		{
 			ulong prevItem = bucket->Handle;
-			error = GetReferencesInternal(tran, bucket, pBucketHandle, id, propertyId, true, ref r, out refCount, out refsTracked, out _);
+			error = GetReferencesInternal(tran, bucket, pBucketHandle, id, propertyId, true, ref r, out refCount, out _);
 			ulong newItem = bucket->Handle;
 			refs = r.refs;
 			Bucket.UnlockAccess(bucket);
@@ -192,10 +191,10 @@ internal unsafe sealed partial class InverseReferenceMap
 		return error;
 	}
 
-	public void ApplyAlignmentModification(TransactionContext tc, ulong commitVersion, long id, int propertyId, bool isTracked, int insertCount,
+	public void ApplyAlignmentModification(TransactionContext tc, ulong commitVersion, long id, int propertyId, int insertCount,
 		int deleteCount, InverseReferenceOperation* inserts, InverseReferenceOperation* deletes)
 	{
-		TTTrace.Write(database.TraceId, classDesc.Id, id, propertyId, isTracked, insertCount, deleteCount);
+		TTTrace.Write(database.TraceId, classDesc.Id, id, propertyId, insertCount, deleteCount);
 
 		int lockHandle = resizeCounter.EnterReadLock();
 
@@ -205,7 +204,7 @@ internal unsafe sealed partial class InverseReferenceMap
 		TTTrace.Write(bucket->Handle);
 
 		ulong prevItem = bucket->Handle;
-		ApplyAlignmentModificationInternal(tc, bucket, commitVersion, pBucketHandle, id, propertyId, isTracked, insertCount, deleteCount, inserts, deletes);
+		ApplyAlignmentModificationInternal(tc, bucket, commitVersion, pBucketHandle, id, propertyId, insertCount, deleteCount, inserts, deletes);
 		GarbageCollectInternal(bucket, pBucketHandle, id, propertyId, Database.MaxCommitedVersion);
 		ulong newItem = bucket->Handle;
 
@@ -251,10 +250,9 @@ internal unsafe sealed partial class InverseReferenceMap
 		}
 	}
 
-	public void Insert(ulong version, long id, int propertyId, bool isTracked,
-		bool isDeleted, int insertCount, InverseReferenceOperation* inserts)
+	public void Insert(ulong version, long id, int propertyId, bool isDeleted, int insertCount, InverseReferenceOperation* inserts)
 	{
-		TTTrace.Write(database.TraceId, classDesc.Id, version, id, propertyId, isTracked, isDeleted, insertCount);
+		TTTrace.Write(database.TraceId, classDesc.Id, version, id, propertyId, isDeleted, insertCount);
 
 		int lockHandle = resizeCounter.EnterReadLock();
 
@@ -265,7 +263,7 @@ internal unsafe sealed partial class InverseReferenceMap
 
 		ulong prevItem = bucket->Handle;
 
-		InvRefBaseItem* item = CreateBaseFromModification(id, propertyId, isTracked, insertCount, inserts, out ulong itemHandle);
+		InvRefBaseItem* item = CreateBaseFromModification(id, propertyId, insertCount, inserts, out ulong itemHandle);
 		ReaderInfo.Clear(&item->readerInfo);
 		TTTrace.Write(database.TraceId, id, propertyId, itemHandle, version);
 		item->Version = version;
@@ -349,14 +347,15 @@ internal unsafe sealed partial class InverseReferenceMap
 
 			ulong bitemHandle = bucket->Handle;
 			ulong prevHandle = bucket->Handle;
+
 			while (bitemHandle != 0)
 			{
 				InvRefBaseItem* bitem = (InvRefBaseItem*)memoryManager.GetBuffer(bitemHandle);
-				TTTrace.Write(database.TraceId, classDesc.Id, bitem->id, bitem->propertyId, bitem->Version, bitem->IsDeleted, bitem->Count);
+				TTTrace.Write(database.TraceId, classDesc.Id, bitem->id, bitem->propertyId, bitem->Version, bitem->IsDeleted, bitem->count, propIds.Contains(bitem->propertyId));
 
 				if (propIds.Contains(bitem->propertyId))
 				{
-					Checker.AssertTrue(bitem->NextBase == 0); // Since we are in model updated an GC has been drained
+					Checker.AssertTrue(bitem->NextBase == 0); // Since we are in model updated and GC has been drained
 
 					ulong ditemHandle = bitem->nextDelta;
 					InvRefDeltaItem* ditem = (InvRefDeltaItem*)memoryManager.GetBuffer(ditemHandle);
@@ -388,10 +387,16 @@ internal unsafe sealed partial class InverseReferenceMap
 		resizeCounter.Sub(count);
 	}
 
-	public DatabaseErrorDetail Modify(Transaction tran, bool ignoreDeleted, long id, int propertyId, bool isTracked,
+	public DatabaseErrorDetail Modify(Transaction tran, bool ignoreDeleted, long id, int propertyId,
 		int insertCount, int deleteCount, InverseReferenceOperation* inserts, InverseReferenceOperation* deletes)
 	{
-		TTTrace.Write(database.TraceId, classDesc.Id, tran.Id, ignoreDeleted, id, propertyId, isTracked, insertCount, deleteCount);
+		TTTrace.Write(database.TraceId, classDesc.Id, tran.Id, ignoreDeleted, id, propertyId, insertCount, deleteCount);
+
+#if TEST_BUILD
+		ReferencePropertyDescriptor rpropDesc = classDesc.FindInverseReference(propertyId);
+		if (!rpropDesc.TrackInverseReferences)
+			throw new InvalidOperationException();
+#endif
 
 		int lockHandle = resizeCounter.EnterReadLock();
 
@@ -402,7 +407,7 @@ internal unsafe sealed partial class InverseReferenceMap
 
 		bool b = bucket->Handle == 0;
 		DatabaseErrorDetail res = ModifyInternal(tran, ignoreDeleted, bucket, pBucketHandle, id, propertyId,
-			isTracked, insertCount, deleteCount, inserts, deletes, out ulong itemHandle);
+			insertCount, deleteCount, inserts, deletes, out ulong itemHandle);
 		b &= bucket->Handle != 0;
 
 		Bucket.UnlockAccess(bucket);
@@ -483,7 +488,7 @@ internal unsafe sealed partial class InverseReferenceMap
 		Bucket.LockAccess(bucket);
 
 		TTTrace.Write(database.TraceId, classDesc.Id, tran.Id, bucket->Handle, bitem->IsDeleted, bitem->id,
-			bitem->IsTracked, bitem->NextBase, bitem->nextDelta, bitem->Count, bitem->Version);
+			bitem->NextBase, bitem->nextDelta, bitem->count, bitem->Version);
 
 		ReaderInfo.FinalizeInvRefLock(tran, bitem->id, bitem->propertyId, &bitem->readerInfo, false, tran.Slot);
 
@@ -493,142 +498,60 @@ internal unsafe sealed partial class InverseReferenceMap
 		return bitem->id;
 	}
 
-	public void CompactUntrackedProperties(Utils.Range range, HashSet<int> propIds)
-	{
-		TTTrace.Write(database.Id, range.Offset, range.Count, capacity, classDesc.Id, propIds.Count);
-
-		int count = 0;
-		for (long i = range.Offset; i < range.Offset + range.Count; i++)
-		{
-			Bucket* bucket = buckets + i;
-			ulong* handlePointer = Bucket.LockAccess(bucket);
-
-			ulong bitemHandle = bucket->Handle;
-			ulong prevHandle = bitemHandle;
-
-			while (bitemHandle != 0)
-			{
-				InvRefBaseItem* bitem = (InvRefBaseItem*)memoryManager.GetBuffer(bitemHandle);
-				TTTrace.Write(database.TraceId, classDesc.Id, bitem->id, bitem->propertyId, bitem->Version, bitem->IsDeleted, bitem->Count, bitem->nextDelta);
-
-				if (propIds.Contains(bitem->propertyId))
-				{
-					Checker.AssertTrue(bitem->NextBase == 0); // Since we are in model updated and GC has been drained
-
-					int refCount = bitem->Count;
-					ulong ditemHandle = bitem->nextDelta;
-					ulong version = bitem->Version;
-					InvRefDeltaItem* ditem = (InvRefDeltaItem*)memoryManager.GetBuffer(ditemHandle);
-					while (ditem != null)
-					{
-						refCount += (ditem->insertCount - ditem->deleteCount);
-						ulong nextDelta = ditem->nextDelta;
-						version = ditem->version;
-						memoryManager.Free(ditemHandle);
-						ditemHandle = nextDelta;
-						ditem = (InvRefDeltaItem*)memoryManager.GetBuffer(ditemHandle);
-					}
-
-
-					ulong nextCollision = bitem->nextCollision;
-					long id = bitem->id;
-					int propertyId = bitem->propertyId;
-					memoryManager.Free(bitemHandle);
-
-					if (refCount == 0)
-					{
-						*handlePointer = bitemHandle = nextCollision;
-					}
-					else
-					{
-						InvRefBaseItem* newItem = CreateBase(id, propertyId, false, refCount, null, out ulong newItemHandle);
-						newItem->Version = version;
-						newItem->NextBase = 0;
-						newItem->nextDelta = 0;
-						newItem->IsTracked = false;
-						newItem->NextCollision = nextCollision;
-						*handlePointer = newItemHandle;
-
-						handlePointer = &(newItem->nextCollision);
-						bitemHandle = nextCollision;
-					}
-				}
-				else
-				{
-					handlePointer = &(bitem->nextCollision);
-					bitemHandle = bitem->nextCollision;
-				}
-			}
-
-			if (prevHandle != 0 && bucket->Handle == 0)
-				count++;
-
-			Bucket.UnlockAccess(bucket);
-		}
-
-		resizeCounter.Sub(count);
-	}
-
 	public Utils.Range[] GetScanRanges()
 	{
 		return Utils.SplitRange(capacity, database.Engine.Settings.ResizeSplitSize, ProcessorNumber.CoreCount);
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	private unsafe InvRefDeltaItem* CreateDelta(bool isTracked, int insertCount, int deleteCount, InverseReferenceOperation* inserts, InverseReferenceOperation* deletes, out ulong itemHandle)
+	private unsafe InvRefDeltaItem* CreateDelta(int insertCount, int deleteCount,
+		InverseReferenceOperation* inserts, InverseReferenceOperation* deletes, out ulong itemHandle)
 	{
-		TTTrace.Write(database.TraceId, classDesc.Id, isTracked, insertCount, deleteCount);
+		TTTrace.Write(database.TraceId, classDesc.Id, insertCount, deleteCount);
 
-		int size = InvRefDeltaItem.RefsOffset + (isTracked ? (insertCount + deleteCount) * 8 : 0);
+		int size = InvRefDeltaItem.RefsOffset + (insertCount + deleteCount) * sizeof(long);
 		itemHandle = memoryManager.Allocate((int)size);
 		InvRefDeltaItem* item = (InvRefDeltaItem*)memoryManager.GetBuffer(itemHandle);
 
 		item->insertCount = insertCount;
 		item->deleteCount = deleteCount;
 
-		if (isTracked)
+		long* refs = (long*)((byte*)item + InvRefDeltaItem.RefsOffset);
+		for (int i = 0; i < insertCount; i++)
 		{
-			long* refs = (long*)((byte*)item + InvRefDeltaItem.RefsOffset);
-			for (int i = 0; i < insertCount; i++)
-			{
-				TTTrace.Write(inserts[i].inverseReference);
-				refs[i] = inserts[i].inverseReference;
-			}
+			TTTrace.Write(inserts[i].inverseReference);
+			refs[i] = inserts[i].inverseReference;
+		}
 
-			refs += insertCount;
-			for (int i = 0; i < deleteCount; i++)
-			{
-				TTTrace.Write(deletes[i].inverseReference);
-				refs[i] = deletes[i].inverseReference;
-			}
+		refs += insertCount;
+		for (int i = 0; i < deleteCount; i++)
+		{
+			TTTrace.Write(deletes[i].inverseReference);
+			refs[i] = deletes[i].inverseReference;
 		}
 
 		return item;
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	private unsafe InvRefBaseItem* CreateBase(long id, int propertyId, bool isTracked, int insertCount, long* inserts, out ulong itemHandle)
+	private unsafe InvRefBaseItem* CreateBase(long id, int propertyId, int insertCount, long* inserts, out ulong itemHandle)
 	{
-		TTTrace.Write(database.TraceId, classDesc.Id, id, propertyId, isTracked, insertCount);
+		TTTrace.Write(database.TraceId, classDesc.Id, id, propertyId, insertCount);
 
-		int size = InvRefBaseItem.RefsOffset + (isTracked ? insertCount * sizeof(long) : 0);
+		int size = InvRefBaseItem.RefsOffset + insertCount * sizeof(long);
 		itemHandle = memoryManager.Allocate(size);
 		InvRefBaseItem* item = (InvRefBaseItem*)memoryManager.GetBuffer(itemHandle);
 
 		item->id = id;
 		item->propertyId = propertyId;
 		ReaderInfo.Clear(&item->readerInfo);
-		item->Count = insertCount;
-		item->IsTracked = isTracked;
+		item->count = insertCount;
 		item->IsDeleted = false;
 
-		if (isTracked)
+		long* refs = (long*)((byte*)item + InvRefBaseItem.RefsOffset);
+		for (int i = 0; i < insertCount; i++)
 		{
-			long* refs = (long*)((byte*)item + InvRefBaseItem.RefsOffset);
-			for (int i = 0; i < insertCount; i++)
-			{
-				refs[i] = inserts[i];
-			}
+			refs[i] = inserts[i];
 		}
 
 		return item;
@@ -646,7 +569,7 @@ internal unsafe sealed partial class InverseReferenceMap
 			return null;
 		}
 
-		InvRefBaseItem* item = CreateBase(id, propertyId, invRef.TrackInverseReferences, 0, null, out itemHandle);
+		InvRefBaseItem* item = CreateBase(id, propertyId, 0, null, out itemHandle);
 		ReaderInfo.Clear(&item->readerInfo);
 		TTTrace.Write(database.TraceId, id, propertyId, itemHandle);
 
@@ -655,7 +578,6 @@ internal unsafe sealed partial class InverseReferenceMap
 		item->NextBase = 0;
 		item->nextDelta = 0;
 		item->IsDeleted = false;
-		item->IsTracked = invRef.TrackInverseReferences;
 
 		if (existingItem == null)
 		{
@@ -680,31 +602,27 @@ internal unsafe sealed partial class InverseReferenceMap
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	private unsafe InvRefBaseItem* CreateBaseFromModification(long id, int propertyId, bool isTracked,
+	private unsafe InvRefBaseItem* CreateBaseFromModification(long id, int propertyId,
 		int insertCount, InverseReferenceOperation* inserts, out ulong itemHandle)
 	{
-		TTTrace.Write(database.TraceId, classDesc.Id, id, propertyId, isTracked, insertCount);
+		TTTrace.Write(database.TraceId, classDesc.Id, id, propertyId, insertCount);
 
-		int size = InvRefBaseItem.RefsOffset + (isTracked ? insertCount * 8 : 0);
+		int size = InvRefBaseItem.RefsOffset + insertCount * sizeof(long);
 		itemHandle = memoryManager.Allocate((int)size);
 		InvRefBaseItem* item = (InvRefBaseItem*)memoryManager.GetBuffer(itemHandle);
 
 		item->id = id;
 		item->propertyId = propertyId;
 		ReaderInfo.Clear(&item->readerInfo);
-		item->Count = insertCount;
-		item->IsTracked = isTracked;
+		item->count = insertCount;
 		item->IsDeleted = false;
 
-		if (isTracked)
+		long* refs = (long*)((byte*)item + InvRefBaseItem.RefsOffset);
+		for (int i = 0; i < insertCount; i++)
 		{
-			long* refs = (long*)((byte*)item + InvRefBaseItem.RefsOffset);
-			for (int i = 0; i < insertCount; i++)
-			{
-				TTTrace.Write(inserts->inverseReference);
-				refs[i] = inserts->inverseReference;
-				inserts++;
-			}
+			TTTrace.Write(inserts->inverseReference);
+			refs[i] = inserts->inverseReference;
+			inserts++;
 		}
 
 		return item;
@@ -761,8 +679,7 @@ internal unsafe sealed partial class InverseReferenceMap
 		InvRefBaseItem* bitem = latestItem;
 		while (bitem != null)
 		{
-			TTTrace.Write(database.TraceId, bitem->id, bitem->IsDeleted, bitem->IsTracked,
-				bitem->propertyId, bitem->Count, bitem->Version, bitem->nextDelta);
+			TTTrace.Write(database.TraceId, bitem->id, bitem->IsDeleted, bitem->propertyId, bitem->count, bitem->Version, bitem->nextDelta);
 
 			ulong ditemHandle = bitem->nextDelta;
 			while (ditemHandle != 0)
@@ -782,8 +699,12 @@ internal unsafe sealed partial class InverseReferenceMap
 			bitem = (InvRefBaseItem*)memoryManager.GetBuffer(bitem->NextBase);
 		}
 
-		ReaderInfo.TakeInvRefLock(tran, latestItem->id, latestItem->propertyId, classIndex,
-			latestItem->IsEmpty(), &latestItem->readerInfo, itemHandle);
+		if (!ReaderInfo.TryTakeInvRefLock(tran, latestItem->id, latestItem->propertyId, classIndex,
+			latestItem->IsEmpty(), &latestItem->readerInfo, itemHandle))
+		{
+			error = DatabaseErrorDetail.CreateObjectLockContentionLimitExceeded(classDesc.FullName);
+			return null;
+		}
 
 		error = null;
 		return latestItem;
@@ -824,12 +745,9 @@ internal unsafe sealed partial class InverseReferenceMap
 		CountDeltaOperations(item, tran, out int deleteCount, out int insertCount);
 
 		TTTrace.Write(database.TraceId, classDesc.Id, tran.Id, deleteCount, insertCount, item->id,
-			item->IsDeleted, item->IsTracked, item->nextDelta, item->Count, item->Version);
+			item->IsDeleted, item->nextDelta, item->count, item->Version);
 
-		int refCount = item->Count + insertCount - deleteCount;
-		if (!item->IsTracked)
-			return refCount;
-
+		int refCount = item->count + insertCount - deleteCount;
 		if (refs.EmptyCount < refCount)
 			refs.Resize(Math.Max((int)refCount, refs.size * 2));
 
@@ -855,11 +773,11 @@ internal unsafe sealed partial class InverseReferenceMap
 	}
 
 	private unsafe DatabaseErrorDetail ModifyInternal(Transaction tran, bool ignoreDeleted, Bucket* bucket, ulong* pBucketHandle,
-		long id, int propertyId, bool isTracked, int insertCount, int deleteCount,
+		long id, int propertyId, int insertCount, int deleteCount,
 		InverseReferenceOperation* inserts, InverseReferenceOperation* deletes, out ulong itemHandle)
 	{
 		TTTrace.Write(database.TraceId, classDesc.Id, tran.Id, bucket->Handle,
-			ignoreDeleted, id, propertyId, isTracked, insertCount, deleteCount);
+			ignoreDeleted, id, propertyId, insertCount, deleteCount);
 
 		InvRefBaseItem* item = FindWriteItemByIdAndProp(tran, ignoreDeleted, pBucketHandle,
 			id, propertyId, out DatabaseErrorDetail error, out bool isDeleted);
@@ -873,7 +791,6 @@ internal unsafe sealed partial class InverseReferenceMap
 		if (item == null)
 		{
 			item = CreateEmptyBase(bucket, item, id, propertyId, out itemHandle);
-			Checker.AssertTrue(isTracked == item->IsTracked);
 
 			// Possible if single changeset first set an invalid reference, than followed that
 			// with a valid one. Reference validator only check final state.
@@ -881,7 +798,7 @@ internal unsafe sealed partial class InverseReferenceMap
 				return null;
 		}
 
-		TTTrace.Write(item->IsDeleted, item->id, item->Version, item->Count);
+		TTTrace.Write(item->IsDeleted, item->id, item->Version, item->count);
 
 		if (item->IsDeleted)
 		{
@@ -915,10 +832,9 @@ internal unsafe sealed partial class InverseReferenceMap
 		{
 			TTTrace.Write();
 			writeItem = CreateEmptyBase(bucket, item, id, propertyId, out itemHandle);
-			Checker.AssertTrue(isTracked == writeItem->IsTracked);
 		}
 
-		InvRefDeltaItem* deltaItem = CreateDelta(isTracked, insertCount, deleteCount, inserts, deletes, out itemHandle);
+		InvRefDeltaItem* deltaItem = CreateDelta(insertCount, deleteCount, inserts, deletes, out itemHandle);
 		deltaItem->version = tran.Id;
 		deltaItem->nextDelta = writeItem->nextDelta;
 		writeItem->nextDelta = itemHandle;
@@ -927,17 +843,18 @@ internal unsafe sealed partial class InverseReferenceMap
 	}
 
 	[SkipLocalsInit]
-	private unsafe void ApplyAlignmentModificationInternal(TransactionContext tc, Bucket* bucket, ulong commitVersion, ulong* pBucketHandle, long id, int propertyId, bool isTracked,
-		int insertCount, int deleteCount, InverseReferenceOperation* inserts, InverseReferenceOperation* deletes)
+	private unsafe void ApplyAlignmentModificationInternal(TransactionContext tc, Bucket* bucket, ulong commitVersion,
+		ulong* pBucketHandle, long id, int propertyId, int insertCount, int deleteCount,
+		InverseReferenceOperation* inserts, InverseReferenceOperation* deletes)
 	{
-		TTTrace.Write(database.TraceId, classDesc.Id, bucket->Handle, id, propertyId, isTracked, insertCount, deleteCount);
+		TTTrace.Write(database.TraceId, classDesc.Id, bucket->Handle, id, propertyId, insertCount, deleteCount);
 
 		InvRefBaseItem* item = FindItemByIdAndProp(pBucketHandle, id, propertyId, out ulong* prevItemPointer);
 
 		if (item == null)
 		{
 			Checker.AssertTrue(deleteCount == 0);
-			item = CreateBaseFromModification(id, propertyId, isTracked, insertCount, inserts, out ulong itemHandle);
+			item = CreateBaseFromModification(id, propertyId, insertCount, inserts, out ulong itemHandle);
 			ReaderInfo.Clear(&item->readerInfo);
 			item->Version = commitVersion;
 			item->IsDeleted = false;
@@ -966,33 +883,28 @@ internal unsafe sealed partial class InverseReferenceMap
 			ditem = (InvRefDeltaItem*)memoryManager.GetBuffer(ditem->nextDelta);
 		}
 
-		int newRefCount = item->Count + totalInsertCount - totalDeleteCount;
+		int newRefCount = item->count + totalInsertCount - totalDeleteCount;
 		int mergedSize = InvRefBaseItem.RefsOffset;
-		if (item->IsTracked)
-			mergedSize += newRefCount * 8;
+		mergedSize += newRefCount * sizeof(long);
 
 		ulong mergedHandle = memoryManager.Allocate((int)mergedSize);
 		InvRefBaseItem* mergedItem = (InvRefBaseItem*)memoryManager.GetBuffer(mergedHandle);
 
-		mergedItem->Count = newRefCount;
+		mergedItem->count = newRefCount;
 
-		if (item->IsTracked)
-		{
-			long* mergedBuffer = (long*)((byte*)mergedItem + InvRefBaseItem.RefsOffset);
+		long* mergedBuffer = (long*)((byte*)mergedItem + InvRefBaseItem.RefsOffset);
 
-			GetDeleteMapRequirements(totalDeleteCount, out int capacity, out int byteSize, out int stackByteSize);
-			byte* buffer = stackalloc byte[stackByteSize];
-			CompactLongMap* deleted = CreateDeleteMap(buffer, byteSize, capacity, out ulong handle);
-			MergeReferencesAndRemoveVersion(deleted, item, mergedBuffer, newRefCount, 0,
-				Database.MaxCommitedVersion, 0, inserts, insertCount, deletes, deleteCount);
-			memoryManager.FreeOptional(handle);
-		}
+		GetDeleteMapRequirements(totalDeleteCount, out int capacity, out int byteSize, out int stackByteSize);
+		byte* buffer = stackalloc byte[stackByteSize];
+		CompactLongMap* deleted = CreateDeleteMap(buffer, byteSize, capacity, out ulong handle);
+		MergeReferencesAndRemoveVersion(deleted, item, mergedBuffer, newRefCount, 0,
+			Database.MaxCommitedVersion, 0, inserts, insertCount, deletes, deleteCount);
+		memoryManager.FreeOptional(handle);
 
 		mergedItem->id = id;
 		mergedItem->propertyId = propertyId;
 		ReaderInfo.Clear(&mergedItem->readerInfo);
 		TTTrace.Write(database.TraceId, id, propertyId, mergedHandle);
-		mergedItem->IsTracked = item->IsTracked;
 		mergedItem->deleted_version = commitVersion;
 		mergedItem->NextBase = existingItemHandle;
 		mergedItem->NextCollision = item->NextCollision;
@@ -1014,24 +926,24 @@ internal unsafe sealed partial class InverseReferenceMap
 		{
 			int propertyId = properties[i].Id;
 
-			Bucket* bucket = buckets + CalculateBucket(id, propertyId);
-			ulong* pBucketHandle = Bucket.LockAccess(bucket);
-
-			GetReferencesInternal(tran, bucket, pBucketHandle, id, propertyId, false, ref refs,
-				out int currCount, out bool refsTracked, out bool itemFound);
-
-			TTTrace.Write(itemFound, refsTracked, currCount);
-
-			Bucket.UnlockAccess(bucket);
-
-			if (refsTracked)
+			ReferencePropertyDescriptor rpropDesc = classDesc.FindInverseReference(propertyId);
+			if (rpropDesc.TrackInverseReferences)
 			{
+				Bucket* bucket = buckets + CalculateBucket(id, propertyId);
+				ulong* pBucketHandle = Bucket.LockAccess(bucket);
+
+				GetReferencesInternal(tran, bucket, pBucketHandle, id, propertyId, false, ref refs, out int currCount, out bool itemFound);
+
+				TTTrace.Write(itemFound, currCount);
+
+				Bucket.UnlockAccess(bucket);
+
 				refs.offset += currCount;
 				refCounts[i] = currCount;
 			}
 			else
 			{
-				refCounts[i] = -currCount;
+				refCounts[i] = -1;
 			}
 		}
 
@@ -1040,26 +952,22 @@ internal unsafe sealed partial class InverseReferenceMap
 
 	private static DatabaseErrorDetail GetReferencesNoMerge(InvRefBaseItem* item, ref InverseRefsStorage refs, out int refCount)
 	{
-		if (refs.EmptyCount < item->Count)
-			refs.Resize(Math.Max((int)item->Count, refs.size * 2));
+		if (refs.EmptyCount < item->count)
+			refs.Resize(Math.Max((int)item->count, refs.size * 2));
 
-		refCount = item->Count;
-		if (!item->IsTracked)
-			return null;
-
+		refCount = item->count;
 		long* p = (long*)((byte*)item + InvRefBaseItem.RefsOffset);
-		refs.AddRange(p, item->Count);
+		refs.AddRange(p, item->count);
 
 		return null;
 	}
 
 	private DatabaseErrorDetail GetReferencesInternal(Transaction tran, Bucket* bucket, ulong* pBucketHandle, long id,
-		int propertyId, bool shouldLock, ref InverseRefsStorage refs, out int refCount, out bool refsTracked, out bool found)
+		int propertyId, bool shouldLock, ref InverseRefsStorage refs, out int refCount, out bool found)
 	{
 		TTTrace.Write(database.TraceId, classDesc.Id, tran.Id, bucket->Handle, id, propertyId, shouldLock);
 
 		refCount = 0;
-		refsTracked = true;
 		found = false;
 
 		InvRefBaseItem* item = FindItemByIdAndPropReadLockMode(shouldLock ? tran : null,
@@ -1070,7 +978,7 @@ internal unsafe sealed partial class InverseReferenceMap
 
 		if (item != null)
 		{
-			TTTrace.Write(item->Version, item->Count, item->IsDeleted, item->IsTracked);
+			TTTrace.Write(item->Version, item->count, item->IsDeleted);
 			item = FindReadBaseItemInTransaction(tran, item, *prevItemPointer, shouldLock, out error);
 
 			if (error != null)
@@ -1089,15 +997,13 @@ internal unsafe sealed partial class InverseReferenceMap
 			if (item == null)
 				return null;
 
-			ReaderInfo.TakeInvRefLock(tran, id, propertyId, classIndex, true, &item->readerInfo, itemHandle);
+			if (!ReaderInfo.TryTakeInvRefLock(tran, id, propertyId, classIndex, true, &item->readerInfo, itemHandle))
+				return DatabaseErrorDetail.CreateObjectLockContentionLimitExceeded(classDesc.FullName);
 		}
-
-		refsTracked = item->IsTracked;
-
 		if (item->IsDeleted)
 			return null;
 
-		TTTrace.Write(item->IsDeleted, item->nextDelta, item->Count, item->Version,
+		TTTrace.Write(item->IsDeleted, item->nextDelta, item->count, item->Version,
 			item->readerInfo.StandardLockCount, item->readerInfo.ExistanceLockCount);
 
 		if (item->nextDelta == 0)
@@ -1121,7 +1027,7 @@ internal unsafe sealed partial class InverseReferenceMap
 		while (*pcurr != 0)
 		{
 			item = (InvRefBaseItem*)memoryManager.GetBuffer(*pcurr);
-			TTTrace.Write(item->id, item->IsDeleted, item->Version, item->Count, item->propertyId, item->IsTracked);
+			TTTrace.Write(item->id, item->IsDeleted, item->Version, item->count, item->propertyId);
 
 			if (item->id == id && item->propertyId == propertyId)
 			{
@@ -1214,8 +1120,7 @@ internal unsafe sealed partial class InverseReferenceMap
 				ReaderInfo.Clear(&item->readerInfo);
 				item->NextCollision = currItem->NextCollision;
 				item->Version = tran.Id;
-				item->Count = 0;
-				item->IsTracked = currItem->IsTracked;
+				item->count = 0;
 				item->NextBase = *handlePointer;
 				item->nextDelta = 0;
 				item->IsDeleted = true;
@@ -1237,13 +1142,12 @@ internal unsafe sealed partial class InverseReferenceMap
 			item->id = id;
 			item->propertyId = propertyId;
 			ReaderInfo.Clear(&item->readerInfo);
-			item->IsTracked = false;
 			item->Version = tran.Id;
 			item->IsDeleted = true;
 			item->NextCollision = bucket->Handle;
 			item->NextBase = 0;
 			item->nextDelta = 0;
-			item->Count = 0;
+			item->count = 0;
 			bucket->Handle = handle;
 		}
 
@@ -1352,10 +1256,10 @@ internal unsafe sealed partial class InverseReferenceMap
 		}
 
 		TTTrace.Write(database.TraceId, classDesc.Id, readVersion, *handlePointer, item->id, item->propertyId, item->Version, item->IsDeleted,
-			item->Count, item->readerInfo.StandardLockCount, item->readerInfo.ExistanceLockCount, item->nextDelta);
+			item->count, item->readerInfo.StandardLockCount, item->readerInfo.ExistanceLockCount, item->nextDelta);
 
 		// If the item was created just for the purpose of locking
-		if (item->NextBase == 0 && item->nextDelta == 0 && item->Count == 0 && item->readerInfo.TotalLockCount == 0)
+		if (item->NextBase == 0 && item->nextDelta == 0 && item->count == 0 && item->readerInfo.TotalLockCount == 0)
 		{
 			ReleaseItems(*handlePointer, readVersion);
 			*handlePointer = 0;
@@ -1570,40 +1474,36 @@ internal unsafe sealed partial class InverseReferenceMap
 		if (latestItem == null || latestItem->IsDeleted || latestItem->nextDelta == 0)
 			return;
 
-		TTTrace.Write(latestItem->IsDeleted, latestItem->Count, latestItem->Version);
+		TTTrace.Write(latestItem->IsDeleted, latestItem->count, latestItem->Version);
 
 		if (!ShouldMerge(latestItem, commitVersion, forceMerge, out ulong maxDeltaVer, out int insertCount, out int deleteCount))
 			return;
 
-		int newCount = latestItem->Count + insertCount - deleteCount;
-		int mergedSize = InvRefBaseItem.RefsOffset + (latestItem->IsTracked ? newCount * 8 : 0);
+		int newCount = latestItem->count + insertCount - deleteCount;
+		int mergedSize = InvRefBaseItem.RefsOffset + newCount * sizeof(long);
 
 		ulong mergedHandle = memoryManager.Allocate(mergedSize);
 		InvRefBaseItem* mergedItem = (InvRefBaseItem*)memoryManager.GetBuffer(mergedHandle);
 
-		if (latestItem->IsTracked)
-		{
-			long* mergedBuffer = (long*)((byte*)mergedItem + InvRefBaseItem.RefsOffset);
+		long* mergedBuffer = (long*)((byte*)mergedItem + InvRefBaseItem.RefsOffset);
 
-			GetDeleteMapRequirements(deleteCount, out int capacity, out int byteSize, out int stackByteSize);
-			byte* buffer = stackalloc byte[stackByteSize];
-			CompactLongMap* deleted = CreateDeleteMap(buffer, byteSize, capacity, out ulong handle);
-			MergeReferencesAndRemoveVersion(deleted, latestItem, mergedBuffer, newCount, 0, Database.MaxCommitedVersion, maxDeltaVer);
-			memoryManager.FreeOptional(handle);
-		}
+		GetDeleteMapRequirements(deleteCount, out int capacity, out int byteSize, out int stackByteSize);
+		byte* buffer = stackalloc byte[stackByteSize];
+		CompactLongMap* deleted = CreateDeleteMap(buffer, byteSize, capacity, out ulong handle);
+		MergeReferencesAndRemoveVersion(deleted, latestItem, mergedBuffer, newCount, 0, Database.MaxCommitedVersion, maxDeltaVer);
+		memoryManager.FreeOptional(handle);
 
 		mergedItem->id = id;
 		mergedItem->propertyId = propertyId;
 		ReaderInfo.Clear(&mergedItem->readerInfo);
-		mergedItem->Count = newCount;
-		mergedItem->IsTracked = latestItem->IsTracked;
+		mergedItem->count = newCount;
 		mergedItem->deleted_version = maxDeltaVer;
 		mergedItem->NextBase = latestItemHandle;
 		mergedItem->NextCollision = latestItem->NextCollision;
 		mergedItem->nextDelta = 0;
 		*prevItemPointer = mergedHandle;
 
-		TTTrace.Write(database.TraceId, id, propertyId, mergedHandle, mergedItem->Count, maxDeltaVer);
+		TTTrace.Write(database.TraceId, id, propertyId, mergedHandle, mergedItem->count, maxDeltaVer);
 	}
 
 	private bool ShouldMerge(InvRefBaseItem* item, ulong commitVersion, bool forceMerge,
@@ -1636,17 +1536,17 @@ internal unsafe sealed partial class InverseReferenceMap
 			ditem = (InvRefDeltaItem*)memoryManager.GetBuffer(ditem->nextDelta);
 		}
 
-		if (forceMerge || !item->IsTracked)
+		if (forceMerge)
 			return true;
 
-		return deltaCount * 32 + deleteCount * 4 + insertCount >= item->Count / 4;
+		return deltaCount * 32 + deleteCount * 4 + insertCount >= item->count / 4;
 	}
 
 	private unsafe void MergeReferencesAndRemoveVersion(CompactLongMap* map, InvRefBaseItem* baseItem,
 		long* mergedBuffer, int newRefCount, ulong tempVersion, ulong readVersion, ulong unneededVersion,
 		InverseReferenceOperation* addInserts = null, int addInsertCount = 0, InverseReferenceOperation* addDeletes = null, int addDeletesCount = 0)
 	{
-		TTTrace.Write(database.TraceId, classDesc.Id, baseItem->id, baseItem->propertyId, baseItem->IsDeleted, baseItem->Version, baseItem->Count);
+		TTTrace.Write(database.TraceId, classDesc.Id, baseItem->id, baseItem->propertyId, baseItem->IsDeleted, baseItem->Version, baseItem->count);
 
 		PopulateDeletesMap(map, baseItem, tempVersion, readVersion, addDeletes, addDeletesCount);
 
@@ -1699,7 +1599,7 @@ internal unsafe sealed partial class InverseReferenceMap
 	{
 		mergedCount = 0;
 		long* baseRefs = (long*)((byte*)baseItem + InvRefBaseItem.RefsOffset);
-		int rcount = baseItem->Count;
+		int rcount = baseItem->count;
 
 		for (int i = 0; i < rcount; i++)
 		{
@@ -1759,7 +1659,7 @@ internal unsafe sealed partial class InverseReferenceMap
 		while (*pcurr != 0)
 		{
 			InvRefBaseItem* currItem = (InvRefBaseItem*)memoryManager.GetBuffer(*pcurr);
-			TTTrace.Write(currItem->id, currItem->IsDeleted, currItem->propertyId, currItem->Count, currItem->Version);
+			TTTrace.Write(currItem->id, currItem->IsDeleted, currItem->propertyId, currItem->count, currItem->Version);
 
 			if (currItem->id == id && currItem->propertyId == propertyId)
 			{
@@ -2078,11 +1978,7 @@ internal unsafe struct InvRefBaseItem
 	public ulong nextDelta;
 	public ReaderInfo readerInfo;
 	public int propertyId;
-	public uint tracked_refCount;
-
-	public bool IsTracked { get => (byte)(tracked_refCount >> 31) != 0; set => tracked_refCount = (tracked_refCount & 0x7fffffff) | ((uint)(value ? 1 : 0) << 31); }
-
-	public int Count { get => (int)(tracked_refCount & 0x7fffffff); set => tracked_refCount = (tracked_refCount & 0x80000000) | (uint)value; }
+	public int count;
 
 	public ulong Version { get => deleted_version & 0x7fffffffffffffff; set => deleted_version = (deleted_version & 0x8000000000000000) | value; }
 
@@ -2111,6 +2007,6 @@ internal unsafe struct InvRefBaseItem
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public bool IsEmpty()
 	{
-		return (nextDelta | (uint)Count) == 0;
+		return (nextDelta | (uint)count) == 0;
 	}
 }

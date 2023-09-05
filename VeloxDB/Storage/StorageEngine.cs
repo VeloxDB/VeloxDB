@@ -463,7 +463,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		return databases[(int)DatabaseId.User].GetSortedIndexReader<TKey1, TKey2, TKey3, TKey4>(indexId);
 	}
 
-	public ClassScan BeginClassScan(Transaction tran, ClassDescriptor classDesc)
+	public ClassScan BeginClassScan(Transaction tran, ClassDescriptor classDesc, bool forceNoReadLock = false)
 	{
 		TTTrace.Write(traceId, tran.Id, classDesc.Id);
 
@@ -471,7 +471,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		if (tran.CancelRequested)
 			CheckErrorAndRollback(DatabaseErrorDetail.Create(DatabaseErrorType.TransactionCanceled), tran);
 
-		ClassScan scan = BeginClassScanInternal(tran, classDesc, true, false, out DatabaseErrorDetail error);
+		ClassScan scan = BeginClassScanInternal(tran, classDesc, true, forceNoReadLock, out DatabaseErrorDetail error);
 		CheckErrorAndRollback(error, tran);
 
 		return scan;
@@ -499,7 +499,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		return cs;
 	}
 
-	public ObjectReader GetObject(Transaction tran, long id)
+	public ObjectReader GetObject(Transaction tran, long id, bool forceNoReadLock = false)
 	{
 		TTTrace.Write(traceId, tran.Id, id);
 
@@ -512,10 +512,24 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 
 		ClassBase @class = tran.Database.GetClass(classIndex);
 
-		ObjectReader reader = @class.GetObject(tran, id, out DatabaseErrorDetail error);
+		ObjectReader reader = @class.GetObject(tran, id, forceNoReadLock, out DatabaseErrorDetail error);
 		CheckErrorAndRollback(error, tran);
 
 		return reader;
+	}
+
+	public bool ObjectExists(Transaction tran, ClassDescriptor classDesc, long id)
+	{
+		TTTrace.Write(traceId, tran.Id, id);
+
+		if (tran.CancelRequested)
+			CheckErrorAndRollback(DatabaseErrorDetail.Create(DatabaseErrorType.TransactionCanceled), tran);
+
+		Class @class = tran.Database.GetClass(classDesc.Index).MainClass;
+		bool b = @class.ObjectExists(tran, id, out DatabaseErrorDetail error);
+		CheckErrorAndRollback(error, tran);
+
+		return b;
 	}
 
 	public void GetInverseReferences(Transaction tran, long id, int propId, ref long[] refs, out int count)
@@ -537,10 +551,11 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		if (invRefMap == null)
 			CheckErrorAndRollback(DatabaseErrorDetail.CreateInverseReferenceNotTracked(propId, classDesc.FullName), tran);
 
-		DatabaseErrorDetail error = invRefMap.GetReferences(tran, id, propId, ref refs, out count, out bool isTracked);
+		ReferencePropertyDescriptor rpropDesc = classDesc.FindInverseReference(propId);
+		if (rpropDesc == null || !rpropDesc.TrackInverseReferences)
+			CheckErrorAndRollback(DatabaseErrorDetail.CreateInverseReferenceNotTracked(propId, classDesc.FullName), tran);
 
-		if (!isTracked)
-			error = DatabaseErrorDetail.CreateInverseReferenceNotTracked(propId, classDesc.FullName);
+		DatabaseErrorDetail error = invRefMap.GetReferences(tran, id, propId, ref refs, out count);
 
 		CheckErrorAndRollback(error, tran);
 	}
@@ -646,12 +661,16 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 			throw new DatabaseException(DatabaseErrorDetail.Create(DatabaseErrorType.CommitClosedTransaction));
 
 		TransactionContext tc = tran.Context;
+		if (tc != null)
+		{
+			tc.ProcessMultiAffectedObjectsInChangesets();
+			tc.CollapseChangesets();
+		}
 
 		if (tran.Type == TransactionType.Read || tran.Source != TransactionSource.Client || tran.Database.Id != DatabaseId.User)
 		{
 			try
 			{
-				tc?.CollapseChangesets();
 				tran.Database.TransactionCompleted(tran);
 				return CommitTransactionInternal(tran, out logSeqNum);
 			}
@@ -660,8 +679,6 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 				tran.ClearContext();
 			}
 		}
-
-		tc.CollapseChangesets();
 
 		tc.PrepareForAsyncCommit();
 		commitWorkers.Commit(tran);
@@ -683,6 +700,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		try
 		{
 			tran.Database.TransactionCompleted(tran);
+			tran.Context.ProcessMultiAffectedObjectsInChangesets();
 			tran.Context.CollapseChangesets();
 			CommitTransactionInternal(tran, out _);
 		}
@@ -702,6 +720,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 			throw new DatabaseException(DatabaseErrorDetail.Create(DatabaseErrorType.CommitClosedTransaction));
 
 		TransactionContext tc = tran.Context;
+		tc.ProcessMultiAffectedObjectsInChangesets();
 		tc.CollapseChangesets();
 		tran.AsyncCallback = callback;
 		tran.AsyncCallbackState = state;
@@ -979,7 +998,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		ApplyChangeset(tran, changeset, false);
 	}
 
-	public void ApplyChangeset(Transaction tran, Changeset changeset, bool onlyPropagateSetToNull)
+	public void ApplyChangeset(Transaction tran, Changeset changeset, bool refsSemiValidated)
 	{
 		TTTrace.Write(traceId, tran.Id, tran.InternalFlags, tran.Context != null ? (int)tran.Context.WriteFlags : 0);
 
@@ -993,7 +1012,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		bool cascadeGenerated = false;
 		while (changeset != null)
 		{
-			changeset = ApplyChangesetIter(tran, changeset, cascadeGenerated, onlyPropagateSetToNull);
+			changeset = ApplyChangesetIter(tran, changeset, cascadeGenerated, refsSemiValidated);
 			cascadeGenerated = true;
 		}
 	}
@@ -1016,7 +1035,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		tc.AddChangeset(changeset);
 	}
 
-	private Changeset ApplyChangesetIter(Transaction tran, Changeset changeset, bool cascadeGenerated, bool onlyPropagateSetToNull)
+	private Changeset ApplyChangesetIter(Transaction tran, Changeset changeset, bool cascadeGenerated, bool refsSemiValidated)
 	{
 		TTTrace.Write(traceId, tran.Id, cascadeGenerated);
 
@@ -1044,11 +1063,11 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		if (!tran.IsAlignment)
 		{
 			DatabaseErrorDetail error = ApplyInverseReferenceChanges(tran,
-				cascadeGenerated || tran.Source == TransactionSource.Replication, onlyPropagateSetToNull);
+				cascadeGenerated || tran.Source == TransactionSource.Replication, refsSemiValidated);
 			CheckErrorAndRollback(error, tran);
 
 			if (tran.Source != TransactionSource.Replication)
-				cascCh = tran.Database.RefValidator.PropagateDeletes(tran, onlyPropagateSetToNull, out error);
+				cascCh = tran.Database.RefValidator.PropagateDeletes(tran, refsSemiValidated, out error);
 
 			tc.ClearInvRefChanges();
 			if (error == null)
@@ -1260,7 +1279,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		return null;
 	}
 
-	private DatabaseErrorDetail ApplyInverseReferenceChanges(Transaction tran, bool ignoreDeleted, bool shouldValidate)
+	private DatabaseErrorDetail ApplyInverseReferenceChanges(Transaction tran, bool ignoreDeleted, bool refsSemiValidated)
 	{
 		TTTrace.Write(traceId, tran.Id, ignoreDeleted, tran.Context.InverseRefChanges.Count);
 
@@ -1286,7 +1305,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 			if (currOp->PropertyId != rangePropId || currOp->directReference != rangeDirectRef)
 			{
 				error = ApplyRangeInverseReferenceChange(tran, ignoreDeleted, startOp,
-					(int)(i - startIndex), (int)splitIndex, shouldValidate);
+					(int)(i - startIndex), (int)splitIndex, refsSemiValidated);
 
 				if (error != null)
 					return error;
@@ -1308,7 +1327,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		}
 
 		error = ApplyRangeInverseReferenceChange(tran, ignoreDeleted, startOp,
-			(int)(count - startIndex), (int)splitIndex, shouldValidate);
+			(int)(count - startIndex), (int)splitIndex, refsSemiValidated);
 
 		if (error != null)
 			return error;
@@ -1318,9 +1337,10 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 	}
 
 	private unsafe DatabaseErrorDetail ApplyRangeInverseReferenceChange(Transaction tran, bool ignoreDeleted,
-		InverseReferenceOperation* ops, int count, int splitIndex, bool onlyCascadeSetToNull)
+		InverseReferenceOperation* ops, int count, int splitIndex, bool refsSemiValidated)
 	{
-		TTTrace.Write(traceId, tran.Id, ignoreDeleted, ops->Type, ops->PropertyId, ops->ClassIndex, ops->directReference, ops->inverseReference, count, splitIndex);
+		TTTrace.Write(traceId, tran.Id, ignoreDeleted, ops->Type, ops->PropertyId,
+			ops->ClassIndex, ops->directReference, ops->inverseReference, count, splitIndex);
 
 		Database database = tran.Database;
 
@@ -1344,15 +1364,15 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 			}
 		}
 
-		if (insertCount > 0 && !tran.IsAlignment && !onlyCascadeSetToNull)
+		if (insertCount > 0 && !tran.IsAlignment && !refsSemiValidated)
 		{
 			DatabaseErrorDetail err = tran.Database.RefValidator.ValidateReference(tran, ops, insertCount);
 			if (err != null)
 				return err;
 		}
 
-		ClassDescriptor classDesc = IdHelper.GetClass(tran.Model, ops->directReference);
-		if (classDesc == null)
+		ClassDescriptor targetClassDesc = IdHelper.GetClass(tran.Model, ops->directReference);
+		if (targetClassDesc == null)
 		{
 			// If an invalid reference (unexisting class) is set and than replaced in the same changeset,
 			// we can end up in this situation.
@@ -1360,9 +1380,14 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 			return null;
 		}
 
-		InverseReferenceMap invRefMap = database.GetInvRefs(classDesc.Index);
+		ClassDescriptor classDesc = tran.Model.GetClassByIndex(ops->ClassIndex);
+		ReferencePropertyDescriptor refPropDesc = (ReferencePropertyDescriptor)classDesc.GetProperty(ops->PropertyId);
+		if (!refPropDesc.TrackInverseReferences)
+			return null;
+
+		InverseReferenceMap invRefMap = database.GetInvRefs(targetClassDesc.Index);
 		return invRefMap.Modify(tran, ignoreDeleted, ops->directReference, ops->PropertyId,
-			ops->IsTracked, insertCount, deleteCount, ops, ops + insertCount);
+			insertCount, deleteCount, ops, ops + insertCount);
 	}
 
 	private void MergeInverseReferences(Transaction tran)
@@ -1441,12 +1466,12 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		}
 
 		l1 = tc.ObjectReadLocks;
-		ReadLock* readLock = (ReadLock*)l1.StartIteration(out phead);
+		ObjectReadLock* readLock = (ObjectReadLock*)l1.StartIteration(out phead);
 		while (phead != null)
 		{
 			Class @class = database.GetClass(readLock->classIndex).MainClass;
-			readLock->id = @class.CommitReadLock(tran, readLock->handle, readLock->TranSlot);
-			readLock = (ReadLock*)l1.MoveToNext(ref phead, (byte*)readLock, ReadLock.Size);
+			readLock->id = @class.CommitReadLock(tran, readLock->id, readLock->tranSlot);
+			readLock = (ObjectReadLock*)l1.MoveToNext(ref phead, (byte*)readLock, ObjectReadLock.Size);
 		}
 
 		l1 = tc.KeyReadLocks;
@@ -1469,13 +1494,13 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 
 		NativeList l2 = tc.InvRefReadLocks;
 		count = l2.Count;
-		readLock = (ReadLock*)l2.Buffer;
+		InvRefReadLock* refReadLock = (InvRefReadLock*)l2.Buffer;
 		for (long i = 0; i < count; i++)
 		{
-			InverseReferenceMap invRefMap = database.GetInvRefs(readLock->classIndex);
-			readLock->id = invRefMap.CommitReadLock(tran, readLock->handle, readLock->TranSlot, out int propId);
-			readLock->propertyId = propId;
-			readLock++;
+			InverseReferenceMap invRefMap = database.GetInvRefs(refReadLock->classIndex);
+			refReadLock->id = invRefMap.CommitReadLock(tran, refReadLock->handle, refReadLock->TranSlot, out int propId);
+			refReadLock->propertyId = propId;
+			refReadLock++;
 		}
 
 		tran.AsyncCommitterFinished();
@@ -1489,13 +1514,13 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		TransactionContext tc = tran.Context;
 
 		ModifiedList l1 = tc.ObjectReadLocks;
-		ReadLock* readLock = (ReadLock*)l1.StartIteration(out ModifiedBufferHeader* phead);
+		ObjectReadLock* readLock = (ObjectReadLock*)l1.StartIteration(out ModifiedBufferHeader* phead);
 		while (phead != null)
 		{
 			Class @class = database.GetClass(readLock->classIndex).MainClass;
-			readLock->id = @class.RemapReadLockSlot(readLock->handle, readLock->TranSlot, slot);
-			readLock->SetEligibleForGC_TranSlot(readLock->EligibleForGC, slot);
-			readLock = (ReadLock*)l1.MoveToNext(ref phead, (byte*)readLock, ReadLock.Size);
+			readLock->id = @class.RemapReadLockSlot(readLock->id, readLock->tranSlot, slot);
+			readLock->tranSlot = slot;
+			readLock = (ObjectReadLock*)l1.MoveToNext(ref phead, (byte*)readLock, ObjectReadLock.Size);
 		}
 
 		l1 = tc.KeyReadLocks;
@@ -1514,13 +1539,13 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 
 		NativeList l2 = tc.InvRefReadLocks;
 		long count = l2.Count;
-		readLock = (ReadLock*)l2.Buffer;
+		InvRefReadLock*  refReadLock = (InvRefReadLock*)l2.Buffer;
 		for (long i = 0; i < count; i++)
 		{
-			InverseReferenceMap invRefMap = database.GetInvRefs(readLock->classIndex);
-			readLock->id = invRefMap.RemapReadLockSlot(readLock->handle, readLock->TranSlot, slot);
-			readLock->SetEligibleForGC_TranSlot(readLock->EligibleForGC, slot);
-			readLock++;
+			InverseReferenceMap invRefMap = database.GetInvRefs(refReadLock->classIndex);
+			refReadLock->id = invRefMap.RemapReadLockSlot(refReadLock->handle, refReadLock->TranSlot, slot);
+			refReadLock->SetEligibleForGC_TranSlot(refReadLock->EligibleForGC, slot);
+			refReadLock++;
 		}
 	}
 
@@ -1532,24 +1557,24 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		TransactionContext tc = tran.Context;
 
 		ModifiedList l1 = tc.ObjectReadLocks;
-		ReadLock* readLock = (ReadLock*)l1.StartIteration(out ModifiedBufferHeader* phead);
+		ObjectReadLock* readLock = (ObjectReadLock*)l1.StartIteration(out ModifiedBufferHeader* phead);
 		for (uint i = 0; phead != null; i++)
 		{
 			Class @class = database.GetClass(readLock->classIndex).MainClass;
-			readLock->id = @class.RollbackReadLock(tran, readLock->handle);
-			readLock = (ReadLock*)l1.MoveToNext(ref phead, (byte*)readLock, (int)ReadLock.Size);
+			readLock->id = @class.RollbackReadLock(tran, readLock->id);
+			readLock = (ObjectReadLock*)l1.MoveToNext(ref phead, (byte*)readLock, (int)ObjectReadLock.Size);
 		}
 
 		NativeList l2 = tc.InvRefReadLocks;
 		long count = l2.Count;
-		readLock = (ReadLock*)l2.Buffer;
+		InvRefReadLock* refReadLock = (InvRefReadLock*)l2.Buffer;
 		for (uint i = 0; i < count; i++)
 		{
 			int propId;
-			InverseReferenceMap invRefMap = database.GetInvRefs(readLock->classIndex);
-			readLock->id = invRefMap.RollbackReadLock(tran, readLock->handle, out propId);
-			readLock->propertyId = propId;
-			readLock++;
+			InverseReferenceMap invRefMap = database.GetInvRefs(refReadLock->classIndex);
+			refReadLock->id = invRefMap.RollbackReadLock(tran, refReadLock->handle, out propId);
+			refReadLock->propertyId = propId;
+			refReadLock++;
 		}
 
 		l1 = tc.KeyReadLocks;

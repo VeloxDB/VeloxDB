@@ -171,10 +171,14 @@ internal unsafe sealed class InverseReferenceBuilder
 				Class @class = database.GetClass(i).MainClass;
 				if (@class != null && @class.ClassDesc.RefeferencePropertyIndexes.Length > 0)
 				{
-					ClassScan[] scans = @class.GetClassScans(null, false, out long totalCount);
-					for (int j = 0; j < scans.Length; j++)
+					if (@class.ClassDesc.RefeferencePropertyIndexes.
+						Select(x => @class.ClassDesc.Properties[x] as ReferencePropertyDescriptor).Any(x => x.TrackInverseReferences))
 					{
-						workers.EnqueueWork(new CommonWorkerParam() { ReferenceParam = scans[j] });
+						ClassScan[] scans = @class.GetClassScans(null, false, out long totalCount);
+						for (int j = 0; j < scans.Length; j++)
+						{
+							workers.EnqueueWork(new CommonWorkerParam() { ReferenceParam = scans[j] });
+						}
 					}
 				}
 			}
@@ -195,9 +199,9 @@ internal unsafe sealed class InverseReferenceBuilder
 					long estObjCount = @class.EstimatedObjectCount *
 						filter[classId].ReferenceIndexes.Length / @class.ClassDesc.RefeferencePropertyIndexes.Length;
 
-					estRefCount += estObjCount * (@class.ClassDesc.RefeferencePropertyIndexes.Where(
-							x => (@class.ClassDesc.Properties[x] as ReferencePropertyDescriptor).Multiplicity == Multiplicity.Many)
-							.Count() * 16 + @class.ClassDesc.RefeferencePropertyIndexes.Length);
+					estRefCount += estObjCount * (@class.ClassDesc.RefeferencePropertyIndexes.
+						Select(x => @class.ClassDesc.Properties[x] as ReferencePropertyDescriptor).
+						Where(x => x.TrackInverseReferences).Select(x => x.Multiplicity == Multiplicity.Many ? 8 : 1).Sum());
 				}
 			}
 		}
@@ -208,9 +212,9 @@ internal unsafe sealed class InverseReferenceBuilder
 				Class @class = database.GetClass(i).MainClass;
 				if (@class != null)
 				{
-					estRefCount += @class.EstimatedObjectCount * (@class.ClassDesc.RefeferencePropertyIndexes.Where(
-							x => (@class.ClassDesc.Properties[x] as ReferencePropertyDescriptor).Multiplicity == Multiplicity.Many)
-							.Count() * 16 + @class.ClassDesc.RefeferencePropertyIndexes.Length);
+					estRefCount += @class.EstimatedObjectCount * (@class.ClassDesc.RefeferencePropertyIndexes.
+						Select(x => @class.ClassDesc.Properties[x] as ReferencePropertyDescriptor).
+						Where(x => x.TrackInverseReferences).Select(x => x.Multiplicity == Multiplicity.Many ? 8 : 1).Sum());
 				}
 			}
 		}
@@ -319,7 +323,7 @@ internal unsafe sealed class InverseReferenceBuilder
 		IdHelper.TryGetClassIndex(model, rc->directReference, out ushort typeIndex);
 		Checker.AssertTrue(typeIndex != ushort.MaxValue);
 		InverseReferenceMap invRefMap = database.GetInvRefs(typeIndex);
-		invRefMap.Insert(1, rc->directReference, rc->PropertyId, rc->IsTracked, false, (int)count, rc);
+		invRefMap.Insert(1, rc->directReference, rc->PropertyId, false, (int)count, rc);
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -336,7 +340,7 @@ internal unsafe sealed class InverseReferenceBuilder
 		}
 
 		invRefMap.ApplyAlignmentModification(tc, commitVersion, rc->directReference, rc->PropertyId,
-			rc->IsTracked, insertCount, (int)(count - insertCount), rc, rc + insertCount);
+			insertCount, (int)(count - insertCount), rc, rc + insertCount);
 	}
 
 	private void PreSizeInvRefMaps(JobWorkers<CommonWorkerParam> workers, List<Tuple<long, long>> workItems, InverseReferenceOperation* rc)

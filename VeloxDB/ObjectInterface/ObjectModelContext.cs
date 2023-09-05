@@ -142,6 +142,9 @@ internal sealed class ObjectModelContext
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public void PutObjectReaders(ObjectReader[] r)
 	{
+		if (r.Length > ObjectReadersCapacity)
+			return;
+
 		for (int i = 0; i < r.Length; i++)
 		{
 			if (r[i].Class != null)
@@ -179,7 +182,7 @@ internal sealed class ObjectModelContext
 		objectReadersListPool[objectReadersListCount++] = l;
 	}
 
-	public void Finished()
+	public void Reset()
 	{
 		if (objectMap.Count > objectMapCapacity)
 		{
@@ -216,6 +219,6 @@ internal sealed class ObjectModelContext
 			deletedInvRefs.Clear();
 		}
 
-		deletedSet.Clear();
+		deletedSet.Reset();
 	}
 }

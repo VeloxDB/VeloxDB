@@ -11,7 +11,7 @@ using VeloxDB.Storage;
 namespace VeloxDB.ObjectInterface;
 
 internal unsafe delegate DatabaseObject DatabaseObjectCreatorDelegate(ObjectModel owner,
-	ClassData classData, byte* buffer, DatabaseObjectState state, ChangeList changeList);
+	ClassData classData, byte* buffer, long id, DatabaseObjectState state, ChangeList changeList);
 
 internal delegate void InverseReferenceInvalidator(DatabaseObject obj);
 
@@ -20,8 +20,11 @@ internal sealed class ClassData
 	static MethodInfo dbObjBegInitMethod = typeof(DatabaseObject).GetMethod(nameof(DatabaseObject.BeginInit), BindingFlags.NonPublic | BindingFlags.Instance);
 	static MethodInfo dbObjEndInitMethod = typeof(DatabaseObject).GetMethod(nameof(DatabaseObject.EndInit), BindingFlags.NonPublic | BindingFlags.Instance);
 	static MethodInfo verifyAccessMethod = typeof(DatabaseObject).GetMethod(DatabaseObject.VerifyAccessMethodName, BindingFlags.Instance | BindingFlags.NonPublic);
+	static MethodInfo verifyInvRefAccessMethod = typeof(DatabaseObject).GetMethod(DatabaseObject.VerifyAccessInvRefMethodName, BindingFlags.Instance | BindingFlags.NonPublic);
 	static MethodInfo verifyReferencingMethod = typeof(DatabaseObject).GetMethod(DatabaseObject.VerifyReferencingMethodName, BindingFlags.Static | BindingFlags.NonPublic);
+	static MethodInfo provideBufferMethod = typeof(DatabaseObject).GetMethod(nameof(DatabaseObject.ProvideBuffer), BindingFlags.Instance | BindingFlags.NonPublic);
 	static MethodInfo objModifiedMethod = typeof(ObjectModel).GetMethod(nameof(ObjectModel.ObjectModified), BindingFlags.Instance | BindingFlags.NonPublic);
+	static MethodInfo isObjDeletedMethod = typeof(ObjectModel).GetMethod(nameof(ObjectModel.IsObjectDeleted), BindingFlags.Instance | BindingFlags.NonPublic);
 	static MethodInfo startInsertBlockMethod = typeof(ChangesetWriter).GetMethod(nameof(ChangesetWriter.StartInsertBlockUnsafe), BindingFlags.Instance | BindingFlags.Public);
 	static MethodInfo startUpdateBlockMethod = typeof(ChangesetWriter).GetMethod(nameof(ChangesetWriter.StartUpdateBlockUnsafe), BindingFlags.Instance | BindingFlags.Public);
 	static MethodInfo addPropertyMethod = typeof(ChangesetWriter).GetMethod(nameof(ChangesetWriter.AddPropertyUnsafe), BindingFlags.Instance | BindingFlags.Public);
@@ -65,6 +68,8 @@ internal sealed class ClassData
 		new Type[] { typeof(DateTime), typeof(DateTime) }, null);
 	static MethodInfo setContainsIdMethod = typeof(LongHashSet).GetMethod(nameof(LongHashSet.Contains), BindingFlags.Instance | BindingFlags.Public);
 	static MethodInfo getSetToNullReferenceMethod = typeof(ObjectModel).GetMethod(nameof(ObjectModel.GetSetToNullReference), BindingFlags.Instance | BindingFlags.NonPublic);
+
+	public const string RefIdSufix = "__Id";
 
 	ClassDescriptor classDesc;
 	DatabaseObjectCreatorDelegate creator;
@@ -165,13 +170,12 @@ internal sealed class ClassData
 	public static ReferenceCheckerDelegate CreateReferencePropertyDelegate(ClassData cd, ReferencePropertyDescriptor propDesc)
 	{
 		DynamicMethod checker = new DynamicMethod("__" + Guid.NewGuid(),
-			typeof(bool), new Type[] { typeof(DatabaseObject), typeof(LongHashSet) });
+			typeof(bool), new Type[] { typeof(DatabaseObject), typeof(LongHashSet), typeof(int) });
 		ILGenerator il = checker.GetILGenerator();
-
-		MethodInfo getter = GetPublicProperty(cd.ClassDesc.ObjectModelClass.ClassType, propDesc.Name).GetGetMethod();
 
 		if (propDesc.Multiplicity == Multiplicity.Many)
 		{
+			MethodInfo getter = GetPublicProperty(cd.ClassDesc.ObjectModelClass.ClassType, propDesc.Name).GetGetMethod();
 			MethodInfo mi = getter.ReturnType.GetMethod(nameof(ReferenceArray<DatabaseObject>.ContainsAnyId),
 				BindingFlags.Instance | BindingFlags.NonPublic);
 
@@ -194,13 +198,17 @@ internal sealed class ClassData
 		}
 		else
 		{
-			Label lab = il.DefineLabel();
+			// Provide buffer
+			il.Emit(OpCodes.Ldarg_0);
+			il.Emit(OpCodes.Ldc_I4_1);
+			il.Emit(OpCodes.Call, provideBufferMethod);
+
 			il.Emit(OpCodes.Ldarg_1);
 
 			// Read object id from the internal buffer and obtain it from ObjectModel
 			il.Emit(OpCodes.Ldarg_0);
 			il.Emit(OpCodes.Ldfld, bufferField);
-			il.Emit(OpCodes.Ldc_I4, GetByteOffset(cd.ClassDesc, propDesc));
+			il.Emit(OpCodes.Ldarg_2);	// Offset in the internal buffer
 			il.Emit(OpCodes.Add);
 			il.Emit(OpCodes.Ldind_I8);
 
@@ -303,9 +311,9 @@ internal sealed class ClassData
 		TypeBuilder tb = moduleBuilder.DefineType("__" + guid,
 			TypeAttributes.Class | TypeAttributes.NotPublic, classDesc.ObjectModelClass.ClassType);
 
-		MethodBuilder onDeleteMethod = tb.DefineMethod(nameof(DatabaseObject.InvalidateInverseReferences), MethodAttributes.Public |
+		MethodBuilder invalidateInvRefsMethod = tb.DefineMethod(nameof(DatabaseObject.InvalidateInverseReferences), MethodAttributes.Public |
 			MethodAttributes.Virtual | MethodAttributes.HideBySig, typeof(void), new Type[] { });
-		ILGenerator onDeleteIl = onDeleteMethod.GetILGenerator();
+		ILGenerator invalidateInvRefsIl = invalidateInvRefsMethod.GetILGenerator();
 
 		Dictionary<int, FieldBuilder> arrayFields = null;
 		Dictionary<FieldBuilder, MethodBuilder> arrayModifiedNotifiers = null;
@@ -318,6 +326,11 @@ internal sealed class ClassData
 			arrayOffsets = new Dictionary<int, int>(classDesc.BlobPropertyIndexes.Length);
 		}
 
+		// Provide buffer in InvalidadeInverseRefs method (since it uses the buffer)
+		invalidateInvRefsIl.Emit(OpCodes.Ldarg_0);
+		invalidateInvRefsIl.Emit(OpCodes.Ldc_I4_0);
+		invalidateInvRefsIl.Emit(OpCodes.Call, provideBufferMethod);
+
 		int offset = sizeof(long);
 		for (int i = 2; i < classDesc.Properties.Length; i++)   // Skip Id and Version
 		{
@@ -326,7 +339,7 @@ internal sealed class ClassData
 			CreateClassProperty(classDesc, tb, classDesc.Properties[i], op, offset, i, arrayFields, arrayModifiedNotifiers);
 
 			if (pd.Kind == PropertyKind.Reference)
-				CreateINvalidateInverseReferences(tb, onDeleteIl, (ReferencePropertyDescriptor)classDesc.Properties[i], offset, arrayFields);
+				CreateIvalidateInverseReferences(tb, invalidateInvRefsIl, (ReferencePropertyDescriptor)classDesc.Properties[i], offset, arrayFields);
 
 			if (pd.Kind == PropertyKind.Array ||
 				(pd.Kind == PropertyKind.Reference && (pd as ReferencePropertyDescriptor).Multiplicity == Multiplicity.Many))
@@ -337,7 +350,7 @@ internal sealed class ClassData
 			offset += (int)PropertyTypesHelper.GetItemSize(pd.PropertyType);
 		}
 
-		onDeleteIl.Emit(OpCodes.Ret);
+		invalidateInvRefsIl.Emit(OpCodes.Ret);
 
 		List<Tuple<FieldBuilder, ModifyDirectReferenceDelegate>> refModifiers = new List<Tuple<FieldBuilder, ModifyDirectReferenceDelegate>>();
 		CreateInverseReferenceProperties(classDesc, tb, refModifiers, out Dictionary<int, MethodInfo> inverseRefInvalidators);
@@ -345,7 +358,7 @@ internal sealed class ClassData
 		CreateStaticConstructor(tb, arrayModifiedNotifiers);
 
 		Type[] ctorTypes = new Type[] { typeof(ObjectModel), typeof(ClassData),
-			typeof(byte*), typeof(DatabaseObjectState), typeof(ChangeList) };
+			typeof(byte*), typeof(long), typeof(DatabaseObjectState), typeof(ChangeList) };
 		ConstructorInfo ci = CreateClassConstructor(tb, classDesc, ctorTypes);
 
 		CreateInsertMethod(classDesc, tb, arrayFields);
@@ -367,6 +380,7 @@ internal sealed class ClassData
 		il.Emit(OpCodes.Ldarg_2);
 		il.Emit(OpCodes.Ldarg_3);
 		il.Emit(OpCodes.Ldarg, 4);
+		il.Emit(OpCodes.Ldarg, 5);
 		il.Emit(OpCodes.Newobj, generatedType.GetConstructor(ctorTypes));
 		il.Emit(OpCodes.Ret);
 
@@ -460,7 +474,7 @@ internal sealed class ClassData
 
 		// Verify object is not deleted
 		il.Emit(OpCodes.Ldarg_0);
-		il.Emit(OpCodes.Call, verifyAccessMethod);
+		il.Emit(OpCodes.Call, verifyInvRefAccessMethod);
 
 		// Check if there is already a collection inside the local field
 		Label lab = il.DefineLabel();
@@ -737,7 +751,7 @@ internal sealed class ClassData
 		il.Emit(OpCodes.Ret);
 	}
 
-	private static void CreateINvalidateInverseReferences(TypeBuilder typeBuilder, ILGenerator il, ReferencePropertyDescriptor propDesc, int byteOffset,
+	private static void CreateIvalidateInverseReferences(TypeBuilder typeBuilder, ILGenerator il, ReferencePropertyDescriptor propDesc, int byteOffset,
 		Dictionary<int, FieldBuilder> arrayFields)
 	{
 		// Load ObjectModel so we can call invalidate of inverse refs on it
@@ -941,6 +955,7 @@ internal sealed class ClassData
 		il.Emit(OpCodes.Ldarg_3);
 		il.Emit(OpCodes.Ldarg, 4);
 		il.Emit(OpCodes.Ldarg, 5);
+		il.Emit(OpCodes.Ldarg, 6);
 		il.Emit(OpCodes.Call, dbObjBegInitMethod);
 
 		// Now call base ctor when object is fully initialized
@@ -968,7 +983,10 @@ internal sealed class ClassData
 		else if (((ReferencePropertyDescriptor)propDesc).Multiplicity == Multiplicity.Many)
 			CreateArrayClassProperty(classDesc, typeBuilder, propDesc, objProp, byteOffset, propertyIndex, arrayFields, modifiedNotifiers);
 		else
+		{
 			CreateReferenceClassProperty(classDesc, typeBuilder, propDesc, objProp, byteOffset, propertyIndex);
+			CreateReferenceIdClassProperty(classDesc, typeBuilder, propDesc, objProp, byteOffset, propertyIndex);
+		}
 	}
 
 	private static void CreateSimpleClassProperty(ClassDescriptor classDesc, TypeBuilder typeBuilder, PropertyDescriptor propDesc,
@@ -1253,6 +1271,48 @@ internal sealed class ClassData
 		il.Emit(OpCodes.Ret);
 	}
 
+	private static void CreateReferenceIdClassProperty(ClassDescriptor classDesc, TypeBuilder typeBuilder, PropertyDescriptor propDesc,
+		ObjectModelProperty objProp, int byteOffset, int propertyIndex)
+	{
+		PropertyBuilder pb = typeBuilder.DefineProperty(objProp.PropertyInfo.Name + RefIdSufix, PropertyAttributes.None, typeof(long), null);
+
+		MethodBuilder getter = typeBuilder.DefineMethod(objProp.PropertyInfo.GetGetMethod().Name + RefIdSufix,
+			MethodAttributes.Public | MethodAttributes.Virtual | MethodAttributes.HideBySig, typeof(long), null);
+
+		pb.SetGetMethod(getter);
+
+		ILGenerator il = getter.GetILGenerator();
+
+		// Verify object is not deleted
+		il.Emit(OpCodes.Ldarg_0);
+		il.Emit(OpCodes.Call, verifyAccessMethod);
+
+		var refIdVar = il.DeclareLocal(typeof(long));
+
+		// Read reference id from the internal buffer and store it
+		il.Emit(OpCodes.Ldarg_0);
+		il.Emit(OpCodes.Ldfld, bufferField);
+		il.Emit(OpCodes.Ldc_I4, byteOffset);
+		il.Emit(OpCodes.Add);
+		il.Emit(OpCodes.Ldind_I8);
+		il.Emit(OpCodes.Stloc, refIdVar);
+
+		// Check if object is deleted
+		Label lab = il.DefineLabel();
+
+		il.Emit(OpCodes.Ldarg_0);
+		il.Emit(OpCodes.Ldfld, ownerField);
+		il.Emit(OpCodes.Ldloc, refIdVar);
+		il.Emit(OpCodes.Call, isObjDeletedMethod);
+		il.Emit(OpCodes.Brtrue, lab);
+		il.Emit(OpCodes.Ldloc, refIdVar);
+		il.Emit(OpCodes.Ret);
+
+		il.MarkLabel(lab);
+		il.Emit(OpCodes.Ldc_I8, (long)0);
+		il.Emit(OpCodes.Ret);
+	}
+
 	private static void CreateArrayClassProperty(ClassDescriptor classDesc, TypeBuilder typeBuilder, PropertyDescriptor propDesc,
 		ObjectModelProperty objProp, int byteOffset, int propertyIndex, Dictionary<int, FieldBuilder> arrayFields,
 		Dictionary<FieldBuilder, MethodBuilder> modifiedNotifiers)
@@ -1481,21 +1541,6 @@ internal sealed class ClassData
 		}
 
 		return null;
-	}
-
-	private static int GetByteOffset(ClassDescriptor classDesc, PropertyDescriptor propDesc)
-	{
-		int offset = sizeof(long);
-		for (int i = 2; i < classDesc.Properties.Length; i++)   // Skip Id and Version
-		{
-			PropertyDescriptor pd = classDesc.Properties[i];
-			if (pd.Id == propDesc.Id)
-				return offset;
-
-			offset += (int)PropertyTypesHelper.GetItemSize(pd.PropertyType);
-		}
-
-		throw new ArgumentException("Unexisting property.");
 	}
 
 	public static OpCode GetLoadSimpleTypeInstruction(PropertyType type)

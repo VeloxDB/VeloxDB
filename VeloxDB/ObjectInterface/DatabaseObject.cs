@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Drawing;
 using System.Runtime.CompilerServices;
 using VeloxDB.Common;
 using VeloxDB.Descriptor;
@@ -33,17 +35,18 @@ public unsafe abstract class DatabaseObject
 	internal ClassData classData;
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	internal void BeginInit(ObjectModel owner, ClassData classData, byte* buffer, DatabaseObjectState state, ChangeList changeList)
+	internal void BeginInit(ObjectModel owner, ClassData classData, byte* buffer, long id, DatabaseObjectState state, ChangeList changeList)
 	{
-		Checker.AssertTrue(buffer != null);
 		this.owner = owner;
 		this.classData = classData;
 		this.buffer = buffer;
-		this.id = *(long*)buffer;
+		this.id = id;
 		this.state = state | DatabaseObjectState.NotConstructedFully;
 
 		owner.ObjectMap.Add(this.Id, this);
 		changeList?.Add(this);
+
+		TTTrace.Write(owner.Transaction.Id, id, (ulong)buffer, (int)state);
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -56,6 +59,7 @@ public unsafe abstract class DatabaseObject
 	internal static string OwnerFieldName => nameof(owner);
 	internal static string ClassDataFieldName => nameof(classData);
 	internal static string VerifyAccessMethodName => nameof(VerifyAccess);
+	internal static string VerifyAccessInvRefMethodName => nameof(VerifyAccessInverseReferences);
 	internal static string VerifyReferencingMethodName => nameof(VerifyReferencing);
 	internal static string CreateInsertBlockName => nameof(CreateInsertBlock);
 	internal static string CreateUpdateBlockName => nameof(CreateUpdateBlock);
@@ -130,8 +134,13 @@ public unsafe abstract class DatabaseObject
 	{
 		owner.ValidateThread();
 
+		TTTrace.Write(owner.Transaction.Id, id, IsDeleted, (int)state, (ulong)buffer);
+
 		if (IsDeleted)
 			return;
+
+		if (buffer == null)
+			buffer = owner.ProvideObjectPointer(id, true);
 
 		owner.DeleteObject(this, true);
 	}
@@ -151,6 +160,8 @@ public unsafe abstract class DatabaseObject
 	{
 		owner.ValidateThread();
 
+		TTTrace.Write(owner.Transaction.Id, id, (int)state, (ulong)buffer);
+
 		if (state == DatabaseObjectState.Abandoned)
 			return;
 
@@ -167,6 +178,7 @@ public unsafe abstract class DatabaseObject
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	internal void Refresh(byte* buffer)
 	{
+		TTTrace.Write(owner.Transaction.Id, id, (int)state, (ulong)this.buffer, (ulong)buffer);
 		this.buffer = buffer;
 		state = (state & DatabaseObjectState.Selected);
 		OnRefresh();
@@ -175,6 +187,7 @@ public unsafe abstract class DatabaseObject
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	internal void Modified(byte* buffer, int size)
 	{
+		TTTrace.Write(owner.Transaction.Id, id, (int)state, (ulong)this.buffer, (ulong)buffer, size);
 		Common.Utils.CopyMemory(this.buffer, buffer, size);
 		this.buffer = buffer;
 		state |= DatabaseObjectState.Modified;
@@ -183,8 +196,12 @@ public unsafe abstract class DatabaseObject
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	internal void Cleanup()
 	{
+		TTTrace.Write(owner.Transaction.Id, id, (int)state, (ulong)this.buffer);
 		if ((state & (DatabaseObjectState.Modified | DatabaseObjectState.Inserted)) != DatabaseObjectState.Read)
-			owner.FreeObjectBuffer(classData, buffer);
+		{
+			if (buffer != null)
+				owner.FreeObjectBuffer(classData, buffer);
+		}
 
 		buffer = null;
 	}
@@ -192,6 +209,8 @@ public unsafe abstract class DatabaseObject
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	internal void VerifyAccessAndModel(DatabaseObject obj)
 	{
+		TTTrace.Write(owner.Transaction.Id, id, (int)state, (ulong)this.buffer);
+
 		owner.ValidateThread();
 
 		if (obj != null && !object.ReferenceEquals(obj.owner, this.owner))
@@ -217,6 +236,25 @@ public unsafe abstract class DatabaseObject
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	internal void VerifyAccess()
 	{
+		TTTrace.Write(owner.Transaction.Id, id, (int)state, (ulong)this.buffer);
+
+		owner.ValidateThread();
+
+		if (owner.Disposed)
+			throw new ObjectDisposedException(nameof(ObjectModel));
+
+		if ((state & (DatabaseObjectState.Deleted | DatabaseObjectState.Abandoned)) != DatabaseObjectState.None)
+			ThrowAccessError(false);
+
+		if (buffer == null)
+			buffer = owner.ProvideObjectPointer(id, false);
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	internal void VerifyAccessInverseReferences()
+	{
+		TTTrace.Write(owner.Transaction.Id, id, (int)state, (ulong)this.buffer);
+
 		owner.ValidateThread();
 
 		if (owner.Disposed)
@@ -229,6 +267,8 @@ public unsafe abstract class DatabaseObject
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	internal void VerifyModifyAccess()
 	{
+		TTTrace.Write(owner.Transaction.Id, id, (int)state, (ulong)this.buffer);
+
 		owner.ValidateThread();
 
 		if (owner.Disposed)
@@ -236,6 +276,15 @@ public unsafe abstract class DatabaseObject
 
 		if ((state & (DatabaseObjectState.Deleted | DatabaseObjectState.Abandoned | DatabaseObjectState.NotConstructedFully)) != DatabaseObjectState.None)
 			ThrowAccessError(true);
+
+		if (buffer == null)
+			buffer = owner.ProvideObjectPointer(id, false);
+	}
+
+	internal void ProvideBuffer(bool forceNoReadLock)
+	{
+		if (buffer == null)
+			buffer = owner.ProvideObjectPointer(id, forceNoReadLock);
 	}
 
 	[MethodImpl(MethodImplOptions.NoInlining)]
@@ -259,6 +308,8 @@ public unsafe abstract class DatabaseObject
 	{
 		if (obj == null)
 			return;
+
+		TTTrace.Write(obj.owner.Transaction.Id, obj.id, (int)obj.state, (ulong)obj.buffer, referencingObject.Id);
 
 		if (obj != null && !object.ReferenceEquals(obj.owner, referencingObject.owner))
 			throw new InvalidOperationException("Referenced object does not belong to the same object model.");

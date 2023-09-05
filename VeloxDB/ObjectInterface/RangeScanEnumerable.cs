@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using VeloxDB.Common;
 using VeloxDB.Storage;
 
 namespace VeloxDB.ObjectInterface;
@@ -26,6 +27,7 @@ public unsafe sealed partial class ObjectModel
 			this.classData = classData;
 			this.scan = scan;
 			list = model.Context.GetObjectReaderList();
+			Checker.AssertTrue(list.Count == 0);
 		}
 
 		object IEnumerator.Current => Current;
@@ -97,8 +99,17 @@ public unsafe sealed partial class ObjectModel
 			{
 				readObjectCount = 0;
 				list.Clear();
-				if (!scan.Next(list, ObjectReaderList.Capacity))
-					return false;
+
+				try
+				{
+					if (!scan.Next(list, ObjectReaderList.Capacity))
+						return false;
+				}
+				catch (Exception e)
+				{
+					model.ProcessException(e);
+					throw;
+				}
 			}
 
 			curr = (T)(object)model.GetObjectOrCreate(list[readObjectCount++], classData);

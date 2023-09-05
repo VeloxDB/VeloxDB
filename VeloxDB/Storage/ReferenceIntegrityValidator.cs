@@ -12,7 +12,6 @@ internal unsafe sealed class ReferenceIntegrityValidator
 	const int deletedCountLimit = 1024;
 
 	StorageEngine engine;
-
 	DataModelDescriptor modelDesc;
 
 	public ReferenceIntegrityValidator(StorageEngine engine, Database database)
@@ -58,8 +57,11 @@ internal unsafe sealed class ReferenceIntegrityValidator
 		Class @class = tran.Database.GetClass(targetClassDesc.Index).MainClass;
 		TTTrace.Write(engine.TraceId, rc->directReference);
 
-		if (!@class.ObjectExists(tran, rc->directReference))
+		if (!@class.ObjectExists(tran, rc->directReference, out DatabaseErrorDetail error))
 		{
+			if (error != null)
+				return error;
+
 			if (!RefereceStillExists(tran, classDesc, rc, count))
 				return null;
 
@@ -69,7 +71,7 @@ internal unsafe sealed class ReferenceIntegrityValidator
 		return null;
 	}
 
-	public Changeset PropagateDeletes(Transaction tran, bool onlySetToNull, out DatabaseErrorDetail error)
+	public Changeset PropagateDeletes(Transaction tran, bool refsSemiValidated, out DatabaseErrorDetail error)
 	{
 		TransactionContext tc = tran.Context;
 		if (tc.Deleted.IsEmpty)
@@ -80,18 +82,18 @@ internal unsafe sealed class ReferenceIntegrityValidator
 
 		TTTrace.Write(engine.TraceId, tran.Id);
 
-		error = CollectPropagationAffectedUsingInverseReferences(tran, onlySetToNull,
+		error = CollectPropagationAffectedUsingInverseReferences(tran, refsSemiValidated,
 			out HashSet<ushort> classesToScan, out DeletedSet deleted);
 		if (error != null)
 			return null;
 
-		error = CollectPropagationAffectedUsingClassScans(tran, onlySetToNull, classesToScan, deleted);
+		error = CollectPropagationAffectedUsingClassScans(tran, refsSemiValidated, classesToScan, deleted);
 		if (error != null)
 			return null;
 
 		tc.SortPropagatedInverseReferences();
 
-		GeneratePropagatedOperations(tran, out ChangesetWriter writer, out error);
+		GeneratePropagatedOperations(tran, refsSemiValidated, out ChangesetWriter writer, out error);
 		try
 		{
 			if (error != null || writer == null)
@@ -106,7 +108,7 @@ internal unsafe sealed class ReferenceIntegrityValidator
 		}
 	}
 
-	private DatabaseErrorDetail CollectPropagationAffectedUsingInverseReferences(Transaction tran, bool onlySetToNull,
+	private DatabaseErrorDetail CollectPropagationAffectedUsingInverseReferences(Transaction tran, bool refsSemiValidated,
 	out HashSet<ushort> classesToScan, out DeletedSet deletedSet)
 	{
 		TTTrace.Write(engine.TraceId, tran.Id);
@@ -123,10 +125,10 @@ internal unsafe sealed class ReferenceIntegrityValidator
 		for (long i = 0; i < deletedCount; i++)
 		{
 			InverseReferenceMap invRefMap = database.GetInvRefs(deleted->classIndex);
-			ReadOnlyArray<ReferencePropertyDescriptor> invRefPropDescs = onlySetToNull ?
+			ReadOnlyArray<ReferencePropertyDescriptor> invRefPropDescs = refsSemiValidated ?
 				invRefMap?.ClassDesc.SetToNullInverseReferences : invRefMap?.ClassDesc.InverseReferences;
 
-			TTTrace.Write(engine.TraceId, deleted->id, deleted->classIndex, invRefPropDescs == null ? -1 : invRefPropDescs.Length, onlySetToNull);
+			TTTrace.Write(engine.TraceId, deleted->id, deleted->classIndex, invRefPropDescs == null ? -1 : invRefPropDescs.Length, refsSemiValidated);
 			if (invRefPropDescs == null || invRefPropDescs.Length == 0)
 			{
 				deleted++;
@@ -146,7 +148,7 @@ internal unsafe sealed class ReferenceIntegrityValidator
 					for (int k = 0; k < invRefCount; k++)
 					{
 						TTTrace.Write(engine.TraceId, deleted->id, refs[offset + k], invRefPropDesc.Id, (byte)invRefPropDesc.DeleteTargetAction);
-						tc.AddInverseReferenceChange(0, refs[offset + k], deleted->id, invRefPropDesc.Id, false, (byte)invRefPropDesc.DeleteTargetAction);
+						tc.AddInverseReferenceChange(0, refs[offset + k], deleted->id, invRefPropDesc.Id, (byte)invRefPropDesc.DeleteTargetAction);
 					}
 
 					offset += invRefCount;
@@ -171,7 +173,7 @@ internal unsafe sealed class ReferenceIntegrityValidator
 	}
 
 	private DatabaseErrorDetail GenerateSetToNullOperation(ChangesetWriter writer, Transaction tran,
-		ClassDescriptor classDesc, InverseReferenceOperation* ops, long count)
+		ClassDescriptor classDesc, InverseReferenceOperation* ops, long count, bool refsSemiValidated)
 	{
 		ClassBase @class = tran.Database.GetClass(classDesc.Index);
 
@@ -183,7 +185,9 @@ internal unsafe sealed class ReferenceIntegrityValidator
 
 		TTTrace.Write(engine.TraceId, classDesc.Id, propDesc.Id, ops->inverseReference, ops->directReference);
 
-		reader = @class.GetObject(tran, ops->inverseReference, out DatabaseErrorDetail error);
+		TransactionContext tc = tran.Context;
+
+		reader = @class.GetObject(tran, ops->inverseReference, false, out DatabaseErrorDetail error);
 		if (error != null)
 			return error;
 
@@ -193,11 +197,11 @@ internal unsafe sealed class ReferenceIntegrityValidator
 			{
 				writer.StartUpdateBlock(classDesc).Add(propDesc.Id);
 				writer.AddLong(ops->inverseReference).AddReference(0);
+				tc.AddSetToNullAffected(ops->inverseReference);
 			}
 		}
 		else
 		{
-			TransactionContext tc = tran.Context;
 			long* refs = tc.TempInvRefs;
 			int bufferSize = TransactionContext.TempInvRefSize;
 			reader.GetReferenceArray(engine, byteOffset, ref refs, ref bufferSize, out int refCount);
@@ -207,6 +211,7 @@ internal unsafe sealed class ReferenceIntegrityValidator
 			{
 				writer.StartUpdateBlock(classDesc).Add(propDesc.Id);
 				writer.AddLong(ops->inverseReference).AddReferenceArray(refs, refCount);
+				tc.AddSetToNullAffected(ops->inverseReference);
 			}
 		}
 
@@ -241,7 +246,7 @@ internal unsafe sealed class ReferenceIntegrityValidator
 		return false;
 	}
 
-	private void GeneratePropagatedOperations(Transaction tran, out ChangesetWriter writer, out DatabaseErrorDetail error)
+	private void GeneratePropagatedOperations(Transaction tran, bool refsSemiValidated, out ChangesetWriter writer, out DatabaseErrorDetail error)
 	{
 		NativeList l = tran.Context.InverseRefChanges;
 
@@ -262,7 +267,7 @@ internal unsafe sealed class ReferenceIntegrityValidator
 		{
 			if (endOp->inverseReference != startOp->inverseReference)
 			{
-				error = GenerateRangePropagatedOperations(writer, tran, startOp, rangeCount);
+				error = GenerateRangePropagatedOperations(writer, tran, startOp, rangeCount, refsSemiValidated);
 				if (error != null)
 					return;
 
@@ -274,11 +279,11 @@ internal unsafe sealed class ReferenceIntegrityValidator
 			endOp++;
 		}
 
-		error = GenerateRangePropagatedOperations(writer, tran, startOp, rangeCount);
+		error = GenerateRangePropagatedOperations(writer, tran, startOp, rangeCount, refsSemiValidated);
 	}
 
 	private DatabaseErrorDetail GenerateRangePropagatedOperations(ChangesetWriter cw, Transaction tran,
-		InverseReferenceOperation* ops, long count)
+		InverseReferenceOperation* ops, long count, bool refsSemiValidated)
 	{
 		ClassDescriptor classDesc = IdHelper.GetClass(modelDesc, ops->inverseReference);
 
@@ -303,7 +308,7 @@ internal unsafe sealed class ReferenceIntegrityValidator
 		{
 			if (endOp->PropertyId != prevPropId)
 			{
-				DatabaseErrorDetail error = GenerateSetToNullOperation(cw, tran, classDesc, ops, rangeCount);
+				DatabaseErrorDetail error = GenerateSetToNullOperation(cw, tran, classDesc, ops, rangeCount, refsSemiValidated);
 				if (error != null)
 					return error;
 
@@ -316,7 +321,7 @@ internal unsafe sealed class ReferenceIntegrityValidator
 			endOp++;
 		}
 
-		return GenerateSetToNullOperation(cw, tran, classDesc, ops, rangeCount);
+		return GenerateSetToNullOperation(cw, tran, classDesc, ops, rangeCount, refsSemiValidated);
 	}
 
 	private bool FilterOutReferences(long* refs, ref int refCount, InverseReferenceOperation* ops, long opCount)
@@ -339,7 +344,7 @@ internal unsafe sealed class ReferenceIntegrityValidator
 		return filtered;
 	}
 
-	private DatabaseErrorDetail CollectPropagationAffectedUsingClassScans(Transaction tran, bool onlySetToNull,
+	private DatabaseErrorDetail CollectPropagationAffectedUsingClassScans(Transaction tran, bool refsSemiValidated,
 		HashSet<ushort> classesToScan, DeletedSet deletedSet)
 	{
 		if (classesToScan == null)
@@ -349,7 +354,7 @@ internal unsafe sealed class ReferenceIntegrityValidator
 
 		foreach (ClassDescriptor classDesc in classesToScan.Select(x => modelDesc.GetClassByIndex(x)))
 		{
-			DatabaseErrorDetail error = CollectPropagationAffectedUsingClassScan(tran, onlySetToNull, classDesc, deletedSet);
+			DatabaseErrorDetail error = CollectPropagationAffectedUsingClassScan(tran, refsSemiValidated, classDesc, deletedSet);
 			if (error != null)
 				return error;
 		}
@@ -357,6 +362,7 @@ internal unsafe sealed class ReferenceIntegrityValidator
 		return null;
 	}
 
+	//
 	private DatabaseErrorDetail CollectPropagationAffectedUsingClassScan(Transaction tran, bool onlySetToNull,
 		ClassDescriptor classDesc, DeletedSet deletedSet)
 	{
@@ -364,8 +370,10 @@ internal unsafe sealed class ReferenceIntegrityValidator
 
 		TransactionContext tc = tran.Context;
 
+		// We scan the class without read-lock because if a new reference is being introduced (to a deleted entity)
+		// It will fail the validation (when Existance lock is taken).
 		ObjectReader[] readers = tc.TempRecReaders;
-		using ClassScan scan = engine.BeginClassScanInternal(tran, classDesc, false, false, out DatabaseErrorDetail error);
+		using ClassScan scan = engine.BeginClassScanInternal(tran, classDesc, false, true, out DatabaseErrorDetail error);
 		if (error != null)
 			return error;
 
@@ -408,7 +416,7 @@ internal unsafe sealed class ReferenceIntegrityValidator
 				if (ObjectDeletedInTran(tran, refs[i], deletedSet))
 				{
 					TTTrace.Write(engine.TraceId, id, propDesc.Id, refs[i], propDesc.Id, (byte)propDesc.DeleteTargetAction);
-					tc.AddInverseReferenceChange(0, id, refs[i], propDesc.Id, false, (byte)propDesc.DeleteTargetAction);
+					tc.AddInverseReferenceChange(0, id, refs[i], propDesc.Id, (byte)propDesc.DeleteTargetAction);
 				}
 			}
 		}
@@ -418,7 +426,7 @@ internal unsafe sealed class ReferenceIntegrityValidator
 			if (ObjectDeletedInTran(tran, reference, deletedSet))
 			{
 				TTTrace.Write(engine.TraceId, id, propDesc.Id, reference, propDesc.Id, (byte)propDesc.DeleteTargetAction);
-				tc.AddInverseReferenceChange(0, id, reference, propDesc.Id, false, (byte)propDesc.DeleteTargetAction);
+				tc.AddInverseReferenceChange(0, id, reference, propDesc.Id, (byte)propDesc.DeleteTargetAction);
 			}
 		}
 	}

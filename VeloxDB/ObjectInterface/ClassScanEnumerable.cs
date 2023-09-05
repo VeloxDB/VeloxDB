@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using VeloxDB.Common;
 using VeloxDB.Storage;
 
 namespace VeloxDB.ObjectInterface;
@@ -50,10 +51,20 @@ public unsafe sealed partial class ObjectModel
 			this.model = model;
 			this.classData = classData;
 
+			TTTrace.Write(model.Transaction.Id, model.HasLocalChanges(classData));
+
 			if (model.HasLocalChanges(classData))
 				model.ApplyChanges();
 
-			scan = model.engine.BeginClassScan(model.transaction, classData.ClassDesc);
+			try
+			{
+				scan = model.engine.BeginClassScan(model.transaction, classData.ClassDesc);
+			}
+			catch (Exception e)
+			{
+				model.ProcessException(e);
+				throw;
+			}
 
 			objectCount = 0;
 			readObjectCount = objectCount;
@@ -111,11 +122,19 @@ public unsafe sealed partial class ObjectModel
 			if (disposed || model.Disposed)
 				throw new ObjectDisposedException(nameof(ClassScanEnumerator<T>));
 
-			if (readObjectCount >= objectCount)
+			try
 			{
-				readObjectCount = 0;
-				if (!scan.Next(objects, out objectCount))
-					return false;
+				if (readObjectCount >= objectCount)
+				{
+					readObjectCount = 0;
+					if (!scan.Next(objects, out objectCount))
+						return false;
+				}
+			}
+			catch (Exception e)
+			{
+				model.ProcessException(e);
+				throw;
 			}
 
 			curr = (T)(object)model.GetObjectOrCreate(objects[readObjectCount++], classData);

@@ -1,13 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Runtime.Intrinsics.Arm;
 using System.Threading;
 using VeloxDB.Common;
 using VeloxDB.Descriptor;
 using VeloxDB.Storage;
-
 namespace VeloxDB.ObjectInterface;
 
 /// <summary>
@@ -15,6 +16,8 @@ namespace VeloxDB.ObjectInterface;
 /// </summary>
 public unsafe sealed partial class ObjectModel
 {
+	static Action<ObjectModel, long> refresher;
+
 	StorageEngine engine;
 	MemoryManager memoryManager;
 	ObjectModelContextPool contextPool;
@@ -44,6 +47,15 @@ public unsafe sealed partial class ObjectModel
 	CriticalDatabaseException storedException;
 
 	bool disposed;
+
+	static ObjectModel()
+	{
+		refresher = (o, id) =>
+		{
+			if (o.objectMap.TryGetValue(id, out var obj))
+				o.RefreshObjectFromDatabase(obj);
+		};
+	}
 
 	internal ObjectModel(ObjectModelData modelData, ObjectModelContextPool contextPool, TransactionType tranType)
 	{
@@ -137,9 +149,7 @@ public unsafe sealed partial class ObjectModel
 		T result = GetObject<T>(id);
 
 		if (result == null)
-		{
 			throw new ArgumentException($"Object of type {typeof(T).Name} with id {id} could not be found.");
-		}
 
 		return result;
 	}
@@ -152,10 +162,23 @@ public unsafe sealed partial class ObjectModel
 		return null;
 	}
 
+	internal bool IsObjectDeleted(long id)
+	{
+		bool b = deletedSet.Contains(id);
+#if TEST_BUILD
+		if (objectMap.TryGetValue(id, out DatabaseObject obj))
+			Checker.AssertTrue(obj.IsDeleted == b);
+#endif
+
+		return b;
+	}
+
 	internal DatabaseObject GetObject(long id)
 	{
 		if (disposed)
 			throw new ObjectDisposedException(nameof(ObjectModel));
+
+		TTTrace.Write(transaction.Id, id);
 
 		if (id == 0)
 			return null;
@@ -169,25 +192,48 @@ public unsafe sealed partial class ObjectModel
 		if (deletedSet.Contains(id))
 			return null;
 
+		byte* objPtr = null;
+		if (transaction.Type == TransactionType.Read)
+		{
+			objPtr = ProvideObjectPointer(id, false);
+			if ((ulong)objPtr == (ulong)sizeof(long))
+				return null;
+		}
+		else
+		{
+			try
+			{
+				if (!engine.ObjectExists(transaction, classData.ClassDesc, id))
+					return null;
+			}
+			catch (Exception e)
+			{
+				ProcessException(e);
+				throw;
+			}
+		}
+
+		obj = classData.Creator(this, classData, objPtr, id, DatabaseObjectState.None, null);
+
+		return obj;
+	}
+
+	internal byte* ProvideObjectPointer(long id, bool forceNoReadLock)
+	{
 		ObjectReader or;
 		try
 		{
-			or = engine.GetObject(transaction, id);
+			or = engine.GetObject(transaction, id, forceNoReadLock);
 		}
 		catch (Exception e)
 		{
-			TryStoreException(e);
+			ProcessException(e);
 			throw;
 		}
 
 		byte* objPtr = or.Object;
-		if (objPtr == null)
-			return null;
-
-		objPtr += sizeof(long); // Version is skipped
-		obj = classData.Creator(this, classData, objPtr, DatabaseObjectState.None, null);
-
-		return obj;
+		TTTrace.Write(transaction.Id, id, (ulong)objPtr);
+		return objPtr + sizeof(long); // Version is skipped
 	}
 
 	internal DatabaseObject GetObjectOrCreate(ObjectReader objReader, ClassData classData)
@@ -197,6 +243,8 @@ public unsafe sealed partial class ObjectModel
 
 		long id = objReader.GetIdOptimized();
 
+		TTTrace.Write(transaction.Id, id);
+
 		if (objectMap.TryGetValue(id, out DatabaseObject obj))
 			return obj.IsDeleted ? null : obj;
 
@@ -204,11 +252,13 @@ public unsafe sealed partial class ObjectModel
 			return null;
 
 		if (classData.ClassDesc.Id != IdHelper.GetClassId(id))
-			classData = modelData.GetClassByClassId(IdHelper.GetClassId(objReader.GetIdOptimized()));
+			classData = modelData.GetClassByClassId(IdHelper.GetClassId(id));
+
+		TTTrace.Write(transaction.Id, id);
 
 		byte* objPtr = objReader.Object;
 		objPtr += sizeof(long); // Version is skipped
-		obj = classData.Creator(this, classData, objPtr, DatabaseObjectState.None, null);
+		obj = classData.Creator(this, classData, objPtr, id, DatabaseObjectState.None, null);
 
 		return obj;
 	}
@@ -243,10 +293,11 @@ public unsafe sealed partial class ObjectModel
 			throw new ArgumentException("Invalid object type.");
 
 		long id = classData.ClassDesc.MakeId(context.GetId());
+		TTTrace.Write(transaction.Id, id);
 
 		byte* buffer = AllocObjectBuffer(classData, true);
 		*(long*)buffer = id;
-		DatabaseObject obj = classData.Creator(this, classData, buffer, DatabaseObjectState.Inserted, changeList);
+		DatabaseObject obj = classData.Creator(this, classData, buffer, id, DatabaseObjectState.Inserted, changeList);
 
 		return (T)obj;
 	}
@@ -261,9 +312,11 @@ public unsafe sealed partial class ObjectModel
 		if (!modelData.TryGetClassByUserType(typeof(T), out ClassData classData) || classData.ClassDesc.IsAbstract)
 			throw new ArgumentException("Invalid object type.");
 
+		TTTrace.Write(transaction.Id, id);
+
 		byte* buffer = AllocObjectBuffer(classData, true);
 		*(long*)buffer = id;
-		DatabaseObject obj = classData.Creator(this, classData, buffer, DatabaseObjectState.Inserted, changeList);
+		DatabaseObject obj = classData.Creator(this, classData, buffer, id, DatabaseObjectState.Inserted, changeList);
 
 		return (T)obj;
 	}
@@ -289,6 +342,8 @@ public unsafe sealed partial class ObjectModel
 		if (!modelData.TryGetClassByUserType(typeof(T), out ClassData classData))
 			throw new ArgumentException("Invalid object type.");
 
+		TTTrace.Write(transaction.Id, classData.ClassDesc.Id);
+
 		return new ClassScanEnumerable<T>(this, classData);
 	}
 
@@ -298,7 +353,8 @@ public unsafe sealed partial class ObjectModel
 
 		try
 		{
-			ClassScan scan = engine.BeginClassScan(transaction, classData.ClassDesc);
+			ClassScan scan = engine.BeginClassScan(transaction, classData.ClassDesc, true);
+
 			ChangeList.TypeIterator changeIterator = new ChangeList.TypeIterator();
 
 			int objectCount = 0;
@@ -352,7 +408,7 @@ public unsafe sealed partial class ObjectModel
 		}
 		catch (Exception e)
 		{
-			TryStoreException(e);
+			ProcessException(e);
 			throw;
 		}
 		finally
@@ -585,6 +641,7 @@ public unsafe sealed partial class ObjectModel
 		if (disposed)
 			throw new ObjectDisposedException(nameof(ObjectModel));
 
+		TTTrace.Write(transaction.Id, obj.Id);
 		obj.State = DatabaseObjectState.Abandoned;
 		objectMap.Remove(obj.Id);
 	}
@@ -593,6 +650,8 @@ public unsafe sealed partial class ObjectModel
 	{
 		if (disposed)
 			throw new ObjectDisposedException(nameof(ObjectModel));
+
+		TTTrace.Write(transaction.Id, obj.Id, performCascadeDelete);
 
 		obj.InvalidateInverseReferences();
 
@@ -611,10 +670,12 @@ public unsafe sealed partial class ObjectModel
 			toDelete1[0] = obj.Id;
 			while (count > 0)
 			{
+				TTTrace.Write(transaction.Id, count);
 				SingleIterationDelete(ref count);
 				Utils.Exchange(ref toDelete1, ref toDelete2);
 			}
 
+			TTTrace.Write(transaction.Id, deletedSet.Count, prevDeletedCount);
 			if (deletedSet.Count > prevDeletedCount)
 				deletedSet.IncVersion();
 		}
@@ -623,6 +684,8 @@ public unsafe sealed partial class ObjectModel
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	internal long GetSetToNullReference(long id)
 	{
+		TTTrace.Write(transaction.Id, deletedSet.Contains(id), id);
+
 		if (deletedSet.Contains(id))
 		{
 			return 0;
@@ -643,10 +706,17 @@ public unsafe sealed partial class ObjectModel
 			for (int i = 0; i < count; i++)
 			{
 				long id = toDelete1[i];
-				deletedSet.Add(id);
 
-				if (objectMap.TryGetValue(id, out DatabaseObject obj) && !obj.IsDeleted)
+				TTTrace.Write(transaction.Id, id);
+
+				DatabaseObject obj = GetObject(id);
+				if (obj != null)
+				{
+					TTTrace.Write(transaction.Id, id);
 					DeleteObject(obj, false);
+				}
+
+				deletedSet.Add(id);
 
 				ClassDescriptor classDesc = modelData.ModelDesc.GetClass(IdHelper.GetClassId(id));
 				ReadOnlyArray<ReferencePropertyDescriptor> invRefs = classDesc.CascadeDeletePreventInverseReferences;
@@ -661,11 +731,13 @@ public unsafe sealed partial class ObjectModel
 
 						for (int k = 0; k < cascCount; k++)
 						{
+							TTTrace.Write(transaction.Id, id, inverseReferenceIds[k]);
 							toDelete2[newCount++] = inverseReferenceIds[k];
 						}
 					}
 					else
 					{
+						TTTrace.Write(transaction.Id, id, p.Id);
 						scanClasses.AddInvReferenceProperty(p, modelData);
 					}
 				}
@@ -674,6 +746,7 @@ public unsafe sealed partial class ObjectModel
 			if (scanClasses.Count > 0)
 				ScanClassesAndCascadeDelete(scanClasses, ref newCount);
 
+			TTTrace.Write(transaction.Id, newCount);
 			count = newCount;
 		}
 		finally
@@ -684,6 +757,7 @@ public unsafe sealed partial class ObjectModel
 
 	private void DisposeAndThrowDueToPreventDelete(ReferencePropertyDescriptor propDesc, long id, long referencingId)
 	{
+		TTTrace.Write(transaction.Id, referencingId);
 		Dispose();
 		ClassDescriptor classDesc = IdHelper.GetClass(propDesc.OwnerClass.Model, referencingId);
 		throw new DatabaseException(DatabaseErrorDetail.CreateReferencedDelete(id, referencingId, classDesc.FullName, propDesc.Name));
@@ -691,20 +765,30 @@ public unsafe sealed partial class ObjectModel
 
 	private void ScanClassesAndCascadeDelete(ScanClassesSet scanClasses, ref int newCount)
 	{
+		TTTrace.Write(transaction.Id, scanClasses.Count, newCount);
+
 		int nc = newCount;
 		scanClasses.ForEeach((key, value) =>
 		{
+			TTTrace.Write(transaction.Id, key, value.Count);
+
 			ClassData classData = modelData.GetClassByClassId(key);
 			List<ScanClassesSet.ScanedProperty> l = value;
 			ForEachObject(classData, r =>
 			{
+				TTTrace.Write(transaction.Id, r.GetIdOptimized(), value.Count);
+
 				for (int i = 0; i < value.Count; i++)
 				{
 					ReferencePropertyDescriptor p = l[i].Property;
+					TTTrace.Write(transaction.Id, r.GetIdOptimized(), p.Id, (int)p.Multiplicity);
+
 					if (p.Multiplicity == Multiplicity.Many)
 					{
 						if (r.LongArrayContainsValue(p.Id, deletedSet.Ids, out long value))
 						{
+							TTTrace.Write(transaction.Id, r.GetIdOptimized(), (int)p.DeleteTargetAction, nc);
+
 							if (p.DeleteTargetAction == DeleteTargetAction.PreventDelete)
 								DisposeAndThrowDueToPreventDelete(p, value, r.GetIdOptimized());
 
@@ -714,8 +798,12 @@ public unsafe sealed partial class ObjectModel
 					else
 					{
 						long id = r.GetLongByIdOptimized(p.Id);
+						TTTrace.Write(transaction.Id, r.GetIdOptimized(), id, deletedSet.Count);
+
 						if (deletedSet.Contains(id))
 						{
+							TTTrace.Write(transaction.Id, r.GetIdOptimized(), id, (int)p.DeleteTargetAction, nc);
+
 							if (p.DeleteTargetAction == DeleteTargetAction.PreventDelete)
 								DisposeAndThrowDueToPreventDelete(p, id, r.GetIdOptimized());
 
@@ -725,10 +813,19 @@ public unsafe sealed partial class ObjectModel
 				}
 			}, obj =>
 			{
+				TTTrace.Write(transaction.Id, obj.Id, value.Count, deletedSet.Count);
 				for (int i = 0; i < value.Count; i++)
 				{
-					if (l[i].ReferenceChecker(obj, deletedSet.Ids))
+					ClassDescriptor classDesc = obj.ClassData.ClassDesc;
+					// Field offset is provided here as an argument and it can't be built into the checker code since
+					// checker might be generated for an abstract class (owner of the reference property).
+					// Offset is calculated starting from the id (version is skipped).
+					int fieldOffset = classDesc.PropertyByteOffsets[classDesc.GetPropertyIndex(l[i].Property.Id)] - sizeof(long);
+					if (l[i].ReferenceChecker(obj, deletedSet.Ids, fieldOffset))
+					{
+						TTTrace.Write(transaction.Id, obj.Id, nc);
 						toDelete2[nc++] = obj.Id;
+					}
 				}
 			});
 		});
@@ -738,6 +835,8 @@ public unsafe sealed partial class ObjectModel
 
 	internal void InvalidateInverseReference(long refId, int propertyId)
 	{
+		TTTrace.Write(transaction.Id, refId, propertyId);
+
 		if (refId == 0)
 			return;
 
@@ -754,10 +853,14 @@ public unsafe sealed partial class ObjectModel
 		if (refIds == null)
 			return;
 
+		TTTrace.Write(transaction.Id, propertyId, refIds.Count);
+
 		int count = refIds.Count;
 		for (int i = 0; i < count; i++)
 		{
 			long refId = refIds.GetId(i);
+			TTTrace.Write(transaction.Id, propertyId, refId);
+
 			if (refId == 0)
 				continue;
 
@@ -777,9 +880,13 @@ public unsafe sealed partial class ObjectModel
 
 		long* lp = PropertyTypesHelper.DBUnpackLongArray(engineBlobStorage.RetrieveBlob(handle), out int count);
 
+		TTTrace.Write(transaction.Id, propertyId, (ulong)lp, count);
+
 		for (int i = 0; i < count; i++)
 		{
 			long refId = lp[i];
+			TTTrace.Write(transaction.Id, propertyId, refId);
+
 			if (refId == 0)
 				continue;
 
@@ -795,6 +902,8 @@ public unsafe sealed partial class ObjectModel
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	internal void ReferenceModified(long inverseRefId, long oldDirectRefId, long newDirectRefId, int propertyId)
 	{
+		TTTrace.Write(transaction.Id, inverseRefId, oldDirectRefId, newDirectRefId, propertyId);
+
 		if (oldDirectRefId != 0)
 		{
 			InvalidateInverseReference(oldDirectRefId, propertyId);
@@ -813,9 +922,11 @@ public unsafe sealed partial class ObjectModel
 	{
 		if (oldDirectRefIds != null)
 		{
+			TTTrace.Write(transaction.Id, inverseRefId, oldDirectRefIds.Count, propertyId);
 			for (int i = 0; i < oldDirectRefIds.Count; i++)
 			{
 				long id = oldDirectRefIds.GetId(i);
+				TTTrace.Write(transaction.Id, inverseRefId, id, propertyId);
 				if (id != 0)
 				{
 					InvalidateInverseReference(id, propertyId);
@@ -826,9 +937,11 @@ public unsafe sealed partial class ObjectModel
 
 		if (newDirectRefIds != null)
 		{
+			TTTrace.Write(transaction.Id, inverseRefId, newDirectRefIds.Count, propertyId);
 			for (int i = 0; i < newDirectRefIds.Count; i++)
 			{
 				long id = newDirectRefIds.GetId(i);
+				TTTrace.Write(transaction.Id, inverseRefId, id, propertyId);
 				if (id != 0)
 				{
 					InvalidateInverseReference(id, propertyId);
@@ -858,6 +971,8 @@ public unsafe sealed partial class ObjectModel
 		byte* buffer = AllocObjectBuffer(obj.ClassData, false);
 		obj.Modified(buffer, obj.ClassData.ObjectSize);
 		changeList.Add(obj);
+
+		TTTrace.Write(transaction.Id, obj.Id, (ulong)buffer);
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -880,7 +995,7 @@ public unsafe sealed partial class ObjectModel
 		}
 		catch (Exception e)
 		{
-			TryStoreException(e);
+			ProcessException(e);
 			throw;
 		}
 	}
@@ -890,12 +1005,13 @@ public unsafe sealed partial class ObjectModel
 	{
 		try
 		{
+			TTTrace.Write(transaction.Id, classData.ClassDesc.Id, (ulong)buffer);
 			buffer -= classData.BitFieldByteSize;
 			classData.MemoryManager.Free(memoryManager, buffer);
 		}
 		catch (Exception e)
 		{
-			TryStoreException(e);
+			ProcessException(e);
 			throw;
 		}
 	}
@@ -905,6 +1021,8 @@ public unsafe sealed partial class ObjectModel
 	{
 		try
 		{
+			TTTrace.Write(transaction.Id, handle, modified);
+
 			if (handle == 0)
 				return null;
 
@@ -920,30 +1038,36 @@ public unsafe sealed partial class ObjectModel
 		}
 		catch (Exception e)
 		{
-			TryStoreException(e);
+			ProcessException(e);
 			throw;
 		}
 	}
 
 	private void PrepareInverseReferences(long id, int propertyId, out int count)
 	{
+		TTTrace.Write(transaction.Id, id, propertyId);
+
 		try
 		{
 			engine.GetInverseReferences(transaction, id, propertyId, ref inverseReferenceIds, out count);
 		}
 		catch (Exception e)
 		{
-			TryStoreException(e);
+			ProcessException(e);
 			throw;
 		}
 
 		if (invRefChanges.TryCollectChanges(id, propertyId, deletedInvRefs, ref inverseReferenceIds, ref count) && deletedInvRefs.Count > 0)
 		{
+			TTTrace.Write(transaction.Id, id, propertyId, deletedInvRefs.Count, count);
+
 			int rem = 0;
 			for (int i = 0; i < count; i++)
 			{
 				if (deletedInvRefs.TryGetValue(inverseReferenceIds[i], out int c))
 				{
+					TTTrace.Write(transaction.Id, id, propertyId, inverseReferenceIds[i], c, rem);
+
 					rem++;
 					c--;
 					if (c == 0)
@@ -957,29 +1081,36 @@ public unsafe sealed partial class ObjectModel
 				}
 				else if (rem > 0)
 				{
+					TTTrace.Write(transaction.Id, id, propertyId, inverseReferenceIds[i], rem);
 					inverseReferenceIds[i - rem] = inverseReferenceIds[i];
 				}
 			}
 
+			TTTrace.Write(transaction.Id, id, propertyId, count, rem);
 			count -= rem;
 			Checker.AssertTrue(deletedInvRefs.Count == 0);
 		}
 
 		if (deletedSet.HasDeleted)
 		{
+			TTTrace.Write(transaction.Id, id, propertyId, count);
+
 			int rem = 0;
 			for (int i = 0; i < count; i++)
 			{
 				if (deletedSet.Contains(inverseReferenceIds[i]))
 				{
+					TTTrace.Write(transaction.Id, id, propertyId, inverseReferenceIds[i], rem);
 					rem++;
 				}
 				else if (rem > 0)
 				{
+					TTTrace.Write(transaction.Id, id, propertyId, inverseReferenceIds[i], rem);
 					inverseReferenceIds[i - rem] = inverseReferenceIds[i];
 				}
 			}
 
+			TTTrace.Write(transaction.Id, id, propertyId, count, rem);
 			count -= rem;
 		}
 	}
@@ -988,11 +1119,14 @@ public unsafe sealed partial class ObjectModel
 	{
 		PrepareInverseReferences(id, propertyId, out count);
 
+		TTTrace.Write(transaction.Id, id, propertyId, count);
+
 		if (invRefIds.Length < count)
 			Array.Resize(ref invRefIds, Math.Max(count, invRefIds.Length * 2));
 
 		for (int i = 0; i < count; i++)
 		{
+			TTTrace.Write(transaction.Id, id, propertyId, inverseReferenceIds[i]);
 			invRefIds[i] = inverseReferenceIds[i];
 		}
 	}
@@ -1006,7 +1140,7 @@ public unsafe sealed partial class ObjectModel
 		}
 		catch (Exception e)
 		{
-			TryStoreException(e);
+			ProcessException(e);
 			throw;
 		}
 	}
@@ -1017,6 +1151,7 @@ public unsafe sealed partial class ObjectModel
 		if (strings.Length == stringCount)
 			Array.Resize<string>(ref strings, strings.Length * 2);
 
+		TTTrace.Write(transaction.Id, stringCount);
 		strings[stringCount++] = s;
 		return (uint)stringCount;
 	}
@@ -1047,6 +1182,8 @@ public unsafe sealed partial class ObjectModel
 
 	private void ApplyChanges(bool isCommit)
 	{
+		TTTrace.Write(transaction.Id, isCommit, changeList.Count, deletedSet.HasDeleted);
+
 		if (changeList.Count == 0 && !deletedSet.HasDeleted)
 			return;
 
@@ -1058,8 +1195,10 @@ public unsafe sealed partial class ObjectModel
 			{
 				deletedSet.ForEach(id =>
 				{
+					TTTrace.Write(transaction.Id, id);
 					if (!objectMap.TryGetValue(id, out DatabaseObject obj) || !obj.IsCreated)
 					{
+						TTTrace.Write(transaction.Id, id, obj != null, obj == null ? false : obj.IsCreated);
 						ClassDescriptor classDesc = IdHelper.GetClass(modelData.ModelDesc, id);
 						writer.StartDeleteBlock(classDesc);
 						writer.AddDelete(id);
@@ -1070,6 +1209,7 @@ public unsafe sealed partial class ObjectModel
 			for (int i = 0; i < changeList.Count; i++)
 			{
 				DatabaseObject obj = changeList[i];
+				TTTrace.Write(transaction.Id, obj.Id, obj.IsDeleted, obj.IsCreated);
 
 				if (!obj.IsDeleted)
 				{
@@ -1098,6 +1238,8 @@ public unsafe sealed partial class ObjectModel
 			{
 				if (!isCommit)
 				{
+
+
 					for (int i = 0; i < changeList.Count; i++)
 					{
 						DatabaseObject obj = changeList[i];
@@ -1106,9 +1248,11 @@ public unsafe sealed partial class ObjectModel
 
 						if (!obj.IsDeleted)
 						{
-							RefreshObjectFromDatabase(obj, id);
+							RefreshObjectFromDatabase(obj);
 						}
 					}
+
+					transaction.ProcessSetToNullAffected(refresher, this);
 
 					deletedSet.Clear();
 					invRefChanges.Clear();
@@ -1121,7 +1265,7 @@ public unsafe sealed partial class ObjectModel
 		}
 		catch (Exception e)
 		{
-			TryStoreException(e);
+			ProcessException(e);
 			throw;
 		}
 		finally
@@ -1138,18 +1282,18 @@ public unsafe sealed partial class ObjectModel
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	private void RefreshObjectFromDatabase(DatabaseObject obj, long id)
+	private void RefreshObjectFromDatabase(DatabaseObject obj)
 	{
 		try
 		{
-			ObjectReader or = engine.GetObject(transaction, id);
+			ObjectReader or = engine.GetObject(transaction, obj.Id);
 			Checker.AssertFalse(or.IsEmpty());
 			byte* objPtr = or.Object + sizeof(long);    // Version is skipped
 			obj.Refresh(objPtr);
 		}
 		catch (Exception e)
 		{
-			TryStoreException(e);
+			ProcessException(e);
 			throw;
 		}
 	}
@@ -1159,12 +1303,17 @@ public unsafe sealed partial class ObjectModel
 	/// </summary>
 	public void Rollback()
 	{
+		TTTrace.Write(transaction.Id);
+
 		ValidateThread();
 		engine.RollbackTransaction(transaction);
+		Dispose();
 	}
 
 	internal void CommitAndDispose()
 	{
+		TTTrace.Write(transaction.Id);
+
 		ValidateThread();
 
 		if (disposed)
@@ -1178,7 +1327,7 @@ public unsafe sealed partial class ObjectModel
 		}
 		catch (Exception e)
 		{
-			TryStoreException(e);
+			ProcessException(e);
 			throw;
 		}
 
@@ -1187,6 +1336,8 @@ public unsafe sealed partial class ObjectModel
 
 	internal void CommitAsyncAndDispose(Action<object, DatabaseException> callback, object state)
 	{
+		TTTrace.Write(transaction.Id);
+
 		ValidateThread();
 
 		if (disposed)
@@ -1202,20 +1353,22 @@ public unsafe sealed partial class ObjectModel
 		}
 		catch (Exception e)
 		{
-			TryStoreException(e);
+			ProcessException(e);
 			throw;
 		}
 	}
 
 	internal void Dispose()
 	{
+		TTTrace.Write(transaction.Id);
 		DisposeInternal(true);
 	}
 
-	private void TryStoreException(Exception e)
+	internal void ProcessException(Exception e)
 	{
 		if (e is not DatabaseException)
 		{
+			TTTrace.Write(transaction.Id, e.GetType().Name);
 			if (e is CriticalDatabaseException)
 			{
 				storedException = (CriticalDatabaseException)e;
@@ -1229,6 +1382,7 @@ public unsafe sealed partial class ObjectModel
 		}
 		else
 		{
+			TTTrace.Write(transaction.Id, (int)(e as DatabaseException).Detail.ErrorType);
 			if (transaction.Closed)
 				Dispose();
 		}
@@ -1243,6 +1397,8 @@ public unsafe sealed partial class ObjectModel
 
 		disposed = true;
 
+		TTTrace.Write(transaction.Id, disposeTransaction);
+
 		for (int i = 0; i < changeList.Count; i++)
 		{
 			DatabaseObject obj = changeList[i];
@@ -1252,7 +1408,7 @@ public unsafe sealed partial class ObjectModel
 		if (disposeTransaction)
 			transaction?.Dispose();
 
-		context.Finished();
+		context.Reset();
 		contextPool.PutContext(context);
 	}
 }

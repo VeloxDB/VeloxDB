@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
@@ -93,10 +93,21 @@ public unsafe sealed class InverseReferenceSet<T> : InverseReferenceSet, ICollec
 		}
 	}
 
+#if TEST_BUILD
+	internal IEnumerable<long> GetIds()
+	{
+		VerifyAndMaterialize();
+		for (int i = 0; i < count; i++)
+		{
+			yield return ids[i];
+		}
+	}
+#endif
+
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private void VerifyAndMaterialize()
 	{
-		Owner.VerifyAccess();
+		Owner.VerifyAccessInverseReferences();
 		if (count != -1)
 			return;
 

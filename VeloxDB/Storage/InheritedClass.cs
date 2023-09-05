@@ -37,7 +37,7 @@ internal unsafe sealed partial class InheritedClass : ClassBase
 		}
 	}
 
-	public override ObjectReader GetObject(Transaction tran, long id, out DatabaseErrorDetail err)
+	public override ObjectReader GetObject(Transaction tran, long id, bool forceNoReadLock, out DatabaseErrorDetail err)
 	{
 		if (MainClass == null)
 		{
@@ -45,7 +45,7 @@ internal unsafe sealed partial class InheritedClass : ClassBase
 			return new ObjectReader();
 		}
 
-		return MainClass.GetObject(tran, id, out err);
+		return MainClass.GetObject(tran, id, forceNoReadLock, out err);
 	}
 
 	public override ObjectReader GetObjectNoReadLock(Transaction tran, long id)

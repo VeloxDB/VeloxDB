@@ -120,6 +120,9 @@ public unsafe sealed class ReferenceArray<T> : ReferenceArray, IList<T> where T 
 		ids = new long[Math.Max(4, capacity)];
 		foreach (T item in collection)
 		{
+			if (item == null)
+				throw new ArgumentException("Null reference inside a reference array is not allowed.");
+
 			if (item.IsDeleted)
 				throw new ArgumentException("Object has been deleted.");
 
@@ -584,6 +587,11 @@ public unsafe sealed class ReferenceArray<T> : ReferenceArray, IList<T> where T 
 	[MethodImpl(MethodImplOptions.NoInlining)]
 	private void FilterDeleted(DeletedSet deletedSet)
 	{
+		TTTrace.Write(Owner == null ? 0 : Owner.Id,
+			PropertyDescritpor == null ? 0 : PropertyDescritpor.Id, lastDeletedVersion, deletedSet.Version);
+
+		lastDeletedVersion = deletedSet.Version;
+
 		if (ids == null)
 		{
 			for (int i = 0; i < count; i++)
@@ -603,6 +611,7 @@ public unsafe sealed class ReferenceArray<T> : ReferenceArray, IList<T> where T 
 		int rem = 0;
 		for (int i = 0; i < count; i++)
 		{
+			TTTrace.Write(ids[i], deletedSet.Contains(ids[i]));
 			if (deletedSet.Contains(ids[i]))
 			{
 				rem++;
@@ -615,11 +624,10 @@ public unsafe sealed class ReferenceArray<T> : ReferenceArray, IList<T> where T 
 
 		if (rem > 0)
 		{
+			TTTrace.Write(count, rem, version);
 			version++;
 			count -= rem;
 		}
-
-		lastDeletedVersion = deletedSet.Version;
 	}
 
 	private void Resize()

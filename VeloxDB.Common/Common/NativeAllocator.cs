@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -12,6 +12,10 @@ internal static class NativeAllocator
 {
 	const int largeHeapAllocTreshold = 1024 * 16;   // Experimentally determined on Windows 10/Windows Server 2016
 	const int virtualAllocTreshold = 1024 * 1024;   // Experimentally determined on Windows 10/Windows Server 2016
+
+	// Maximum number of used bits by any returned adress.
+	// Outside system relies on this not being larger than 56 since upper 8 bits are used to store additional information.
+	const int maxUsedBitsCount = 56;
 
 	const ulong corruptionDetectionValue = 0xa56f3a7d99f0e061;
 
@@ -115,6 +119,9 @@ internal static class NativeAllocator
 			if (p == IntPtr.Zero)
 				throw new OutOfMemoryException();
 		}
+
+		if ((ulong)p >= ((ulong)1 << maxUsedBitsCount))
+			throw new NotSupportedException("Memory addresses larger than 56 bits are not supporte.");
 
 		if (zeroedOut)
 			Utils.ZeroMemory((byte*)p, size);

@@ -53,11 +53,14 @@ internal unsafe sealed class ClassLocker : IDisposable
 				return false;
 		}
 
+		TTTrace.Write(tran.Id, writerCount);
 		if (writerCount > 1)
 			return false;
 
 		if (writerCount > 0 && !ClassIndexMultiSet.Contains(tc.WrittenClasses, classIndex))
 			return false;
+
+		TTTrace.Write(tran.Id, readerCount);
 
 		readerCount++;
 		TTTrace.Write(tran.Id, readerCount);
@@ -74,7 +77,7 @@ internal unsafe sealed class ClassLocker : IDisposable
 	/// </summary>
 	public bool TryAddWriter(Transaction tran)
 	{
-		TTTrace.Write(tran.Id, tran.ReadVersion, readerCount);
+		TTTrace.Write(tran.Id, tran.ReadVersion, readerCount, classIndex);
 
 		TransactionContext tc = tran.Context;
 		if (readerCount > 1 || (readerCount > 0 && !ClassIndexMultiSet.Contains(tc.LockedClasses, classIndex)))

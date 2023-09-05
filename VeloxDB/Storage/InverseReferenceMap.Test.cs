@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using VeloxDB.Common;
+using VeloxDB.Descriptor;
 
 namespace VeloxDB.Storage;
 
@@ -54,7 +55,7 @@ internal unsafe sealed partial class InverseReferenceMap
 					if (bitem2->IsDeleted)
 						throw new InvalidOperationException();
 
-					if (checkEmpty && (bitem2->nextDelta == 0 && (uint)bitem2->Count == 0 && bitem2->readerInfo.TotalLockCount == 0))
+					if (checkEmpty && (bitem2->nextDelta == 0 && (uint)bitem2->count == 0 && bitem2->readerInfo.TotalLockCount == 0))
 					{
 						throw new InvalidOperationException();
 					}
@@ -105,12 +106,17 @@ internal unsafe sealed partial class InverseReferenceMap
 			Bucket* bn = buckets + i;
 			InvRefBaseItem* bitem = (InvRefBaseItem*)memoryManager.GetBuffer(bn->Handle);
 			if (bitem != null)
+			{
 				currUsedBucketCount++;
+
+				ReferencePropertyDescriptor rpd = classDesc.FindInverseReference(bitem->propertyId);
+				if (!rpd.TrackInverseReferences)
+					throw new InvalidOperationException();
+			}
 
 			while (bitem != null)
 			{
-				bool isTracked;
-				GetReferences(tran, bitem->id, bitem->propertyId, ref refs, out refCount, out isTracked);
+				GetReferences(tran, bitem->id, bitem->propertyId, ref refs, out refCount);
 
 				InvRefBaseItem* vitem = bitem;
 				while (vitem != null)
@@ -124,7 +130,7 @@ internal unsafe sealed partial class InverseReferenceMap
 					vitem = (InvRefBaseItem*)memoryManager.GetBuffer(vitem->nextBase);
 				}
 
-				ValidateSingleInverseRef(invRefs, refCount, refs, bitem, isTracked);
+				ValidateSingleInverseRef(invRefs, refCount, refs, bitem);
 
 				bitem = (InvRefBaseItem*)memoryManager.GetBuffer(bitem->nextCollision);
 			}
@@ -136,37 +142,19 @@ internal unsafe sealed partial class InverseReferenceMap
 		}
 	}
 
-	private static void ValidateSingleInverseRef(Dictionary<ValueTuple<long, int>, List<long>> invRefs, int refCount, long[] refs, InvRefBaseItem* bitem, bool isTracked)
+	private static void ValidateSingleInverseRef(Dictionary<ValueTuple<long, int>, List<long>> invRefs, int refCount, long[] refs, InvRefBaseItem* bitem)
 	{
-		if (isTracked)
+		if (refCount == 0)
 		{
-			if (refCount == 0)
-			{
-				if (invRefs.ContainsKey(new ValueTuple<long, int>(bitem->id, bitem->propertyId)))
-					throw new InvalidOperationException();
-			}
-			else
-			{
-				List<long> validRefs = invRefs[new ValueTuple<long, int>(bitem->id, bitem->propertyId)];
-				invRefs.Remove(new ValueTuple<long, int>(bitem->id, bitem->propertyId));
-				if (!SetsEqual(refs, refCount, validRefs))
-					throw new InvalidOperationException();
-			}
+			if (invRefs.ContainsKey(new ValueTuple<long, int>(bitem->id, bitem->propertyId)))
+				throw new InvalidOperationException();
 		}
 		else
 		{
-			if (refCount == 0)
-			{
-				if (invRefs.ContainsKey(new ValueTuple<long, int>(bitem->id, bitem->propertyId)))
-					throw new InvalidOperationException();
-			}
-			else
-			{
-				List<long> validRefs = invRefs[new ValueTuple<long, int>(bitem->id, bitem->propertyId)];
-				invRefs.Remove(new ValueTuple<long, int>(bitem->id, bitem->propertyId));
-				if (refCount != validRefs.Count)
-					throw new InvalidOperationException();
-			}
+			List<long> validRefs = invRefs[new ValueTuple<long, int>(bitem->id, bitem->propertyId)];
+			invRefs.Remove(new ValueTuple<long, int>(bitem->id, bitem->propertyId));
+			if (!SetsEqual(refs, refCount, validRefs))
+				throw new InvalidOperationException();
 		}
 	}
 

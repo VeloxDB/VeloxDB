@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
@@ -26,6 +26,7 @@ internal sealed class DeletedSet
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public void Add(long id)
 	{
+		TTTrace.Write(id, version);
 		ids.Add(id);
 	}
 
@@ -33,6 +34,7 @@ internal sealed class DeletedSet
 	public void IncVersion()
 	{
 		version++;
+		TTTrace.Write(version);
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -49,10 +51,16 @@ internal sealed class DeletedSet
 		ids.ForEach(action);
 	}
 
+	public void Reset()
+	{
+		TTTrace.Write();
+		version = 0;
+		Clear();
+	}
+
 	public void Clear()
 	{
-		version = 0;
-
+		TTTrace.Write();
 		if (ids.Count > capacity)
 		{
 			ids = new LongHashSet(capacity);

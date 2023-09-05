@@ -11,7 +11,7 @@ using VeloxDB.Common;
 using VeloxDB.Descriptor;
 namespace VeloxDB.ObjectInterface;
 
-internal delegate bool ReferenceCheckerDelegate(DatabaseObject obj, LongHashSet deletedIds);
+internal delegate bool ReferenceCheckerDelegate(DatabaseObject obj, LongHashSet deletedIds, int fieldOffset);
 
 internal sealed class ObjectModelData
 {

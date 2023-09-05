@@ -189,7 +189,7 @@ internal unsafe sealed partial class SortedIndex
 			node->bufferMetaData = (byte)(handle >> 56);
 			node->sync = new RWLock();
 			node->notUsed_isLeaf_count = Make(0, isLeaf);
-			TTTrace.Write(isLeaf, (ulong)node, handle, (ulong)node->thisPointer);
+			TTTrace.Write(isLeaf, (ulong)node, handle);
 			return node;
 		}
 
@@ -224,7 +224,7 @@ internal unsafe sealed partial class SortedIndex
 				CopyKeyRange(src, Entries(node), count * entrySize / 8);
 			}
 
-			TTTrace.Write((ulong)node, handle, (ulong)node->thisPointer);
+			TTTrace.Write((ulong)node, handle);
 			return node;
 		}
 
@@ -835,7 +835,6 @@ internal unsafe sealed partial class SortedIndex
 		public static bool IsInConflict(Transaction tran, Range* range, KeyComparer comparer,
 			byte* key, long id, ulong handle, KeyComparer keyComparer, StringStorage stringStorage)
 		{
-			Checker.AssertFalse(Database.IsCommited(range->version));
 			if (range->version == tran.Id)
 				return false;
 

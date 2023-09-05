@@ -613,7 +613,7 @@ internal sealed class DataModelDescriptor : ModelItemDescriptor
 		public override int GetHashCode()
 		{
 			uint t = HashUtils.PrimeMultiplier32;
-			return Name.GetHashCode() * (int)t + NamespaceName.GetHashCode();
+			return Name.GetHashCode() * (int)t + NamespaceName == null ? 0 : NamespaceName.GetHashCode();
 		}
 	}
 

@@ -65,6 +65,11 @@ public sealed class HashIndexReader<T, TKey1> where T : DatabaseObject
 					return (T)(object)obj;
 			}
 		}
+		catch (Exception e)
+		{
+			model.ProcessException(e);
+			throw;
+		}
 		finally
 		{
 			model.Context.PutObjectReaders(rs);
@@ -116,6 +121,11 @@ public sealed class HashIndexReader<T, TKey1> where T : DatabaseObject
 				if (obj != null && obj.State == DatabaseObjectState.Read)
 					l.Add((T)(object)obj);
 			}
+		}
+		catch (Exception e)
+		{
+			model.ProcessException(e);
+			throw;
 		}
 		finally
 		{
@@ -197,6 +207,11 @@ public sealed class HashIndexReader<T, TKey1, TKey2> where T : DatabaseObject
 					return (T)(object)obj;
 			}
 		}
+		catch (Exception e)
+		{
+			model.ProcessException(e);
+			throw;
+		}
 		finally
 		{
 			model.Context.PutObjectReaders(rs);
@@ -249,6 +264,11 @@ public sealed class HashIndexReader<T, TKey1, TKey2> where T : DatabaseObject
 				if (obj != null && obj.State == DatabaseObjectState.Read)
 					l.Add((T)(object)obj);
 			}
+		}
+		catch (Exception e)
+		{
+			model.ProcessException(e);
+			throw;
 		}
 		finally
 		{
@@ -331,6 +351,11 @@ public sealed class HashIndexReader<T, TKey1, TKey2, TKey3> where T : DatabaseOb
 					return (T)(object)obj;
 			}
 		}
+		catch (Exception e)
+		{
+			model.ProcessException(e);
+			throw;
+		}
 		finally
 		{
 			model.Context.PutObjectReaders(rs);
@@ -384,6 +409,11 @@ public sealed class HashIndexReader<T, TKey1, TKey2, TKey3> where T : DatabaseOb
 				if (obj != null && obj.State == DatabaseObjectState.Read)
 					l.Add((T)(object)obj);
 			}
+		}
+		catch (Exception e)
+		{
+			model.ProcessException(e);
+			throw;
 		}
 		finally
 		{
@@ -468,6 +498,11 @@ public sealed class HashIndexReader<T, TKey1, TKey2, TKey3, TKey4> where T : Dat
 					return (T)(object)obj;
 			}
 		}
+		catch (Exception e)
+		{
+			model.ProcessException(e);
+			throw;
+		}
 		finally
 		{
 			model.Context.PutObjectReaders(rs);
@@ -522,6 +557,11 @@ public sealed class HashIndexReader<T, TKey1, TKey2, TKey3, TKey4> where T : Dat
 				if (obj != null && obj.State == DatabaseObjectState.Read)
 					l.Add((T)(object)obj);
 			}
+		}
+		catch (Exception e)
+		{
+			model.ProcessException(e);
+			throw;
 		}
 		finally
 		{

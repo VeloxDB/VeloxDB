@@ -3,8 +3,10 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.SymbolStore;
 using System.Linq;
+using System.Reflection.Metadata;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Runtime.Remoting;
 using System.Threading;
 using System.Threading.Tasks;
 using VeloxDB.Common;
@@ -13,6 +15,7 @@ using VeloxDB.Storage.ModelUpdate;
 using VeloxDB.Storage.Replication;
 using static System.Runtime.InteropServices.JavaScript.JSType;
 using static VeloxDB.Common.SegmentBinaryWriter;
+using static VeloxDB.Storage.Persistence.LogBufferPool;
 
 namespace VeloxDB.Storage;
 
@@ -424,7 +427,10 @@ internal unsafe sealed partial class Class : ClassBase
 			}
 
 			if (Database.IsCommited(obj->version))
-				ReaderInfo.TakeObjectStandardLock(tran, obj->id, classIndex, &obj->readerInfo, handle);
+			{
+				if (!ReaderInfo.TryTakeObjectStandardLock(tran, obj->id, classIndex, &obj->readerInfo))
+					return DatabaseErrorDetail.CreateObjectLockContentionLimitExceeded(ClassDesc.FullName);
+			}
 
 			return null;
 		}
@@ -461,12 +467,12 @@ internal unsafe sealed partial class Class : ClassBase
 		return new ObjectReader(ClassObject.ToDataPointer(obj), this);
 	}
 
-	public override ObjectReader GetObject(Transaction tran, long id, out DatabaseErrorDetail err)
+	public override ObjectReader GetObject(Transaction tran, long id, bool forceNoReadLock, out DatabaseErrorDetail err)
 	{
 		int lockHandle = resizeCounter.EnterReadLock();
 
 		ClassObject* obj;
-		if (tran.Type == TransactionType.Read)
+		if (tran.Type == TransactionType.Read || forceNoReadLock)
 		{
 			err = null;
 			obj = GetObjectInternalRead(tran, id, out _);
@@ -540,34 +546,60 @@ internal unsafe sealed partial class Class : ClassBase
 		return storage.SplitDisposableScanRange(Engine.Settings.ScanClassSplitSize, out totalCount);
 	}
 
-	public bool ObjectExists(Transaction tran, long id)
+	public bool ObjectExists(Transaction tran, long id, out DatabaseErrorDetail error)
 	{
 		TTTrace.Write(TraceId, ClassDesc.Id, tran == null ? 0 : tran.Id, id);
-		Checker.AssertFalse(tran != null && tran.IsAlignment);
 
+		error = null;
 		int lockHandle = resizeCounter.EnterReadLock();
 
 		Bucket* bucket = buckets + CalculateBucket(id);
 		ulong* phead = Bucket.LockAccess(bucket);
 
-		ClassObject* obj = FindObject(phead, id, out ulong* pObjPointer);
-		if (obj != null && tran != null)
+		try
 		{
-			TTTrace.Write(TraceId, ClassDesc.Id, tran.Id, obj->IsDeleted, obj->version);
-			obj = FindVersion(obj, tran.ReadVersion, tran.Id);
-		}
+			ClassObject* latest = FindObject(phead, id, out _);
+			if (latest == null)
+				return false;
 
-		bool res = false;
-		if (obj != null)
+			if (tran == null)
+				return latest != null;
+
+			ClassObject* obj = FindVersion(latest, tran.ReadVersion, tran.Id);
+			if (obj == null)
+				return false;
+
+			TTTrace.Write(TraceId, ClassDesc.Id, tran.Id, obj->IsDeleted, obj->version, latest->IsDeleted, latest->version);
+
+			if (obj->version == tran.Id)
+				return true;
+
+			if (obj->IsDeleted)
+			{
+				Checker.AssertTrue(obj == latest);
+				return false;
+			}
+
+			if (latest->IsDeleted)
+			{
+				error = DatabaseErrorDetail.CreateConflict(id, ClassDesc.FullName);
+				return false;
+			}
+
+			if (tran.Type == TransactionType.ReadWrite &&
+				!ReaderInfo.TryTakeObjectExistanceLock(tran, latest->id, classIndex, &(latest->readerInfo)))
+			{
+				error = DatabaseErrorDetail.CreateObjectLockContentionLimitExceeded(ClassDesc.FullName);
+				return false;
+			}
+
+			return true;
+		}
+		finally
 		{
-			TTTrace.Write(obj->IsDeleted, obj->version);
-			res = !obj->IsDeleted || (tran != null && obj->version == tran.Id);
+			Bucket.UnlockAccess(bucket);
+			resizeCounter.ExitReadLock(lockHandle);
 		}
-
-		Bucket.UnlockAccess(bucket);
-		resizeCounter.ExitReadLock(lockHandle);
-
-		return res;
 	}
 
 	public bool ObjectDeletedInTransaction(Transaction tran, long id)
@@ -637,7 +669,6 @@ internal unsafe sealed partial class Class : ClassBase
 				obj->id = reader.ReadLong();
 				obj->version = tran.Id;
 				ReaderInfo.Clear(&obj->readerInfo);
-				obj->FlagLocation = opHead.NotLastInTransactionPointer;
 
 				Checker.AssertFalse(ObjectStorage.IsBufferUsed(objHandle));
 
@@ -772,7 +803,6 @@ internal unsafe sealed partial class Class : ClassBase
 					break;
 				}
 
-				finalObject->FlagLocation = opHead.NotLastInTransactionPointer;
 				TTTrace.Write(TraceId, ClassDesc.Id, finalObject->id, (byte)updateResult, finalObject != null);
 
 				if (updateResult == UpdateObjectResult.Merged)
@@ -1079,13 +1109,17 @@ internal unsafe sealed partial class Class : ClassBase
 			ClassObject* nextVerObj = (ClassObject*)ObjectStorage.GetBuffer(obj->nextVersionHandle);
 			if (nextVerObj == null)
 			{
+				Checker.AssertTrue(obj->readerInfo.TotalLockCount == 0);
 				*pObjPointer = obj->nextCollisionHandle;
 				resizeCounter.Dec();
 			}
 			else
 			{
+				// Even if there was standard lock by this transaction, it has already been rolled back.
+				Checker.AssertTrue(obj->readerInfo.StandardLockCount == 0);
+
+				nextVerObj->readerInfo = obj->readerInfo.Locks;   // Take over Existance locks if any (without IsDeleted).
 				*pObjPointer = obj->nextVersionHandle;
-				ReaderInfo.Clear(&nextVerObj->readerInfo);
 				nextVerObj->nextCollisionHandle = obj->nextCollisionHandle;
 			}
 		}
@@ -1103,25 +1137,22 @@ internal unsafe sealed partial class Class : ClassBase
 		return id;
 	}
 
-	public long RollbackReadLock(Transaction tran, ulong objectHandle)
+	public long RollbackReadLock(Transaction tran, long id)
 	{
 		Checker.AssertTrue(tran.NextMerged == null);
 
 		int lockHandle = resizeCounter.EnterReadLock();
 
-		ClassObject* obj = (ClassObject*)ObjectStorage.GetBuffer(objectHandle);
-		long id = obj->id;
-
 		Bucket* bucket = buckets + CalculateBucket(id);
-		Bucket.LockAccess(bucket);
+		ulong* ph = Bucket.LockAccess(bucket);
+
+		ClassObject* obj = FindObject(ph, id, out _);
 
 		ReaderInfo* r = &obj->readerInfo;
-		TTTrace.Write(TraceId, ClassDesc.Id, tran.Id, tran.CommitVersion, tran.Slot, obj->id, obj->IsDeleted);
+		TTTrace.Write(TraceId, ClassDesc.Id, tran.Id, tran.CommitVersion, tran.Slot,
+			obj->id, obj->version, obj->readerInfo.ExistanceLockCount, obj->readerInfo.StandardLockCount);
 
-		// Check if we modified the object after reading it (in this transaction),
-		// in which case we do not need to commit read lock (and cant since NewerVersion is set).
-		if (obj->NewerVersion == 0)
-			ReaderInfo.FinalizeObjectLock(tran, obj->id, r, false, tran.Slot);
+		ReaderInfo.FinalizeObjectLock(tran, obj->id, r, false, tran.Slot);
 
 		Bucket.UnlockAccess(bucket);
 
@@ -1150,10 +1181,6 @@ internal unsafe sealed partial class Class : ClassBase
 				ClassObject* prevObj = (ClassObject*)ObjectStorage.GetBuffer(obj->nextVersionHandle);
 				prevObj->NewerVersion = tran.CommitVersion;
 			}
-
-			// Initialize read lock data since the same location might have been used was used to store operation header pointer.
-			// If an object is deleted, than operation header pointer was not stored and we want to retain the IsDeleted flag.
-			ReaderInfo.ClearWithoutSecondHighestBit(r);
 
 			if (!obj->IsDeleted && hasStringsOrBlobs)
 				CommitStringsAndBlobs(tran, obj);
@@ -1203,22 +1230,20 @@ internal unsafe sealed partial class Class : ClassBase
 		}
 	}
 
-	public long CommitReadLock(Transaction tran, ulong objectHandle, ushort slot)
+	public long CommitReadLock(Transaction tran, long id, ushort slot)
 	{
 		int lockHandle = resizeCounter.EnterReadLock();
 
-		ClassObject* obj = (ClassObject*)ObjectStorage.GetBuffer(objectHandle);
+		Bucket* bucket = buckets + CalculateBucket(id);
+		ulong* ph = Bucket.LockAccess(bucket);
 
-		Bucket* bucket = buckets + CalculateBucket(obj->id);
-		Bucket.LockAccess(bucket);
+		ClassObject* obj = FindObject(ph, id, out _);
 
 		ReaderInfo* r = &obj->readerInfo;
-		TTTrace.Write(TraceId, ClassDesc.Id, tran.Id, tran.CommitVersion, tran.Slot, objectHandle, obj->id);
+		TTTrace.Write(TraceId, ClassDesc.Id, tran.Id, tran.CommitVersion, tran.Slot,
+			obj->id, obj->version, obj->readerInfo.ExistanceLockCount, obj->readerInfo.StandardLockCount);
 
-		// Check if we modified the object after reading it (in this transaction),
-		// in which case we do not need to commit read lock (and cant since NewerVersion is set).
-		if (obj->NewerVersion == 0)
-			ReaderInfo.FinalizeObjectLock(tran, obj->id, r, true, slot);
+		ReaderInfo.FinalizeObjectLock(tran, obj->id, r, true, slot);
 
 		Bucket.UnlockAccess(bucket);
 
@@ -1227,22 +1252,19 @@ internal unsafe sealed partial class Class : ClassBase
 		return obj->id;
 	}
 
-	public long RemapReadLockSlot(ulong objectHandle, ushort prevSlot, ushort newSlot)
+	public long RemapReadLockSlot(long id, ushort prevSlot, ushort newSlot)
 	{
 		int lockHandle = resizeCounter.EnterReadLock();
 
-		ClassObject* obj = (ClassObject*)ObjectStorage.GetBuffer(objectHandle);
+		Bucket* bucket = buckets + CalculateBucket(id);
+		ulong* ph = Bucket.LockAccess(bucket);
 
-		Bucket* bucket = buckets + CalculateBucket(obj->id);
-		Bucket.LockAccess(bucket);
+		ClassObject* obj = FindObject(ph, id, out _);
 
 		ReaderInfo* r = &obj->readerInfo;
-		TTTrace.Write(TraceId, ClassDesc.Id, prevSlot, newSlot, objectHandle, obj->id);
+		TTTrace.Write(TraceId, ClassDesc.Id, prevSlot, newSlot, obj->id);
 
-		// Check if we modified the object after reading it (in this transaction),
-		// in which case we do not have a read lock (since NewerVersion is set).
-		if (obj->NewerVersion == 0)
-			ReaderInfo.RemapSlot(r, prevSlot, newSlot);
+		ReaderInfo.RemapSlot(r, prevSlot, newSlot);
 
 		Bucket.UnlockAccess(bucket);
 
@@ -1512,7 +1534,7 @@ internal unsafe sealed partial class Class : ClassBase
 		DatabaseErrorDetail err;
 		if (existingObj != null)
 		{
-			if ((existingObj->version == tran.Id))
+			if (existingObj->version == tran.Id)
 			{
 				TTTrace.Write();
 
@@ -1526,14 +1548,14 @@ internal unsafe sealed partial class Class : ClassBase
 
 				opHead.WritePreviousVersion(0);
 				if (isPersistanceActive)
-					OperationHeader.SetNotLastInTransaction(existingObj->FlagLocation);
+					tc.AddMultiAffectedObject(existingObj->id);
 
 				result = UpdateObjectResult.Merged;
 				finalObjectHandle = *existingObjPointer;
 				return null;
 			}
 
-			err = UpdateObjectFromChangeset(tc, reader, existingObj, obj, true);
+			err = UpdateObjectFromChangeset(tc, reader, existingObj, obj);
 			if (err == null)
 				err = InsertIntoIndexes(tran, objHandle, obj);
 
@@ -1545,7 +1567,14 @@ internal unsafe sealed partial class Class : ClassBase
 
 			opHead.WritePreviousVersion(existingObj->version);
 
+			Checker.AssertTrue(existingObj->readerInfo.StandardLockCount <= 1);
+
 			finalObjectHandle = objHandle;
+
+			// Important to take over any existing Existance read locks. It is also possible that there is a single Standard lock
+			// owned by this same transaction, and it is safe to copy that as well.
+			obj->readerInfo = existingObj->readerInfo;
+
 			obj->nextVersionHandle = *existingObjPointer;
 			existingObj->NewerVersion = obj->version;
 			obj->nextCollisionHandle = existingObj->nextCollisionHandle;
@@ -1556,7 +1585,7 @@ internal unsafe sealed partial class Class : ClassBase
 			// We can end up here in alignment because Primary sends all records as Updates (does not detect inserts)
 			Utils.CopyMemory((byte*)defaultValues + ClassObject.UserPropertiesOffset,
 				(byte*)obj + ClassObject.UserPropertiesOffset, objectSize - ClassObject.UserPropertiesOffset);
-			PopulateObjectFromChangeset(tc, reader, obj, false, false, true);
+			PopulateObjectFromChangeset(tc, reader, obj, false, false, false);
 			InsertIntoIndexes(tran, objHandle, obj);
 
 			obj->nextCollisionHandle = bucket->Handle;
@@ -1743,7 +1772,7 @@ internal unsafe sealed partial class Class : ClassBase
 		}
 		else
 		{
-			CreateInvRefChanges(tran.Context, existingObj, InvRefChangeType.Delete);
+			RemoveExistingReferences(tran.Context, existingObj);
 		}
 
 		if (existingObj->version == tran.Id || tran.IsAlignment)
@@ -1753,7 +1782,7 @@ internal unsafe sealed partial class Class : ClassBase
 
 			opHead.WritePreviousVersion(0);
 			if (!tran.IsAlignment && isPersistanceActive)
-				OperationHeader.SetNotLastInTransaction(existingObj->FlagLocation);
+				tran.Context.AddMultiAffectedObject(existingObj->id);
 
 			existingObj->IsDeleted = true;
 			mergedWithHandle = *pObjPointer;
@@ -1761,6 +1790,14 @@ internal unsafe sealed partial class Class : ClassBase
 		}
 
 		opHead.WritePreviousVersion(existingObj->version);
+
+		Checker.AssertTrue(existingObj->readerInfo.StandardLockCount <= 1);
+
+		// Important to take over any existing read locks. These locks are guaranteed to be from this transaction.
+		// We need to transfer them so they can be commited/rolled back.
+		obj->readerInfo = existingObj->readerInfo.Locks;
+		obj->IsDeleted = true;      // Since the previous line has written over the IsDeleted bit
+
 		obj->nextVersionHandle = *pObjPointer;
 		existingObj->NewerVersion = obj->version;
 		obj->nextCollisionHandle = existingObj->nextCollisionHandle;
@@ -2078,10 +2115,12 @@ internal unsafe sealed partial class Class : ClassBase
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	private DatabaseErrorDetail UpdateObjectFromChangeset(TransactionContext tc, ChangesetReader reader, ClassObject* prev, ClassObject* obj, bool updateInvRefs)
+	private DatabaseErrorDetail UpdateObjectFromChangeset(TransactionContext tc, ChangesetReader reader, ClassObject* prev, ClassObject* obj)
 	{
-		Utils.CopyMemory((byte*)prev + ClassObject.UserPropertiesOffset, (byte*)obj + ClassObject.UserPropertiesOffset, objectSize - ClassObject.UserPropertiesOffset);
-		DatabaseErrorDetail err = PopulateObjectFromChangeset(tc, reader, obj, false, true, updateInvRefs);
+		Utils.CopyMemory((byte*)prev + ClassObject.UserPropertiesOffset,
+			(byte*)obj + ClassObject.UserPropertiesOffset, objectSize - ClassObject.UserPropertiesOffset);
+
+		DatabaseErrorDetail err = PopulateObjectFromChangeset(tc, reader, obj, false, true, true);
 
 		if (hasStringsOrBlobs)
 			IncReusedRefCounts(tc, prev);
@@ -2089,10 +2128,10 @@ internal unsafe sealed partial class Class : ClassBase
 		return err;
 	}
 
-	internal DatabaseErrorDetail PopulateObjectFromChangeset(TransactionContext tc, ChangesetReader reader, ClassObject* obj,
-		bool isMerge, bool isUpdate, bool updateInvRefs)
+	internal DatabaseErrorDetail PopulateObjectFromChangeset(TransactionContext tc,
+		ChangesetReader reader, ClassObject* obj, bool isMerge, bool isUpdate, bool collectUntrackedRefs)
 	{
-		TTTrace.Write(TraceId, obj->id, isMerge, isUpdate, updateInvRefs);
+		TTTrace.Write(TraceId, obj->id, isMerge, isUpdate);
 
 		ChangesetBlock block = tc.ChangesetBlock;
 		int propCount = block.PropertyCount;
@@ -2118,26 +2157,21 @@ internal unsafe sealed partial class Class : ClassBase
 			DatabaseErrorDetail tempErr = null;
 			if (type < PropertyType.String)
 			{
-				long prevRef = long.MaxValue;
-				if (updateInvRefs && isUpdate && kind == PropertyKind.Reference)
-					prevRef = *((long*)(data + offset));
-
-				int size = PropertyTypesHelper.GetItemSize(propDesc.PropertyType);
-				reader.ReadSimpleValue(data + offset, (int)size);
-
-				if (updateInvRefs && kind == PropertyKind.Reference)
+				if (kind != PropertyKind.Reference)
 				{
-					long newRef = *((long*)(data + offset));
+					int size = PropertyTypesHelper.GetItemSize(propDesc.PropertyType);
+					reader.ReadSimpleValue(data + offset, (int)size);
+				}
+				else
+				{
+					long prevRef = *((long*)(data + offset));
+					reader.ReadSimpleValue(data + offset, sizeof(long));
 
-					if (isUpdate && prevRef != 0)
-					{
-						ReferencePropertyDescriptor rd = (ReferencePropertyDescriptor)propDesc;
-						tc.AddInverseReferenceChange(classIndex, obj->id, prevRef, rd.Id,
-							rd.TrackInverseReferences, (byte)InvRefChangeType.Delete);
-					}
+					ReferencePropertyDescriptor rd = (ReferencePropertyDescriptor)propDesc;
+					if (isUpdate && prevRef != 0 && rd.TrackInverseReferences)
+						tc.AddInverseReferenceChange(classIndex, obj->id, prevRef, rd.Id, (byte)InvRefChangeType.Delete);
 
-					tempErr = CreateSingleRefInvChanges(tc, obj->id, data,
-						(ReferencePropertyDescriptor)propDesc, offset, InvRefChangeType.Insert);
+					tempErr = CreateSingleRefInvChanges(tc, obj->id, data, rd, offset, InvRefChangeType.Insert, collectUntrackedRefs);
 				}
 			}
 			else if (type == PropertyType.String)
@@ -2162,7 +2196,7 @@ internal unsafe sealed partial class Class : ClassBase
 				{
 					blobStorage.SetVersion(blob, obj->version);
 
-					if (updateInvRefs && isUpdate && kind == PropertyKind.Reference)
+					if (isUpdate && kind == PropertyKind.Reference)
 						CreateRefArrayInvDelete(tc, obj->id, prevBlob, (ReferencePropertyDescriptor)propDesc);
 
 					if (isMerge)
@@ -2170,10 +2204,10 @@ internal unsafe sealed partial class Class : ClassBase
 
 					*((ulong*)(data + offset)) = blob;
 
-					if (updateInvRefs && kind == PropertyKind.Reference)
+					if (kind == PropertyKind.Reference)
 					{
 						tempErr = CreateRefArrayInvChanges(tc, obj->id, data,
-							(ReferencePropertyDescriptor)propDesc, offset, InvRefChangeType.Insert);
+							(ReferencePropertyDescriptor)propDesc, offset, InvRefChangeType.Insert, collectUntrackedRefs);
 					}
 				}
 			}
@@ -2245,7 +2279,7 @@ internal unsafe sealed partial class Class : ClassBase
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	private void CreateInvRefChanges(TransactionContext tc, ClassObject* obj, InvRefChangeType opType)
+	private void RemoveExistingReferences(TransactionContext tc, ClassObject* obj)
 	{
 		byte* data = ClassObject.ToDataPointer(obj);
 		int propCount = ClassDesc.RefeferencePropertyIndexes.Length;
@@ -2254,15 +2288,27 @@ internal unsafe sealed partial class Class : ClassBase
 		{
 			int index = ClassDesc.RefeferencePropertyIndexes[i];
 			ReferencePropertyDescriptor rd = (ReferencePropertyDescriptor)ClassDesc.Properties[index];
-			PropertyType propType = rd.PropertyType;
+			if (!rd.TrackInverseReferences)
+				continue;
 
-			if (propType == PropertyType.Long)
+			long value = *((long*)(data + offsets[index]));
+			if (value == 0)
+				continue;
+
+			if (rd.PropertyType == PropertyType.Long)
 			{
-				CreateSingleRefInvChanges(tc, obj->id, data, rd, offsets[index], opType);
+				tc.AddInverseReferenceChange(classIndex, obj->id, value, rd.Id, (byte)InvRefChangeType.Delete);
 			}
 			else
 			{
-				CreateRefArrayInvChanges(tc, obj->id, data, rd, offsets[index], opType);
+				byte* blob = BlobStorage.RetrieveBlob((ulong)value);
+				int refCount = *((int*)blob);
+				long* refs = (long*)(blob + 4);
+				for (int j = 0; j < refCount; j++)
+				{
+					if (refs[j] != 0)
+						tc.AddInverseReferenceChange(classIndex, obj->id, refs[j], rd.Id, (byte)InvRefChangeType.Delete);
+				}
 			}
 		}
 	}
@@ -2301,12 +2347,13 @@ internal unsafe sealed partial class Class : ClassBase
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private DatabaseErrorDetail CreateSingleRefInvChanges(TransactionContext tc, long id, byte* buffer,
-		ReferencePropertyDescriptor refDesc, int byteOffset, InvRefChangeType opType)
+		ReferencePropertyDescriptor refDesc, int byteOffset, InvRefChangeType opType, bool collectUntrackedRefs)
 	{
 		long refVal = *((long*)(buffer + byteOffset));
 		if (refVal != 0)
 		{
-			tc.AddInverseReferenceChange(classIndex, id, refVal, refDesc.Id, refDesc.TrackInverseReferences, (byte)opType);
+			if (refDesc.TrackInverseReferences || collectUntrackedRefs)
+				tc.AddInverseReferenceChange(classIndex, id, refVal, refDesc.Id, (byte)opType);
 		}
 		else if (refDesc.Multiplicity == Multiplicity.One)
 		{
@@ -2320,15 +2367,18 @@ internal unsafe sealed partial class Class : ClassBase
 	private void CreateGroupingSingleRefInvChanges(TransactionContext tc, long id, byte* buffer, int propId,
 		bool trackInverse, int byteOffset, InvRefChangeType opType)
 	{
+		if (!trackInverse)
+			return;
+
 		long refVal = *((long*)(buffer + byteOffset));
 		if (refVal != 0)
-			tc.AddGroupingInvRefChange(classIndex, id, refVal, propId, trackInverse, (byte)opType);
+			tc.AddGroupingInvRefChange(classIndex, id, refVal, propId, (byte)opType);
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private void CreateRefArrayInvDelete(TransactionContext tc, long id, ulong handle, ReferencePropertyDescriptor refDesc)
 	{
-		if (handle == 0)
+		if (handle == 0 || !refDesc.TrackInverseReferences)
 			return;
 
 		byte* blob = BlobStorage.RetrieveBlob(handle);
@@ -2336,13 +2386,13 @@ internal unsafe sealed partial class Class : ClassBase
 		long* refs = (long*)(blob + 4);
 		for (int j = 0; j < refCount; j++)
 		{
-			tc.AddInverseReferenceChange(classIndex, id, refs[j], refDesc.Id, refDesc.TrackInverseReferences, (byte)InvRefChangeType.Delete);
+			tc.AddInverseReferenceChange(classIndex, id, refs[j], refDesc.Id, (byte)InvRefChangeType.Delete);
 		}
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private DatabaseErrorDetail CreateRefArrayInvChanges(TransactionContext tc, long id, byte* buffer,
-		ReferencePropertyDescriptor refDesc, int byteOffset, InvRefChangeType opType)
+		ReferencePropertyDescriptor refDesc, int byteOffset, InvRefChangeType opType, bool collectUntrackedRefs)
 	{
 		ulong handle = *((ulong*)(buffer + byteOffset));
 		if (handle == 0)
@@ -2356,7 +2406,8 @@ internal unsafe sealed partial class Class : ClassBase
 			if (refs[j] == 0)
 				return DatabaseErrorDetail.CreateNullReferenceNotAllowed(id, ClassDesc.FullName, refDesc.Name);
 
-			tc.AddInverseReferenceChange(classIndex, id, refs[j], refDesc.Id, refDesc.TrackInverseReferences, (byte)opType);
+			if (refDesc.TrackInverseReferences || collectUntrackedRefs)
+				tc.AddInverseReferenceChange(classIndex, id, refs[j], refDesc.Id, (byte)opType);
 		}
 
 		return null;
@@ -2366,6 +2417,9 @@ internal unsafe sealed partial class Class : ClassBase
 	private void CreateGroupingRefArrayInvChanges(TransactionContext tc, long id, byte* buffer, int propId,
 		bool trackInverse, int byteOffset, InvRefChangeType opType)
 	{
+		if (!trackInverse)
+			return;
+
 		ulong handle = *((ulong*)(buffer + byteOffset));
 		byte* blob = BlobStorage.RetrieveBlob(handle);
 		if (blob != null)
@@ -2374,7 +2428,7 @@ internal unsafe sealed partial class Class : ClassBase
 			long* refs = (long*)(blob + 4);
 			for (int j = 0; j < refCount; j++)
 			{
-				tc.AddGroupingInvRefChange(classIndex, id, refs[j], propId, trackInverse, (byte)opType);
+				tc.AddGroupingInvRefChange(classIndex, id, refs[j], propId, (byte)opType);
 			}
 		}
 	}
@@ -2798,7 +2852,11 @@ internal unsafe sealed partial class Class : ClassBase
 		if (obj->IsDeleted)
 			return obj;
 
-		ReaderInfo.TakeObjectStandardLock(tran, obj->id, classIndex, &obj->readerInfo, objHandle);
+		if (!ReaderInfo.TryTakeObjectStandardLock(tran, obj->id, classIndex, &obj->readerInfo))
+		{
+			err = DatabaseErrorDetail.CreateObjectLockContentionLimitExceeded(ClassDesc.FullName);
+			return null;
+		}
 
 		return obj;
 	}
@@ -3138,20 +3196,17 @@ internal unsafe struct ClassObject
 	[FieldOffset(8)]
 	public ulong nextVersionHandle;
 
-	// The following 3 fileds share the same space but are never used at the same time.
-	// hasNextVersion_newerVersion is used once an object version no longer the latest in which case it never gets read-locked.
-	// flagLocation is used when a new version is created (insert/update) and until commited/rolled back. During this time
-	// object is never read locked and does not need newerVersion.
+	// The following 2 fileds share the same space but are never used at the same time.
+	// hasNextVersion_newerVersion is used once an object version is no longer the latest in which case it never gets read-locked.
+	// It uses the highest bit to indicate whether the newer version is present. This is needed since this information is used by
+	// class scan operation in a lock-free manner.
+	//
 	// It is important to mention that the highest bit (hasNextVersion) is only set when there is newer version set. This bit is never
-	// set by the flagLocation and readerInfo fields so can sfely be used as an indicator of newer version.
-	// Also, IsDeleted (which uses the second bit) is never set if there is newer version, in which case the second bit is used
-	// for the newer version.
+	// set by the readerInfo field so can sfely be used as an indicator of newer version.
+	// Also, IsDeleted (which uses the second bit) is never set if there is newer version.
 
 	[FieldOffset(16)]
 	public ulong hasNextVersion_deleted_newerVersion;
-
-	[FieldOffset(16)]
-	public byte* flagLocation;
 
 	[FieldOffset(16)]
 	public ReaderInfo readerInfo;
@@ -3194,24 +3249,6 @@ internal unsafe struct ClassObject
 			Checker.AssertTrue(readerInfo.HighestTwoBits != 0x01);
 			Checker.AssertTrue(value != 0);
 			hasNextVersion_deleted_newerVersion = value | 0x8000000000000000;
-		}
-	}
-
-	public byte* FlagLocation
-	{
-		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		get
-		{
-			Checker.AssertTrue(readerInfo.HighestTwoBits == 0x00);
-			return flagLocation;
-		}
-
-		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		set
-		{
-			Checker.AssertTrue(readerInfo.HighestTwoBits == 0x00);
-			Checker.AssertTrue(((ulong)value & 0xc000000000000000) == 0);
-			flagLocation = value;
 		}
 	}
 

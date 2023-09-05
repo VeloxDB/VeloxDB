@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using VeloxDB.Common;
 using VeloxDB.Descriptor;
@@ -106,7 +106,7 @@ internal sealed class ValidateReferenceTargetJob : ModelUpdateValidationJob
 		targetClassDesc = @class.ClassDesc.Model.GetClass(targetClassId);
 
 		Class targetClass = @class.Database.GetClass(targetClassDesc.Index).MainClass;
-		if (!targetClass.ObjectExists(null, value))
+		if (!targetClass.ObjectExists(null, value, out _))
 		{
 			context.SetError(DatabaseErrorDetail.CreateUnknownReference(r.GetIdOptimized(), @class.ClassDesc.FullName, propDesc.Name, value));
 			return;

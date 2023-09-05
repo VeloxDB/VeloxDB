@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Reflection.PortableExecutable;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics.X86;
@@ -27,6 +28,10 @@ internal unsafe sealed class TransactionContext : IDisposable
 
 	const int defLockedClassesCapacity = 32;
 	const int defWrittenClassesCapacity = 32;
+
+	const int multiAffectedObjectsCapacity = 32;
+
+	const int cascadeSetToNullAffectedCapacity = 32;
 
 	StorageEngine engine;
 	Database database;
@@ -100,6 +105,12 @@ internal unsafe sealed class TransactionContext : IDisposable
 
 	bool isAllocated;
 
+	Action<long, OperationHeader> notLastInTransactionFlagger;
+	LongDictionary<int> multiAffectedObjects;
+
+	int cascadeSetToNullAffectedCount;
+	long[] cascadeSetToNullAffected;
+
 	public TransactionContext(StorageEngine engine, int physCorePool, ushort slot)
 	{
 		this.engine = engine;
@@ -129,7 +140,7 @@ internal unsafe sealed class TransactionContext : IDisposable
 		invRefReadLocksSet = new FastHashSet<InverseReferenceKey>(objectReadLockMapCapacity + 1);
 
 		objectReadLocks = new ModifiedList(engine.MemoryManager);
-		invRefReadLocks = new NativeList(inverseReferenceReadLockCapacity, ReadLock.Size);
+		invRefReadLocks = new NativeList(inverseReferenceReadLockCapacity, InvRefReadLock.Size);
 		keyReadLocks = new ModifiedList(engine.MemoryManager);
 
 		lockedClasses = ClassIndexMultiSet.Create(defLockedClassesCapacity, engine.MemoryManager);
@@ -140,8 +151,14 @@ internal unsafe sealed class TransactionContext : IDisposable
 
 		tempRecReaders = new ObjectReader[classScanChunkSize];
 
+		multiAffectedObjects = new LongDictionary<int>(multiAffectedObjectsCapacity);
+		notLastInTransactionFlagger = FlagNotLastInTransactionIfNeeded;
+
 		commitWaitEvent = new AutoResetEvent(false);
 		asyncCommitResult = true;
+
+		cascadeSetToNullAffected = new long[cascadeSetToNullAffectedCapacity];
+		cascadeSetToNullAffectedCount = 0;
 
 		changesetReader = new ChangesetReader();
 		changesetBlock = new ChangesetBlock();
@@ -206,6 +223,24 @@ internal unsafe sealed class TransactionContext : IDisposable
 		affectedInvRefs.Init();
 		objectReadLocks.Init();
 		keyReadLocks.Init();
+	}
+
+	public void AddSetToNullAffected(long id)
+	{
+		if (cascadeSetToNullAffectedCount == cascadeSetToNullAffected.Length)
+			Array.Resize(ref cascadeSetToNullAffected, cascadeSetToNullAffected.Length * 2);
+
+		cascadeSetToNullAffected[cascadeSetToNullAffectedCount++] = id;
+	}
+
+	public void ProcessSetToNullAffected<T>(Action<T, long> action, T arg)
+	{
+		for (int i = 0; i < cascadeSetToNullAffectedCount; i++)
+		{
+			action(arg, cascadeSetToNullAffected[i]);
+		}
+
+		cascadeSetToNullAffectedCount = 0;
 	}
 
 	public void SetAlignmentMode()
@@ -345,7 +380,7 @@ internal unsafe sealed class TransactionContext : IDisposable
 	{
 		NativeList l = InvRefReadLocks;
 		long count = l.Count;
-		ReadLock* readLock = (ReadLock*)l.Buffer;
+		InvRefReadLock* readLock = (InvRefReadLock*)l.Buffer;
 		for (long i = 0; i < count; i++)
 		{
 			if (readLock->EligibleForGC)
@@ -401,12 +436,88 @@ internal unsafe sealed class TransactionContext : IDisposable
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public void AddReadLock(ushort tranSlot, ulong handle, ushort classIndex, bool isObject, bool eligibleForGC)
+	public void AddMultiAffectedObject(long id)
 	{
-		TTTrace.Write(database.TraceId, tranId, classIndex, isObject, eligibleForGC, handle);
+		TTTrace.Write(database.TraceId, id);
 
-		ReadLock* p = isObject ? (ReadLock*)objectReadLocks.AddItem(ModifiedType.ObjectReadLock, ReadLock.Size) :
-			(ReadLock*)invRefReadLocks.Add();
+		multiAffectedObjects.TryGetValue(id, out int c);
+		multiAffectedObjects[id] = c + 1;
+	}
+
+	public void ProcessMultiAffectedObjectsInChangesets()
+	{
+		if (multiAffectedObjects.Count == 0)
+			return;
+
+		int affectedCount = multiAffectedObjects.Count;
+
+		Changeset currChangeset = changeset;
+
+		while (currChangeset != null)
+		{
+			changesetReader.Init(database.ModelDesc, currChangeset);
+			while (!changesetReader.EndOfStream())
+			{
+				if (!changesetReader.ReadBlock(false, changesetBlock))
+					break;
+
+				ClassDescriptor classDesc = changesetBlock.ClassDescriptor;
+				OperationType opType = changesetBlock.OperationType;
+
+				if (classDesc == null || opType > OperationType.Delete)
+					ChangesetReader.SkipBlock(changesetReader, changesetBlock);
+
+				ChangesetReader.ForEachOperation(changesetReader, changesetBlock, notLastInTransactionFlagger);
+			}
+
+			currChangeset = currChangeset.Next;
+		}
+
+		Checker.AssertTrue(multiAffectedObjects.Count == 0);
+		if (affectedCount < multiAffectedObjectsCapacity * 2)
+		{
+			multiAffectedObjects.Clear();
+		}
+		else
+		{
+			multiAffectedObjects = new LongDictionary<int>(multiAffectedObjectsCapacity + 1);
+		}
+	}
+
+	private void FlagNotLastInTransactionIfNeeded(long id, OperationHeader opHead)
+	{
+		TTTrace.Write(database.TraceId, id);
+
+		if (!multiAffectedObjects.TryGetValue(id, out int c))
+			return;
+
+		if (c == 1)
+			multiAffectedObjects.Remove(id);
+		else
+			multiAffectedObjects[id] = c - 1;
+
+		opHead.SetNotLastInTransaction();
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public void AddObjectReadLock(ushort tranSlot, long id, ushort classIndex)
+	{
+		TTTrace.Write(database.TraceId, tranId, classIndex, id);
+
+		ObjectReadLock* p = (ObjectReadLock*)objectReadLocks.AddItem(ModifiedType.ObjectReadLock, InvRefReadLock.Size);
+
+		totalAffectedCount++;
+		p->id = id;
+		p->classIndex = classIndex;
+		p->tranSlot = tranSlot;
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public void AddInvRefReadLock(ushort tranSlot, ulong handle, ushort classIndex, bool eligibleForGC)
+	{
+		TTTrace.Write(database.TraceId, tranId, classIndex, eligibleForGC, handle);
+
+		InvRefReadLock* p = (InvRefReadLock*)invRefReadLocks.Add();
 
 		totalAffectedCount++;
 		p->handle = handle;
@@ -415,16 +526,16 @@ internal unsafe sealed class TransactionContext : IDisposable
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public void AddInverseReferenceChange(ushort typeIndex, long invRef, long directRef, int propId, bool isTracked, byte opType)
+	public void AddInverseReferenceChange(ushort classIndex, long invRef, long directRef, int propId, byte opType)
 	{
-		TTTrace.Write(database.TraceId, tranId, typeIndex, invRef, directRef, propId, isTracked, opType);
+		TTTrace.Write(database.TraceId, tranId, classIndex, invRef, directRef, propId, opType);
 
 		Checker.AssertFalse(opType > 3);
 
 		InverseReferenceOperation* p = (InverseReferenceOperation*)inverseRefChanges.Add();
 		p->inverseReference = invRef;
 		p->directReference = directRef;
-		p->SetValues(propId, isTracked, opType, typeIndex);
+		p->SetValues(propId, opType, classIndex);
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -493,16 +604,16 @@ internal unsafe sealed class TransactionContext : IDisposable
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public void AddGroupingInvRefChange(ushort typeIndex, long invRef, long directRef, int propId, bool isTracked, byte opType)
+	public void AddGroupingInvRefChange(ushort typeIndex, long invRef, long directRef, int propId, byte opType)
 	{
-		TTTrace.Write(database.TraceId, tranId, typeIndex, invRef, directRef, propId, isTracked, opType);
+		TTTrace.Write(database.TraceId, tranId, typeIndex, invRef, directRef, propId, opType);
 
 		Checker.AssertFalse(opType > 3);
 
 		InverseReferenceOperation* p = (InverseReferenceOperation*)inverseRefChanges.Add();
 		p->inverseReference = invRef;
 		p->directReference = directRef;
-		p->SetValues(propId, isTracked, opType, typeIndex);
+		p->SetValues(propId, opType, typeIndex);
 
 		int group = GroupingReferenceSorter.GetGroup(p);
 		invRefGroupCounts[group]++;
@@ -601,6 +712,22 @@ internal unsafe sealed class TransactionContext : IDisposable
 			}
 		}
 
+		if (multiAffectedObjects.Count > 0)
+		{
+			if (multiAffectedObjects.Count < multiAffectedObjectsCapacity * 2)
+			{
+				multiAffectedObjects.Clear();
+			}
+			else
+			{
+				multiAffectedObjects = new LongDictionary<int>(multiAffectedObjectsCapacity + 1);
+			}
+		}
+
+		cascadeSetToNullAffectedCount = 0;
+		if (cascadeSetToNullAffected.Length > cascadeSetToNullAffectedCapacity)
+			cascadeSetToNullAffected = new long[cascadeSetToNullAffectedCapacity];
+
 		changesetReader.Clear();
 
 		totalAffectedCount = 0;
@@ -677,18 +804,16 @@ internal unsafe struct InverseReferenceOperation
 
 	public long inverseReference;
 	public long directReference;
-	public long propId_tracked_opType_classIndex;
+	public long propId_opType_classIndex;
 
-	public ushort ClassIndex => (ushort)propId_tracked_opType_classIndex;
-	public byte Type => (byte)((propId_tracked_opType_classIndex >> 16) & 0x03);
-	public int PropertyId => (int)(propId_tracked_opType_classIndex >> 32);
-	public bool IsTracked => (byte)((propId_tracked_opType_classIndex >> 18) & 0x01) != 0;
-	public long PropId_tracked_opType => propId_tracked_opType_classIndex >> 16;
+	public ushort ClassIndex => (ushort)propId_opType_classIndex;
+	public byte Type => (byte)((propId_opType_classIndex >> 16) & 0x03);
+	public int PropertyId => (int)(propId_opType_classIndex >> 32);
+	public long PropId_opType => propId_opType_classIndex >> 16;
 
-	public void SetValues(int propId, bool isTracked, byte opType, ushort typeIndex)
+	public void SetValues(int propId, byte opType, ushort classIndex)
 	{
-		uint btr = isTracked ? (uint)1 : 0;
-		propId_tracked_opType_classIndex = ((long)propId << 32) | (btr << 18) | ((uint)opType << 16) | (uint)typeIndex;
+		propId_opType_classIndex = ((long)propId << 32) | ((uint)opType << 16) | (uint)classIndex;
 	}
 
 	public override string ToString()
@@ -707,7 +832,22 @@ internal unsafe struct DeletedObject
 }
 
 [StructLayout(LayoutKind.Explicit, Pack = 1, Size = Size)]
-internal unsafe struct ReadLock
+internal unsafe struct ObjectReadLock
+{
+	public const int Size = 16;
+
+	[FieldOffset(0)]
+	public long id;
+
+	[FieldOffset(8)]
+	public ushort classIndex;
+
+	[FieldOffset(10)]
+	public ushort tranSlot;
+}
+
+[StructLayout(LayoutKind.Explicit, Pack = 1, Size = Size)]
+internal unsafe struct InvRefReadLock
 {
 	public const int Size = 16;
 

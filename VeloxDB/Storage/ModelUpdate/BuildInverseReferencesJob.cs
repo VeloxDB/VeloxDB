@@ -33,7 +33,7 @@ internal sealed class BuildInverseReferencesJob : ModelUpdateJob
 		DataModelDescriptor modelDesc = updateContext.ModelUpdate.ModelDesc;
 		DataModelDescriptor prevModelDesc = updateContext.ModelUpdate.PrevModelDesc;
 
-		foreach (InverseMapUpdate imu in updateContext.ModelUpdate.UpdatedInvRefMaps)
+		foreach (InverseRefMapUpdate imu in updateContext.ModelUpdate.UpdatedInvRefMaps)
 		{
 			foreach (PropertyDescriptor prevPropDesc in imu.TrackedReferences.Concat(imu.PartiallyDeletedReferences))
 			{

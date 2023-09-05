@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using VeloxDB.Common;
@@ -78,8 +78,8 @@ internal sealed class InverseComparer : IInverseReferenceComparer
 		if (p->directReference > pivotRef.directReference)
 			return false;
 
-		long v1 = p->PropId_tracked_opType;
-		long v2 = pivotRef.PropId_tracked_opType;
+		long v1 = p->PropId_opType;
+		long v2 = pivotRef.PropId_opType;
 		if (v1 != v2)
 			return v1 < v2;
 
@@ -94,8 +94,8 @@ internal sealed class InverseComparer : IInverseReferenceComparer
 		if (p->directReference < pivotRef.directReference)
 			return false;
 
-		long v1 = p->PropId_tracked_opType;
-		long v2 = pivotRef.PropId_tracked_opType;
+		long v1 = p->PropId_opType;
+		long v2 = pivotRef.PropId_opType;
 		if (v1 != v2)
 			return v1 > v2;
 

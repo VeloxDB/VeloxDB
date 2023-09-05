@@ -68,6 +68,21 @@ internal unsafe sealed class ChangesetReader
 		}
 	}
 
+	public static void ForEachOperation(ChangesetReader reader, ChangesetBlock block, Action<long, OperationHeader> action)
+	{
+		for (int i = 0; i < block.OperationCount; i++)
+		{
+			OperationHeader opHead = reader.GetOperationHeader();
+			long id = reader.ReadLong();
+			action(id, opHead);
+			for (int j = 1; j < block.PropertyCount; j++)
+			{
+				ChangesetBlockProperty prop = block.GetProperty(j);
+				reader.SkipValue(prop.Type);
+			}
+		}
+	}
+
 	public bool TryReadRewindBlock(out ulong rewindVersion)
 	{
 		if (EndOfLog())
@@ -612,7 +627,6 @@ internal unsafe struct OperationHeader
 	}
 
 	public bool IsSplit => p2 != null;
-	public byte* NotLastInTransactionPointer => (byte*)p1;
 	public ulong PreviousVersion => value >> 1;
 	public bool IsLastInTransaction => (value & 0x01) == 0;
 	public bool IsFirstInTransaction => PreviousVersion != 0;
@@ -633,9 +647,9 @@ internal unsafe struct OperationHeader
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public static void SetNotLastInTransaction(byte* p)
+	public void SetNotLastInTransaction()
 	{
-		*p |= 0x01;
+		*((byte*)p1) |= 0x01;
 	}
 }
 

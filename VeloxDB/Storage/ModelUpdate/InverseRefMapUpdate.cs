@@ -1,11 +1,11 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using VeloxDB.Common;
 using VeloxDB.Descriptor;
 
 namespace VeloxDB.Storage.ModelUpdate;
 
-internal sealed class InverseMapUpdate
+internal sealed class InverseRefMapUpdate
 {
 	ClassDescriptor classDesc;
 	ReadOnlyArray<PropertyDescriptor> untrackedReferences;
@@ -14,7 +14,7 @@ internal sealed class InverseMapUpdate
 	ReadOnlyArray<PropertyDescriptor> deletedReferences;
 	ReadOnlyArray<PropertyDescriptor> insertedReferences;
 
-	public InverseMapUpdate(ClassDescriptor classDesc, List<PropertyDescriptor> untrackedProperties,
+	public InverseRefMapUpdate(ClassDescriptor classDesc, List<PropertyDescriptor> untrackedProperties,
 		List<PropertyDescriptor> trackedProperties, List<PropertyDescriptor> deletedReferences, List<PropertyDescriptor> insertedReferences,
 		List<PropertyDescriptor> partiallyDeletedReferences)
 	{

@@ -109,7 +109,7 @@ internal unsafe sealed partial class StorageEngine
 		return replicator;
 	}
 
-	public bool ObjectExists(ClassDescriptor cd, long id)
+	public bool CheckIfObjectExists(ClassDescriptor cd, long id)
 	{
 		Database db = databases[DatabaseId.User];
 		Class @class = db.GetClass(cd.Index).MainClass;

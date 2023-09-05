@@ -418,11 +418,14 @@ internal unsafe class StandbyAlignCodeCache
 
 		if (currRef != prevRef)
 		{
-			if (prevRef != 0)
-				tc.AddGroupingInvRefChange(classIndex, obj->id, prevRef, propId, trackRefs, (byte)InvRefChangeType.Delete);
+			if (trackRefs)
+			{
+				if (prevRef != 0)
+					tc.AddGroupingInvRefChange(classIndex, obj->id, prevRef, propId, (byte)InvRefChangeType.Delete);
 
-			if (currRef != 0)
-				tc.AddGroupingInvRefChange(classIndex, obj->id, currRef, propId, trackRefs, (byte)InvRefChangeType.Insert);
+				if (currRef != 0)
+					tc.AddGroupingInvRefChange(classIndex, obj->id, currRef, propId, (byte)InvRefChangeType.Insert);
+			}
 
 			*((long*)((byte*)obj + byteOffset)) = currRef;
 		}
@@ -439,11 +442,14 @@ internal unsafe class StandbyAlignCodeCache
 
 		if (currRef != prevRef)
 		{
-			if (prevRef != 0)
-				tc.AddGroupingInvRefChange(classIndex, obj->id, prevRef, propId, trackRefs, (byte)InvRefChangeType.Delete);
+			if (trackRefs)
+			{
+				if (prevRef != 0)
+					tc.AddGroupingInvRefChange(classIndex, obj->id, prevRef, propId, (byte)InvRefChangeType.Delete);
 
-			if (currRef != 0)
-				tc.AddGroupingInvRefChange(classIndex, obj->id, currRef, propId, trackRefs, (byte)InvRefChangeType.Insert);
+				if (currRef != 0)
+					tc.AddGroupingInvRefChange(classIndex, obj->id, currRef, propId, (byte)InvRefChangeType.Insert);
+			}
 
 			currentAffectedIndexes = UpatedAffectedIndexes(obj, objHandle, currentAffectedIndexes, affectedIndexIndexes, indexDelegate);
 
@@ -661,6 +667,9 @@ internal unsafe class StandbyAlignCodeCache
 	private static void CreateRefArrayChange(TransactionContext tc, long id, ulong handle, BlobStorage blobStorage,
 		ushort classIndex, int propId, bool trackRefs, InvRefChangeType type)
 	{
+		if (!trackRefs)
+			return;
+
 		byte* blob = blobStorage.RetrieveBlob(handle);
 		if (blob != null)
 		{
@@ -668,7 +677,7 @@ internal unsafe class StandbyAlignCodeCache
 			long* refs = (long*)(blob + 4);
 			for (int j = 0; j < refCount; j++)
 			{
-				tc.AddGroupingInvRefChange(classIndex, id, refs[j], propId, trackRefs, (byte)type);
+				tc.AddGroupingInvRefChange(classIndex, id, refs[j], propId, (byte)type);
 			}
 		}
 	}

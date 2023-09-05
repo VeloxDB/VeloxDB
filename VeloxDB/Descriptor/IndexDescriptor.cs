@@ -99,14 +99,17 @@ internal abstract class IndexDescriptor : TypeDescriptor
 	{
 		get
 		{
-			for (int i = 0; i < classes.Length; i++)
+			ClassDescriptor curr = classes[0];
+			while (curr.Id != SystemCode.DatabaseObject.Id)
 			{
-				ObjectModelClass objClass = classes[i].ObjectModelClass;
+				ObjectModelClass objClass = curr.ObjectModelClass;
 				if (objClass != null)
 				{
 					if (objClass.Indexes.Find(x => x.FullName.Equals(this.FullName)) != null)
 						return objClass;
 				}
+
+				curr = curr.BaseClass;
 			}
 
 			throw new InvalidOperationException();

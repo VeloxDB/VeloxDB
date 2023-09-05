@@ -1061,6 +1061,12 @@ internal unsafe sealed class StringDatabaseArray : DatabaseArray<string>
 		}
 	}
 
+	internal override unsafe void Refresh(byte* buffer)
+	{
+		base.Refresh(buffer);
+		unpackedArray = PropertyTypesHelper.DBUnpackStringArray(buffer);
+	}
+
 	private protected override void CreateItems()
 	{
 		items = new string[Math.Max(4, count)];

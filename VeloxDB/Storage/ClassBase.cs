@@ -53,7 +53,7 @@ internal unsafe abstract partial class ClassBase
 	public abstract ObjectStorage.ScanRange[] GetScanRanges(bool scanInhereted, out long totalCount);
 	public abstract ObjectStorage.ScanRange[] GetDisposingScanRanges(bool scanInhereted, out long totalCount);
 
-	public abstract ObjectReader GetObject(Transaction tran, long id, out DatabaseErrorDetail err);
+	public abstract ObjectReader GetObject(Transaction tran, long id, bool forceNoReadLock, out DatabaseErrorDetail err);
 	public abstract ObjectReader GetObjectNoReadLock(Transaction tran, long id);
 	public abstract DatabaseErrorDetail TakeReadLock(Transaction tran, ClassLocker locker);
 	public abstract void Drop();
