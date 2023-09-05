@@ -114,8 +114,6 @@ internal sealed class ChangeList
 		count = 0;
 	}
 
-	private int GetPerTypeList(int index) => (index < perTypeLists.Length) ? perTypeLists[index] : -1;
-
 	private struct ListItem
 	{
 		public int next;
