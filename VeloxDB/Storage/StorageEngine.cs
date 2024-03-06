@@ -127,7 +127,9 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		trace.Debug("Storage engine TimeTravelTrace identifier={0}.", traceId);
 		TTTrace.Write(traceId, trace.Name);
 
+#if !TEST_BUILD
 		hashSeed = (ulong)RandomNumberGenerator.GetInt32(int.MaxValue) * (ulong)RandomNumberGenerator.GetInt32(int.MaxValue);
+#endif
 
 		memoryManager = new MemoryManager();
 		stringStorage = new StringStorage();
