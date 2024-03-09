@@ -83,7 +83,7 @@ internal static class ManualEventPool
 	{
 		readonly object sync;
 		int handle;
-		ManualResetEventSlim e;
+		ManualResetEvent e;
 		int refCount;
 
 		public RefCountedManualEvent(int handle, object sync)
@@ -91,7 +91,7 @@ internal static class ManualEventPool
 			this.sync = sync;
 			this.handle = handle;
 			refCount = 0;
-			e = new ManualResetEventSlim(false);
+			e = new ManualResetEvent(false);
 		}
 
 		public void Allocated()
@@ -129,12 +129,12 @@ internal static class ManualEventPool
 
 		public bool IsSignaled()
 		{
-			return e.Wait(0);
+			return e.WaitOne(0);
 		}
 
 		public void Wait()
 		{
-			e.Wait();
+			e.WaitOne();
 		}
 
 		public void Set()

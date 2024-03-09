@@ -9,7 +9,7 @@ namespace VeloxDB.Common;
 [StructLayout(LayoutKind.Sequential, Pack = 1, Size = 1)]
 internal struct RWLock
 {
-	const int spinCount = 200;
+	const int spinCount = 500;
 
 	// rh - reader signal handle
 	// wh - writer signal handle

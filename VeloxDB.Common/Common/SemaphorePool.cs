@@ -83,7 +83,7 @@ internal static class SemaphorePool
 	{
 		readonly object sync;
 		int handle;
-		SemaphoreSlim e;
+		Semaphore e;
 		int refCount;
 
 		public RefCountedSemaphore(int handle, object sync)
@@ -91,7 +91,7 @@ internal static class SemaphorePool
 			this.sync = sync;
 			this.handle = handle;
 			refCount = 0;
-			e = new SemaphoreSlim(0, int.MaxValue);
+			e = new Semaphore(0, int.MaxValue);
 		}
 
 		public void Allocated()
@@ -121,9 +121,6 @@ internal static class SemaphorePool
 				refCount--;
 				if (refCount == 0)
 				{
-					if (e.CurrentCount != 0)
-						throw new InvalidOperationException();
-
 					SemaphorePool.Free(handle);
 				}
 			}
@@ -131,12 +128,12 @@ internal static class SemaphorePool
 
 		public bool IsSignaled()
 		{
-			return e.Wait(0);
+			return e.WaitOne(0);
 		}
 
 		public void Wait()
 		{
-			e.Wait();
+			e.WaitOne();
 		}
 
 		public void Set()
