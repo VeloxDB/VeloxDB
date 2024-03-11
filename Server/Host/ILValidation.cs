@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Immutable;
+using System.Diagnostics;
 using System.Globalization;
 using System.Reflection;
 using System.Reflection.Metadata;
@@ -15,6 +16,16 @@ namespace VeloxDB.Server;
 internal static class ILValidation
 {
 	public record Result(DatabaseErrorDetail? Detail, bool Success);
+
+	private static readonly Version runtimeVersion;
+
+	static ILValidation()
+	{
+		AssemblyName runtimeName = Assembly.Load("System.Runtime").GetName();
+		Debug.Assert(runtimeName.Version != null);
+		runtimeVersion = runtimeName.Version;
+	}
+
 	public static Result Validate(IReadOnlyCollection<Engine.UserAssembly> toValidate)
 	{
 		using ReaderCollection readers = new ReaderCollection(toValidate);
@@ -50,25 +61,50 @@ internal static class ILValidation
 	private static DatabaseErrorDetail? CheckTargetFramework(Reader reader)
 	{
 		DatabaseErrorDetail? error = null;
-		string? targetVersion = GetTargetVersion(reader);
+		MetadataReader metadataReader = reader.PEReader.GetMetadataReader();
+		string? targetVersion = GetTargetVersion(metadataReader);
 
-		if(targetVersion == null)
-		{
-			error = new DatabaseErrorDetail(DatabaseErrorType.InvalidAssembly, primaryName: reader.Name);
-		}
-		else if (string.Compare(targetVersion, AppContext.TargetFrameworkName) > 0)
+		if (targetVersion != null && string.Compare(targetVersion, AppContext.TargetFrameworkName) > 0)
 		{
 			error = new DatabaseErrorDetail(DatabaseErrorType.InvalidAssemblyTargetFramework, primaryName: reader.Name,
 											secondaryName: targetVersion, memberName: AppContext.TargetFrameworkName);
+		}
+		else
+		{
+			Version? targetRuntimeVersion;
+			targetRuntimeVersion = GetRuntimeVersion(metadataReader);
+			if(targetRuntimeVersion == null)
+			{
+				error = new DatabaseErrorDetail(DatabaseErrorType.InvalidAssembly, primaryName: reader.Name);
+			}else if(targetRuntimeVersion > runtimeVersion)
+			{
+				error = new DatabaseErrorDetail(DatabaseErrorType.InvalidAssemblyTargetFramework, primaryName: reader.Name,
+												secondaryName: targetRuntimeVersion.ToString(), memberName: runtimeVersion.ToString());
+			}
+
 		}
 
 		return error;
 	}
 
-	private static string? GetTargetVersion(Reader reader)
+	private static Version? GetRuntimeVersion(MetadataReader metadataReader)
+	{
+		foreach (AssemblyReferenceHandle arHandle in metadataReader.AssemblyReferences)
+		{
+			AssemblyReference ar = metadataReader.GetAssemblyReference(arHandle);
+			string name = metadataReader.GetString(ar.Name);
+			if (name == "System.Runtime" || name == "System.Private.CoreLib")
+			{
+				return ar.Version;
+			}
+		}
+
+		return null;
+	}
+
+	private static string? GetTargetVersion(MetadataReader metadataReader)
 	{
 		string? targetVersion = null;
-		MetadataReader metadataReader = reader.PEReader.GetMetadataReader();
 
 		AssemblyDefinition assemblyDefinition = metadataReader.GetAssemblyDefinition();
 		CustomAttributeHandleCollection customAttributes = assemblyDefinition.GetCustomAttributes();
