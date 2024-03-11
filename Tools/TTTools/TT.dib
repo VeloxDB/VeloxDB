@@ -1,0 +1,173 @@
+#!meta
+
+{"kernelInfo":{"defaultKernelName":"csharp","items":[{"aliases":[],"languageName":"csharp","name":"csharp"}]}}
+
+#!csharp
+
+#r "nuget:Microsoft.CodeAnalysis"
+#r "nuget:Microsoft.CodeAnalysis.CSharp"
+#!import TT.cs
+
+#!csharp
+
+var tt1 = TimeTravel.Load("/tmp/vlxdb/ttt/1");
+var tt2 = TimeTravel.Load("/tmp/vlxdb/ttt/2");
+
+#!csharp
+
+Microsoft.DotNet.Interactive.Formatting.Formatter.ListExpansionLimit = 1000;
+Microsoft.DotNet.Interactive.Formatting.Formatter.Register<TTEntry>(entry=>entry.ToHTML(), "text/html");
+
+#!csharp
+
+2000-368
+
+#!csharp
+
+display(tt1.Entries.Where(e=>e.TId == 14).ToList().GetRange(6631,4));
+display(tt2.Entries.Where(e=>e.TId == 14).ToList().GetRange(6631,4));
+
+#!csharp
+
+var fileId = tt.SourceFiles.Where(sf=>sf.Value.Contains("DatabaseException")).First().Key;
+var exc = tt.Entries.Where(e=>e.FileId==fileId && ((string)e.Values[8]).Contains("RefDB")).Last();
+var tid = exc.TId;
+var last50 = tt.Entries.Where(e=>e.TId == tid).Reverse().Take(50).Reverse().ToList();
+
+long objId = (long)exc.Values[1];
+var trans = tt.Entries.Where(e=>e.Values.Any(v=>v.Equals(objId))).ToList();
+var transId = (ulong)tt.Entries.Take(exc.Index+1).Where(e=>e.TId==exc.TId).Reverse().Select(e=>
+{
+	var index = tt.GetValueNames(e).ToList().FindIndex(v=>v.Contains("tran.Id"));
+	return (index==-1)?null:e.Values[index];
+}).First(v=>v!=null);
+
+display($"Transactions involving conflict object: {trans.Count}");
+display(exc);
+
+#!csharp
+
+var first = tt.Entries.Where(e=>e.Any(transId) && e.TId == exc.TId).First().Index;
+var last = tt.Entries.Where(e=>e.Any(transId) && e.TId == exc.TId).Last().Index;
+
+#!csharp
+
+var eFirst = tt.Entries.Where(e=>e.Any((ulong)5380300354831960338)).First().Index;
+var eLast = tt.Entries.Where(e=>e.Any((ulong)5380300354831960338)).Last().Index;
+
+#!csharp
+
+{
+var eTId = tt.Entries[eFirst].TId;
+display(tt.Entries.GetRange(eFirst, eLast - eFirst + 1).Where(e=>e.TId == eTId && e.Any((long)1179943102371085454)));
+}
+
+#!csharp
+
+tt.Entries.GetRange(first, last - first + 1).Where(e=>e.TId == exc.TId && e.Any((long)1179943102371085454))
+
+#!csharp
+
+transId
+
+#!csharp
+
+display($"{first}, {last}");
+
+#!csharp
+
+var all = tt.Entries.Where(e=>e.Any(13835058055282163710));
+display($"{all.First().Index}, {all.Last().Index}");
+
+#!csharp
+
+tt.Entries.Where(e=>e.Any((long)1179943102371081356) && e.Any((long)1179943102371081190))
+
+#!csharp
+
+var refTransFId = tt.SourceFiles.Where(sf=>sf.Value.Contains("RefTransaction")).First().Key;
+var refLockerFId = tt.SourceFiles.Where(sf=>sf.Value.Contains("RefLocker")).First().Key;
+var concStressTestFId = tt.SourceFiles.Where(sf=>sf.Value.Contains("ConcurrentStressTest")).First().Key;
+
+#!csharp
+
+record Trans(int Start, int End, ulong Id);
+Dictionary<ulong, Trans> executed = new();
+
+foreach(var entry in tt.Entries.Where(e=>e.TId == exc.TId && e.FileId==concStressTestFId && e.LineNumber == 376))
+{
+	ulong transId = (ulong)entry.Values[1];
+	executed.Add(transId, new Trans(entry.Index, int.MaxValue, transId));
+}
+
+foreach(var entry in tt.Entries.Where(e=>e.TId == exc.TId && e.FileId==refTransFId && e.LineNumber == 269))
+{
+	ulong transId = (ulong)entry.Values[0];
+	Trans trans;
+	if(!executed.TryGetValue(transId, out trans))
+	{
+		trans = new Trans(-1, entry.Index, transId);
+	}
+	else
+	{
+		trans = trans with {End = entry.Index};
+	}
+
+	executed[transId] = trans;
+
+}
+//display(tt.Entries.Where(e=>e.TId == exc.TId && e.FileId==concStressTestFId && e.LineNumber == 376).Count());
+
+#!csharp
+
+var inParallel = executed.Values.Where(t=>t.End >= executed[transId].Start && t.Start <= executed[transId].End && t.Id != transId);
+
+#!csharp
+
+tt.Entries.Where(e=>e.FileId == refLockerFId && e.TId == exc.TId && e.LineNumber == 380 && e.Values[1].Equals(objId))
+
+#!csharp
+
+var conflict = inParallel.Where(t=>trans.Any(e=>e.Any(t.Id)));
+
+#!csharp
+
+conflict.Select(t=>trans.Where(e=>e.Any(t.Id)))
+
+#!csharp
+
+var engTran1 = (ulong)tt.Entries[executed[13835058055282199222].Start].Values[0];
+var engTran2 = (ulong)tt.Entries[executed[transId].Start].Values[0];
+
+#!csharp
+
+tt.Entries.GetRange(23993169, 23993516-23993169+1).Where(e=>e.TId==74)
+
+#!csharp
+
+engTran1
+
+#!csharp
+
+display(tt.Entries.Where(e=>e.Values.Any(v=>v.Equals(engTran1)) && e.Values.Any(v=>v.Equals(objId))));
+display(tt.Entries.Where(e=>e.Values.Any(v=>v.Equals(engTran2)) && e.Values.Any(v=>v.Equals(objId)) && e.LineNumber >= 1157 && e.LineNumber <= 1214));
+
+#!csharp
+
+tt.Entries.GetRange(0, 22137592).Where(e=>e.TId == 71).TakeLast(10)
+
+#!csharp
+
+tt.Entries.Where(e=>e.Values.Any(v=>v.Equals(engTran2)) && e.LineNumber == 1265)
+
+#!csharp
+
+tt.Entries.Skip(22141453).Where(e=>e.TId == 66).Take(10)
+
+#!csharp
+
+trans.Where(e=>e.Any(transId))
+
+#!csharp
+
+trans.Where(e=>e.Values.Any(v=>v.Equals(engTran1)))
