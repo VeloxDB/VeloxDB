@@ -29,6 +29,7 @@ internal unsafe sealed class ReferenceIntegrityValidator
 
 	public DatabaseErrorDetail ValidateReference(Transaction tran, InverseReferenceOperation* rc, int count)
 	{
+		TTTrace.Write(tran.Id, rc->directReference);
 		Checker.AssertFalse(rc->directReference == 0);
 
 		ClassDescriptor classDesc = modelDesc.GetClassByIndex(rc->ClassIndex);
@@ -287,6 +288,7 @@ internal unsafe sealed class ReferenceIntegrityValidator
 	{
 		ClassDescriptor classDesc = IdHelper.GetClass(modelDesc, ops->inverseReference);
 
+		TTTrace.Write(tran.Id, ops->directReference, ops->inverseReference, ops->Type, ops->PropertyId);
 		if (ops->Type == (byte)DeleteTargetAction.PreventDelete)
 		{
 			PropertyDescriptor pd = classDesc.GetProperty(ops->PropertyId);
@@ -373,7 +375,7 @@ internal unsafe sealed class ReferenceIntegrityValidator
 		// We scan the class without read-lock because if a new reference is being introduced (to a deleted entity)
 		// It will fail the validation (when Existance lock is taken).
 		ObjectReader[] readers = tc.TempRecReaders;
-		using ClassScan scan = engine.BeginClassScanInternal(tran, classDesc, false, true, out DatabaseErrorDetail error);
+		using ClassScan scan = engine.BeginClassScanInternal(tran, classDesc, false, false, out DatabaseErrorDetail error);
 		if (error != null)
 			return error;
 

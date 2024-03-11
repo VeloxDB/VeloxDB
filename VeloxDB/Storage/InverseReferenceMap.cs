@@ -1156,7 +1156,7 @@ internal unsafe sealed partial class InverseReferenceMap
 
 	private unsafe DatabaseErrorDetail ValidateDelete(Transaction tran, Bucket* bn, long id, int propId)
 	{
-		TTTrace.Write(database.TraceId, classDesc.Id, tran.Id, id);
+		TTTrace.Write(database.TraceId, classDesc.Id, tran.Id, id, bn->Handle == 0);
 
 		if (bn->Handle == 0)
 			return null;

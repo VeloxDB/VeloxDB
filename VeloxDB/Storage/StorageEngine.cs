@@ -23,7 +23,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 	StorageEngineSettings settings;
 	Tracing.Source trace;
 	long traceId;
-	ulong hashSeed;
+	ulong hashSeed = 0;
 
 	ReplicationInfoPublisher statePublisher;
 
@@ -1378,7 +1378,7 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		{
 			// If an invalid reference (unexisting class) is set and than replaced in the same changeset,
 			// we can end up in this situation.
-			TTTrace.Write();
+			TTTrace.Write(tran.Id, ops->directReference);
 			return null;
 		}
 
