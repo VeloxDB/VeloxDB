@@ -170,345 +170,351 @@ public enum DatabaseErrorType
 	/// <summary>
 	/// Invalid assembly filename. Name can contain only following characters a-z, A-Z, 0-9, _, . and space. It must end with ".dll".
 	/// </summary>
-	[ErrorCode("Invalid assembly filename {5}. Name can contain only following characters [a-z,A-Z,0-9,_,., ] and must end in .dll.")]
+	[ErrorCode("Invalid assembly filename '{5}'. Name can contain only following characters [a-z,A-Z,0-9,_,., ] and must end in .dll.")]
 	InvalidAssemblyFilename = 22,
 
 	/// <summary>
 	/// Invalid assembly, the assembly has failed IL verification.
 	/// </summary>
-	[ErrorCode("Invalid assembly {5}.")]
+	[ErrorCode("Invalid assembly '{5}'.")]
 	InvalidAssembly = 23,
+
+	/// <summary>
+	/// Invalid assembly target framework, the assembly is targeting a .NET version that is newer than the one VeloxDB is using.
+	/// </summary>
+	[ErrorCode("The assembly '{5}' is targeting a .NET version ({3}) that is newer than the one VeloxDB is using ({4}).")]
+	InvalidAssemblyTargetFramework = 24,
 
 	/// <summary>
 	/// Uploaded assembly references an unknown assembly. Make sure that you have provided all assemblies.
 	/// </summary>
 	[ErrorCode("Assembly {5} references an unknown assembly {3}.")]
-	MissingReferencedAssembly = 24,
+	MissingReferencedAssembly = 25,
 
 	/// <summary>
 	/// Invalid directory name. Name can contain only following characters a-z, A-Z, 0-9, _, ., / and space.
 	/// </summary>
 	[ErrorCode("Invalid directory name {5}. Name can contain only following characters [a-z,A-Z,0-9,_,.,/, ]")]
-	InvalidDirectoryName = 25,
+	InvalidDirectoryName = 26,
 
 	/// <summary>
 	/// Not in global write cluster.
 	/// </summary>
 	[ErrorCode("Not in global write cluster.")]
-	NotInGlobalWriteCluster = 26,
+	NotInGlobalWriteCluster = 27,
 
 	/// <summary>
 	/// Not in local write cluster.
 	/// </summary>
 	[ErrorCode("Not in local write cluster.")]
-	NotInLocalWriteCluster = 27,
+	NotInLocalWriteCluster = 28,
 
 	/// <summary>
 	/// Property has an invalid type. The type is not supported by VeloxDB.
 	/// </summary>
 	[ErrorCode("Property {4} of class {5} has an invalid type.")]
-	InvalidPropertyType = 28,
+	InvalidPropertyType = 29,
 
 	/// <summary>
 	/// Invalid class id detected.
 	/// </summary>
 	[ErrorCode("Invalid class id detected for class {5}.")]
-	InvalidClassId = 29,
+	InvalidClassId = 30,
 
 	/// <summary>
 	/// Maximum number of indexes per single class exceeded for class.
 	/// </summary>
 	[ErrorCode("Maximum number of indexes per single class exceeded for class {5}.")]
-	MaximumNumberOfIndexesPerClassExceeded = 30,
+	MaximumNumberOfIndexesPerClassExceeded = 31,
 
 	/// <summary>
 	/// Class contains unknown index.
 	/// </summary>
 	[ErrorCode("Class {5} contains unknown index {3}.")]
-	UnknownIndex = 31,
+	UnknownIndex = 32,
 
 	/// <summary>
 	/// Number of properties in a class exceeds maximum allowed count.
 	/// </summary>
 	[ErrorCode("Class {5} property count exceeds maximum allowed count.")]
-	MaximumNumberOfPropertiesInClassExceeded = 32,
+	MaximumNumberOfPropertiesInClassExceeded = 33,
 
 	/// <summary>
 	/// Base class could not be found.
 	/// </summary>
 	[ErrorCode("Base class of class {5} could not be found.")]
-	UnknownBaseClass = 33,
+	UnknownBaseClass = 34,
 
 	/// <summary>
 	/// Abstract class must not inherit from non abstract class.
 	/// </summary>
 	[ErrorCode("Abstract class {5} must not inherit from non-abstract class.")]
-	AbstractClassNonAbstractParent = 34,
+	AbstractClassNonAbstractParent = 35,
 
 	/// <summary>
 	/// Circular inheritance chain detected.
 	/// </summary>
 	[ErrorCode("Circular inheritance chain detected with class {5}.")]
-	CircularInheritance = 35,
+	CircularInheritance = 36,
 
 	/// <summary>
 	/// Property with duplicate name detected.
 	/// </summary>
 	[ErrorCode("Property {4} of class {5} does not have a unique name.")]
-	DuplicatePropertyName = 36,
+	DuplicatePropertyName = 37,
 
 	/// <summary>
 	/// Property with duplicate id detected.
 	/// </summary>
 	[ErrorCode("Property {4} in class {5} does not have a unique property id in an entire model.")]
-	DuplicatePropertyId = 37,
+	DuplicatePropertyId = 38,
 
 	/// <summary>
 	/// Index does not have a unique full name.
 	/// </summary>
 	[ErrorCode("Invalid model. Index {5} with id {0} does not have a unique full name.")]
-	DuplicateIndexName = 38,
+	DuplicateIndexName = 39,
 
 	/// <summary>
 	/// Class with duplicated Id detected.
 	/// </summary>
 	[ErrorCode("Invalid model. Class {5} with id {0} does no have unique id.")]
-	DuplicateClassId = 39,
+	DuplicateClassId = 40,
 
 	/// <summary>
 	/// Class with duplicate name detected.
 	/// </summary>
 	[ErrorCode("Invalid model. Class {5} with id {0} does no have unique full name.")]
-	DuplicateClassName = 40,
+	DuplicateClassName = 41,
 
 	/// <summary>
 	/// Index does not define any properties.
 	/// </summary>
 	[ErrorCode("Index {5} does not define any properties.")]
-	IndexWithoutProperties = 41,
+	IndexWithoutProperties = 42,
 
 	/// <summary>
 	/// No classes indexed by the index.
 	/// </summary>
 	[ErrorCode("No classes indexed by the index {5}.")]
-	IndexWithoutClasses = 42,
+	IndexWithoutClasses = 43,
 
 	/// <summary>
 	/// Maximum number of properties exceeded in an index.
 	/// </summary>
 	[ErrorCode("Maximum number of properties exceeded in an index {5}.")]
-	MaximumNumberOfPropertiesInIndexExceeded = 43,
+	MaximumNumberOfPropertiesInIndexExceeded = 44,
 
 	/// <summary>
 	/// Class may not be indexed by the index because it does not contain referenced property.
 	/// </summary>Index {5} indexes invalid property {4}.
 	[ErrorCode("Class {5} may not be indexed by the index {3} because it does not contain property {4}.")]
-	IndexIndexesUnknownProperty = 44,
+	IndexIndexesUnknownProperty = 45,
 
 	/// <summary>
 	/// Index indexes invalid property.
 	/// </summary>
 	[ErrorCode("Index {5} indexes invalid property {4}.")]
-	IndexIndexesInvalidProperty = 45,
+	IndexIndexesInvalidProperty = 46,
 
 	/// <summary>
 	/// Property is indexed multiple times by the same index.
 	/// </summary>
 	[ErrorCode("Property {4} is indexed multiple times by the same index {5}.")]
-	IndexIndexesPropertyMultipleTimes = 46,
+	IndexIndexesPropertyMultipleTimes = 47,
 
 	/// <summary>
 	/// Reference property references invalid class.
 	/// </summary>
 	[ErrorCode("Reference property {4} of class {5} references invalid class {3}.")]
-	ReferencePropertyReferencesInvalidClass = 47,
+	ReferencePropertyReferencesInvalidClass = 48,
 
 	/// <summary>
 	/// Inverse reference property is of invalid type. Inverse references must be of type <see cref="T:VeloxDB.ObjectInterface.InverseReferenceSet`1"/>.
 	/// </summary>
 	[ErrorCode("Inverse reference property {4} of class {5} is of invalid type.")]
-	InvalidInverseReferencePropertyType = 48,
+	InvalidInverseReferencePropertyType = 49,
 
 	/// <summary>
 	/// Inverse reference property must not define a setter.
 	/// </summary>
 	[ErrorCode("Inverse reference property {4} of class {5} must not define a setter.")]
-	ReferencePropertyWithSetter = 49,
+	ReferencePropertyWithSetter = 50,
 
 	/// <summary>
 	/// Property must not specify SetToNull because it has multiplicity set to one.
 	/// </summary>
 	[ErrorCode("Property {4} of class {5} must not specify SetToNull because it has multiplicity set to One.")]
-	PropertyCantBeSetToNull = 50,
+	PropertyCantBeSetToNull = 51,
 
 	/// <summary>
 	/// Delete target action is invalid for reference.
 	/// </summary>
 	[ErrorCode("Delete target action is invalid for reference {4} of class {5}.")]
-	InvalidDeleteTargetAction = 51,
+	InvalidDeleteTargetAction = 52,
 
 	/// <summary>
 	/// Property of class references unknown class.
 	/// </summary>
 	[ErrorCode("Property {4} of class {5} references unknown class {3}.")]
-	PropertyReferencesUnknownClass = 52,
+	PropertyReferencesUnknownClass = 53,
 
 	/// <summary>
 	/// Default value for string property is not allowed.
 	/// </summary>
 	[ErrorCode("Default value for string property {4} in class {5} is not allowed.")]
-	StringPropertyCantHaveDefaultValue = 53,
+	StringPropertyCantHaveDefaultValue = 54,
 
 	/// <summary>
 	/// Default value for property is invalid.
 	/// </summary>
 	[ErrorCode("Default value for property {4} in class {5} is invalid")]
-	InvalidDefaultValue = 54,
+	InvalidDefaultValue = 55,
 
 	/// <summary>
 	/// Inverse reference property targets unknown class.
 	/// </summary>
 	[ErrorCode("Inverse reference property {4} of class {5} targets unknown class {3}.")]
-	InverseReferencePropertyTargetsUnknownClass = 55,
+	InverseReferencePropertyTargetsUnknownClass = 56,
 
 	/// <summary>
 	/// Inverse reference property targets unknown reference property.
 	/// </summary>
 	[ErrorCode("Inverse reference property {4} of class {5} targets unknown reference property {3}.")]
-	InverseReferencePropertyTargetsUnknownProperty = 56,
+	InverseReferencePropertyTargetsUnknownProperty = 57,
 
 	/// <summary>
 	/// Inverse reference property targets nontracked reference property.
 	/// </summary>
 	[ErrorCode("Inverse reference property {4} of class {5} targets nontracked reference property {3}.")]
-	InverseReferencePropertyTargetsUntrackedProperty = 57,
+	InverseReferencePropertyTargetsUntrackedProperty = 58,
 
 	/// <summary>
 	/// Inverse reference property targets invalid class which does not own the reference.
 	/// </summary>
 	[ErrorCode("Inverse reference property {4} of class {5} targets invalid class {3} which does not own the reference.")]
-	InverseReferencePropertyTargetsInvalidClass = 58,
+	InverseReferencePropertyTargetsInvalidClass = 59,
 
 	/// <summary>
 	/// Class is not decorated with <see cref="T:VeloxDB.ObjectInterface.DatabaseClassAttribute"/>.
 	/// </summary>
 	[ErrorCode("Class {5} is not decorated with DatabaseClassAttribute.")]
-	MissingAttribute = 59,
+	MissingAttribute = 60,
 
 	/// <summary>
 	/// Class must be defined in a namespace.
 	/// </summary>
 	[ErrorCode("Class {5} is not defined in a namespace.")]
-	ClassWithoutNamespace = 60,
+	ClassWithoutNamespace = 61,
 
 	/// <summary>
 	/// Class does not contain DatabaseObject in its hierarchy.
 	/// </summary>
 	[ErrorCode("Class does not contain DatabaseObject in its hierarchy.")]
-	MustInheritDatabaseObject = 61,
+	MustInheritDatabaseObject = 62,
 
 	/// <summary>
 	/// Generic classes are not supported as DatabaseObjects.
 	/// </summary>
 	[ErrorCode("Class {5} is generic.")]
-	GenericClassNotSupported = 62,
+	GenericClassNotSupported = 63,
 
 	/// <summary>
 	/// Database class does not provide an empty constructor.
 	/// </summary>
 	[ErrorCode("Database class {5} does not provide an empty constructor.")]
-	MissingEmptyConstructor = 63,
+	MissingEmptyConstructor = 64,
 
 	/// <summary>
 	/// Non-abstract class declares abstract property.
 	/// </summary>
 	[ErrorCode("Non-abstract class {5} declares abstract property {4}.")]
-	AbstractPropertyInNonAbstractClass = 64,
+	AbstractPropertyInNonAbstractClass = 65,
 
 	/// <summary>
 	/// Non-abstract class declares abstract method.
 	/// </summary>
 	[ErrorCode("Non-abstract class {5} declares abstract method {4}.")]
-	AbstractMethodInNonAbstractClass = 65,
+	AbstractMethodInNonAbstractClass = 66,
 
 	/// <summary>
 	/// Non-abstract class declares abstract event.
 	/// </summary>
 	[ErrorCode("Non-abstract class {5} declares abstract event {4}.")]
-	AbstractEventInNonAbstractClass = 66,
+	AbstractEventInNonAbstractClass = 67,
 
 	/// <summary>
 	/// Inverse reference property must have a getter.
 	/// </summary>
 	[ErrorCode("Inverse reference property {4} of class {5} must have a getter.")]
-	MissingGetter = 67,
+	MissingGetter = 68,
 
 	/// <summary>
 	/// Inverse reference property must not define a setter.
 	/// </summary>
 	[ErrorCode("Inverse reference property {4} of class {5} must not define a setter.")]
-	SetterFound = 68,
+	SetterFound = 69,
 
 	/// <summary>
 	/// Inverse reference property must be declared abstract.
 	/// </summary>
 	[ErrorCode("Inverse reference property {4} of class {5} must be declared abstract.")]
-	InverseRereferncePropertyIsNotAbstract = 69,
+	InverseRereferncePropertyIsNotAbstract = 70,
 
 	/// <summary>
 	/// Property must be declared abstract.
 	/// </summary>
 	[ErrorCode("Property {4} of class {5} must be declared abstract.")]
-	PropertyIsNotAbstract = 70,
+	PropertyIsNotAbstract = 71,
 
 	/// <summary>
 	/// Property must define getter and setter.
 	/// </summary>
 	[ErrorCode("Property {4} of class {5} must define getter and setter.")]
-	PropertyMissingGetterAndSetter = 71,
+	PropertyMissingGetterAndSetter = 72,
 
 	/// <summary>
 	/// Constructor of Database API class throws an exception.
 	/// </summary>
 	[ErrorCode("Constructor of class {5} threw an exception {6}.")]
-	FailedToCreateInstance = 72,
+	FailedToCreateInstance = 73,
 
 	/// <summary>
 	/// Transaction is closed and cannot be committed.
 	/// </summary>
 	[ErrorCode("Transaction is closed and cannot be committed.")]
-	CommitClosedTransaction = 73,
+	CommitClosedTransaction = 74,
 
 	/// <summary>
 	/// Invalid target of inverse reference.
 	/// </summary>
 	[ErrorCode("Invalid target of inverse reference {4} on class {5}.")]
-	InvalidInverseReferenceTarget = 74,
+	InvalidInverseReferenceTarget = 75,
 
 	/// <summary>
 	/// Number of references referencing a given class exceeds maximum allowed number.
 	/// </summary>
 	[ErrorCode("Number of inverse refereces on class {5} exceeds maximum allowed number.")]
-	MaximumNumberOfInverseReferencesPerClass = 75,
+	MaximumNumberOfInverseReferencesPerClass = 76,
 
 	/// <summary>
 	/// Property has an invalid type. This might occurr if a reference property is marked with
 	/// <see cref="T:VeloxDB.ObjectInterface.DatabasePropertyAttribute"/>.
 	/// </summary>
 	[ErrorCode("Property {4} of class {5} has an invalid type.")]
-	PropertyTypeInvalid = 76,
+	PropertyTypeInvalid = 77,
 
 	/// <summary>
 	/// Transaction has been closed. It can no longer be used.
 	/// </summary>
 	[ErrorCode("Transaction has been closed. It can no longer be used.")]
-	TransactionClosed = 77,
+	TransactionClosed = 78,
 
 	/// <summary>
 	/// Database class is not public.
 	/// </summary>
 	[ErrorCode("Database class {5} is not public.")]
-	DatabaseClassNotPublic = 78,
+	DatabaseClassNotPublic = 79,
 
 	/// <summary>
 	/// Base error for all DbAPI errors.

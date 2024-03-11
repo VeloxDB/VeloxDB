@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Reflection;
+using System.Reflection.Metadata;
 using System.Reflection.PortableExecutable;
 using System.Runtime.InteropServices;
 using ILVerify;
@@ -24,6 +25,10 @@ internal static class ILValidation
 
 		foreach(var reader in readers)
 		{
+			error = CheckTargetFramework(reader);
+			if (error != null)
+				break;
+
 			try
 			{
 				IEnumerable<VerificationResult> result = v.Verify(reader.PEReader);
@@ -40,6 +45,160 @@ internal static class ILValidation
 		}
 
 		return new Result(error, error == null);
+	}
+
+	private static DatabaseErrorDetail? CheckTargetFramework(Reader reader)
+	{
+		DatabaseErrorDetail? error = null;
+		string? targetVersion = GetTargetVersion(reader);
+
+		if(targetVersion == null)
+		{
+			error = new DatabaseErrorDetail(DatabaseErrorType.InvalidAssembly, primaryName: reader.Name);
+		}
+		else if (string.Compare(targetVersion, AppContext.TargetFrameworkName) > 0)
+		{
+			error = new DatabaseErrorDetail(DatabaseErrorType.InvalidAssemblyTargetFramework, primaryName: reader.Name,
+											secondaryName: targetVersion, memberName: AppContext.TargetFrameworkName);
+		}
+
+		return error;
+	}
+
+	private static string? GetTargetVersion(Reader reader)
+	{
+		string? targetVersion = null;
+		MetadataReader metadataReader = reader.PEReader.GetMetadataReader();
+
+		AssemblyDefinition assemblyDefinition = metadataReader.GetAssemblyDefinition();
+		CustomAttributeHandleCollection customAttributes = assemblyDefinition.GetCustomAttributes();
+
+		foreach (CustomAttributeHandle customAttributeHandle in customAttributes)
+		{
+			CustomAttribute customAttribute = metadataReader.GetCustomAttribute(customAttributeHandle);
+
+			if (GetAttributeName(metadataReader, customAttribute) == "TargetFrameworkAttribute")
+			{
+				CustomAttributeValue<string> decoded = customAttribute.DecodeValue<string>(StringCustomAttributeTypeProvider.Default);
+				if (decoded.FixedArguments.Length > 0)
+				{
+					targetVersion = (string?)decoded.FixedArguments[0].Value;
+				}
+			}
+		}
+
+		return targetVersion;
+	}
+
+	private static string GetAttributeName(MetadataReader metadataReader, CustomAttribute customAttribute)
+	{
+		EntityHandle attributeTypeHandle;
+		if (customAttribute.Constructor.Kind == HandleKind.MethodDefinition)
+		{
+			attributeTypeHandle = metadataReader.GetMethodDefinition((MethodDefinitionHandle)customAttribute.Constructor).GetDeclaringType();
+		}
+		else if (customAttribute.Constructor.Kind == HandleKind.MemberReference)
+		{
+			attributeTypeHandle = metadataReader.GetMemberReference((MemberReferenceHandle)customAttribute.Constructor).Parent;
+		}
+		else
+		{
+			throw new InvalidOperationException();
+		}
+
+		StringHandle attributeTypeNameHandle;
+		if (attributeTypeHandle.Kind == HandleKind.TypeDefinition)
+		{
+			attributeTypeNameHandle = metadataReader.GetTypeDefinition((TypeDefinitionHandle)attributeTypeHandle).Name;
+		}
+		else if (attributeTypeHandle.Kind == HandleKind.TypeReference)
+		{
+			attributeTypeNameHandle = metadataReader.GetTypeReference((TypeReferenceHandle)attributeTypeHandle).Name;
+		}
+		else
+		{
+			throw new InvalidOperationException();
+		}
+
+		return metadataReader.GetString(attributeTypeNameHandle);
+	}
+
+
+	private class StringCustomAttributeTypeProvider : ICustomAttributeTypeProvider<string>
+	{
+		public static ICustomAttributeTypeProvider<string> Default { get; private set; } = new StringCustomAttributeTypeProvider();
+
+		public string GetPrimitiveType(PrimitiveTypeCode typeCode)
+		{
+			if(typeCode == PrimitiveTypeCode.String)
+				return "System.String";
+			throw new NotSupportedException();
+		}
+
+		public string GetSystemType()
+		{
+			throw new NotSupportedException();
+		}
+
+		public string GetSZArrayType(string elementType)
+		{
+			throw new NotSupportedException();
+		}
+
+		public string GetTypeFromDefinition(MetadataReader reader, TypeDefinitionHandle handle, byte rawTypeKind)
+		{
+			throw new NotSupportedException();
+		}
+
+		public string GetTypeFromReference(MetadataReader reader, TypeReferenceHandle handle, byte rawTypeKind)
+		{
+			throw new NotSupportedException();
+		}
+
+		public string GetModifiedType(string modifier, string unmodifiedType, bool isRequired)
+		{
+			throw new NotSupportedException();
+		}
+
+		public string GetPointerType(string elementType)
+		{
+			throw new NotSupportedException();
+		}
+
+		public string GetGenericInstantiation(string genericType, ImmutableArray<string> typeArguments)
+		{
+			throw new NotSupportedException();
+		}
+
+		public string GetFunctionPointerType(MethodSignature<string> signature)
+		{
+			throw new NotSupportedException();
+		}
+
+		public string GetGenericMethodParameter(int index)
+		{
+			throw new NotSupportedException();
+		}
+
+		public string GetGenericTypeParameter(int index)
+		{
+			throw new NotSupportedException();
+		}
+
+		public string GetTypeFromSerializedName(string name)
+		{
+			throw new NotSupportedException();
+		}
+
+		public PrimitiveTypeCode GetUnderlyingEnumType(string name)
+		{
+			throw new NotSupportedException();
+		}
+
+		public bool IsSystemType(string s)
+		{
+			throw new NotSupportedException();
+		}
 	}
 
 	private class Reader : IDisposable
