@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<TargetFramework>net7.0</TargetFramework>
+		<TargetFramework>net8.0</TargetFramework>
 		<Platforms>x64</Platforms>
 		<AssemblyName>vlxdb</AssemblyName>
 		<RootNamespace>VeloxDB</RootNamespace>
@@ -10,7 +10,7 @@
 		<Product>VeloxDB</Product>
 		<GenerateDocumentationFile>true</GenerateDocumentationFile>
 		<UseCommonOutputDirectory>true</UseCommonOutputDirectory>
-		<NuspecFile>VeloxDB.nuspec</NuspecFile>		
+		<NuspecFile>VeloxDB.nuspec</NuspecFile>
 		<Authors>VeloxDB</Authors>
 		<PackageId>VeloxDB</PackageId>
 		<PackageIcon>icon.png</PackageIcon>
