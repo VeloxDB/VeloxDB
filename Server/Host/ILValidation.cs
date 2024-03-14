@@ -354,6 +354,17 @@ internal static class ILValidation
 		{
 			return cache.GetOrAdd(simpleName, ResolveCore);
 		}
+
+		public PEReader ResolveAssembly(AssemblyName assemblyName)
+		{
+			Debug.Assert(assemblyName.Name != null);
+			return Resolve(assemblyName.Name);
+		}
+
+		public PEReader ResolveModule(AssemblyName referencingAssembly, string fileName)
+		{
+			return Resolve(Path.GetFileNameWithoutExtension(fileName));
+		}
 	}
 }
 
