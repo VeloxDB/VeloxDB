@@ -3,5 +3,5 @@ WORKDIR /source
 COPY . .
 RUN find . \( -name "bin" -o -name "obj" \) -type d -exec rm -rf {} +
 RUN dotnet build -c:Release
-WORKDIR /source/Client/bin/x64/Release/net7.0
+WORKDIR /source/Client/bin/x64/Release/net8.0
 ENTRYPOINT [ "./Client" ]

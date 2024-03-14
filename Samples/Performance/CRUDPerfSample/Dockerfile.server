@@ -4,7 +4,7 @@ COPY . .
 RUN find . \( -name "bin" -o -name "obj" \) -type d -exec rm -rf {} +
 RUN dotnet build -c:Release
 FROM veloxdb
-COPY --from=build ["/source/Server/bin/x64/Release/net7.0/*.dll", "/dlls/"]
+COPY --from=build ["/source/Server/bin/x64/Release/net8.0/*.dll", "/dlls/"]
 RUN mkdir -p /vlxdata/snapshot /vlxdata/log
 WORKDIR /opt/vlxdb
 RUN ["/bin/bash", "-c", "./vlxdbsrv --interactive& while ! ./vlx status; do sleep 1; done; ./vlx  create-log --name Log0 --dir /vlxdata/log --snapshot-dir /vlxdata/snapshot --size 1000; ./vlx update-assemblies -d /dlls --no-confirm"]

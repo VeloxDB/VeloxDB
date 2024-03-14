@@ -122,9 +122,9 @@ You should see an output similar to this:
 ```accesslog
 23-01-01 20:58:32.018 [7C03] [Info] Starting VeloxDB 0.2.2.0
 23-01-01 20:58:32.263 [7C03] [Info] Storage engine started.
-23-01-01 20:58:32.301 [7C03] [Info] Looking for changes in C:\VeloxDB\vlxblog\bin\x64\Debug\net7.0\
+23-01-01 20:58:32.301 [7C03] [Info] Looking for changes in C:\VeloxDB\vlxblog\bin\x64\Debug\net8.0\
 23-01-01 20:58:32.472 [7C03] [Info] User assemblies updated.
-23-01-01 20:58:32.478 [7C03] [Info] Initializing persistence to C:\VeloxDB\vlxblog\bin\x64\Debug\net7.0\vlxdata.
+23-01-01 20:58:32.478 [7C03] [Info] Initializing persistence to C:\VeloxDB\vlxblog\bin\x64\Debug\net8.0\vlxdata.
 23-01-01 20:58:32.532 [7C03] [Info] Persistence configuration updated.
 23-01-01 20:58:32.541 [7C03] [Info] Administration endpoint hosted on 127.0.0.1:7569.
 23-01-01 20:58:32.542 [7C03] [Info] Execution endpoint hosted on 127.0.0.1:7568.
