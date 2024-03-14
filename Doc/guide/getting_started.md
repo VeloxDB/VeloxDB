@@ -26,7 +26,7 @@ cd vlxblog
 * Click **Create a new project**
 * Select **Class library** with the **C#** tag and click **Next**
 * Enter **vlxblog** for the name and click **Next**
-* Select **.NET 7.0** for framework and click **Create**.
+* Select **.NET 8.0** for framework and click **Create**.
 ---
 
 #### Change project platform to x64
