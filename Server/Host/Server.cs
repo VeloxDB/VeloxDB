@@ -59,25 +59,25 @@ internal sealed class Server : IDisposable
 			configuration.Replication?.ClusterConfigFile, clusterConfiguration, trace);
 	}
 
-	public void Run()
+	public bool Run()
 	{
 		LogVersion();
 		if (!LoadClusterConfiguration())
-			return;
+			return false;
 
 		if (!InitDatabaseEngine())
 		{
-			return;
+			return false;
 		}
 
 		if (updateAsmDir != null && !UpdateAssembliesFromDirectory(updateAsmDir))
 		{
-			return;
+			return false;
 		}
 
 		if (persistenceDir != null && !InitPersistance(persistenceDir))
 		{
-			return;
+			return false;
 		}
 
 		CreateHosts();
@@ -94,6 +94,8 @@ internal sealed class Server : IDisposable
 			terminateEvent.WaitOne();
 			Tracing.Info("Server shutting down...");
 		}
+
+		return true;
 	}
 
 	private static void LogVersion()

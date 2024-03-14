@@ -19,6 +19,8 @@
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 		<Description>An object oriented database for building next generation solutions with .NET and C#.</Description>
+		<VlxDbSrvTemp>$(VlxRootDir)bin/publish/_vlxdbsrv_temp/*</VlxDbSrvTemp>
+		<VlxDbSrvTemp Condition="'$(OS)' == 'Windows_NT'">$(VlxDbSrvTemp.Replace("/", "\"))</VlxDbSrvTemp>
 		<NuspecProperties>
 			version=$(Version);
 			vlxrootdir=$(VlxRootDir);
@@ -28,6 +30,7 @@
 			icon=$(PackageIcon);
 			description=$(Description);
 			readme=$(PackageReadmeFile);
+			vlxdbsrv_temp=$(VlxDbSrvTemp);
 		</NuspecProperties>
 	</PropertyGroup>
 

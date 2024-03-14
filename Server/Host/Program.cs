@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics.CodeAnalysis;
 using VeloxDB.Common;
 
@@ -6,14 +6,17 @@ namespace VeloxDB.Server;
 
 internal sealed class Program
 {
+	private static bool wait;
+
 	public static void Main(string[] args)
 	{
 		Configuration configuration;
 
+		Arguments parsed = Parse(args);
+		wait = parsed.Wait;
+
 		AppDomain.CurrentDomain.UnhandledException += UnhandledExceptionHandler;
 		TaskScheduler.UnobservedTaskException += UnobservedTaskExceptionHandler;
-
-		Arguments parsed = Parse(args);
 
 		if (parsed.Error)
 		{
@@ -60,10 +63,14 @@ internal sealed class Program
 			return;
 		}
 
+		bool success = false;
 		using (Server host = new Server(configuration, updateAssembliesDir: parsed.UpdateAsmDir, persistenceDir: parsed.PersistanceDir))
 		{
-			host.Run();
+			 success = host.Run();
 		}
+
+		if (!success)
+			CheckKeyPress();
 
 		Tracing.Info("Server shut down.");
 	}
@@ -87,6 +94,7 @@ internal sealed class Program
 			"\t--interactive                   Starts in interactive mode, logs to console.",
 			"\t--init-persistence directory    Initializes persistence if it's not initialized with the given directory.",
 			"\t--update-assemblies directory   Updates assemblies using assemblies in the supplied directory.",
+			"\t--wait                          Wait for a key press if an error is encountered during the run.",
 			"\t--help                          Displays this help.",
 		};
 
@@ -94,7 +102,7 @@ internal sealed class Program
 			Console.WriteLine(message);
 	}
 
-	private record Arguments(bool Error, string Message, string? ConfigFile, string? UpdateAsmDir, string? PersistanceDir, bool Interactive, bool PrintHelp);
+	private record Arguments(bool Error, string Message, string? ConfigFile, string? UpdateAsmDir, string? PersistanceDir, bool Interactive, bool Wait, bool PrintHelp);
 
 	private static Arguments Parse(string[] args)
 	{
@@ -106,13 +114,14 @@ internal sealed class Program
 		string? updateAsmDir = null;
 		string? persistanceDir = null;
 		bool interactive = false;
-		bool displayHelp = false;
+		bool wait = false;
+		bool printHelp = false;
 
 		void RaiseError(string m)
 		{
 			error = true;
 			message = m;
-			displayHelp = true;
+			printHelp = true;
 		}
 
 		bool TryGetArg(int i, [NotNullWhen(true)] out string? res)
@@ -160,9 +169,13 @@ internal sealed class Program
 					break;
 				i++;
 			}
+			else if(arg == "wait")
+			{
+				wait = true;
+			}
 			else if (arg == "help")
 			{
-				displayHelp = true;
+				printHelp = true;
 			}
 			else
 			{
@@ -173,7 +186,7 @@ internal sealed class Program
 			i++;
 		}
 
-		return new Arguments(error, message, configFile, updateAsmDir, persistanceDir, interactive, displayHelp);
+		return new Arguments(error, message, configFile, updateAsmDir, persistanceDir, interactive, wait, printHelp);
 	}
 
 	private static void InitLog(Configuration configuration, bool logToConsole)
@@ -206,6 +219,17 @@ internal sealed class Program
 		if (e.ExceptionObject is Exception)
 			Tracing.Error((Exception)e.ExceptionObject);
 
+		CheckKeyPress();
+
 		System.Diagnostics.Process.GetCurrentProcess().Kill();
+	}
+
+	private static void CheckKeyPress()
+	{
+		if (wait)
+		{
+			Console.WriteLine("Press any key to exit...");
+			Console.ReadKey();
+		}
 	}
 }
