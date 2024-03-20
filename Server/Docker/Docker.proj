@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
+		<Import Project="$(MSBuildExtensionsPath)\Microsoft.Common.targets"/>
+
+		<Target Name="Build">
+			<Warning Text="Windows containers can't be built on non-windows OS" Condition="'$(OS)' != 'Windows_NT'"/>
+			<Exec Command="docker build --build-arg version=$(Version) -f ./Linux/Dockerfile -t veloxdb/veloxdb:$(Version) ."/>
+			<Exec Command="docker build --build-arg version=$(Version) -f ./Windows/nanoserver-1809/Dockerfile -t veloxdb/veloxdb:$(Version)-nanoserver-1809 ." Condition="'$(OS)' == 'Windows_NT'"/>
+			<Exec Command="docker build --build-arg version=$(Version) -f ./Windows/nanoserver-ltsc2022/Dockerfile -t veloxdb/veloxdb:$(Version)-nanoserver-ltsc2022 ." Condition="'$(OS)' == 'Windows_NT'"/>
+		</Target>
+
+</Project>
