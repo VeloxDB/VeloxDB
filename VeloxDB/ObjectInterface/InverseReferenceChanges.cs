@@ -177,6 +177,7 @@ internal sealed class InverseReferenceChanges
 
 		Checker.AssertTrue(count == newMap.count);
 		capacity = newMap.capacity;
+		capacityMask = newMap.capacityMask;
 		limitCapacity = newMap.limitCapacity;
 		buckets = newMap.buckets;
 		takenCount = newMap.takenCount;

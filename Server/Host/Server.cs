@@ -102,7 +102,7 @@ internal sealed class Server : IDisposable
 	{
 		Version? version = Assembly.GetExecutingAssembly().GetName().Version;
 		Checker.AssertNotNull(version);
-		Tracing.Info("Starting VeloxDB {0}", version.ToString());
+		Tracing.Info("Starting VeloxDB {0}, PID: {1}", version.ToString(), Environment.ProcessId);
 	}
 
 	private bool InitPersistance(string persistenceDir)
