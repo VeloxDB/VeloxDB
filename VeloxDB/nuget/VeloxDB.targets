@@ -2,9 +2,34 @@
 	<PropertyGroup>
 		<StartAction>Program</StartAction>
 		<StartProgram>dotnet</StartProgram>
-		<StartArguments>$(PkgVeloxDB)/tools/vlxdbsrv.dll --interactive --update-assemblies "$(TargetDir.TrimEnd('\'))" --init-persistence "$(TargetDir)vlxdata"</StartArguments>
+		<StartArguments>$(PkgVeloxDB)/tools/vlxdbsrv.dll --interactive --update-assemblies
+			"$(TargetDir.TrimEnd('\'))" --init-persistence "$(TargetDir)vlxdata"</StartArguments>
 		<StartArguments Condition="'$(BuildingInsideVisualStudio)' == 'true'">$(StartArguments) --wait</StartArguments>
 		<StartWorkingDirectory></StartWorkingDirectory>
 	</PropertyGroup>
-
+	<PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+		<DebugType>embedded</DebugType>
+	</PropertyGroup>
+	<Target Name="PrintLaunchJson">
+		<!-- 
+    This target is a utility for easier debugging from Visual Studio Code. 
+    To use, run 'dotnet build /t:PrintLaunchJson'.
+		-->
+		<PropertyGroup>
+			<JsonData>
+<![CDATA[{
+		"name": "Debug $(ProjectName)",
+		"type": "coreclr",
+		"request": "launch",
+		"program": "$(PkgVeloxDB)/tools/vlxdbsrv.dll",
+		"args": ["--interactive", "--update-assemblies", "$(TargetDir.TrimEnd('\\'))", "--init-persistence", "$(TargetDir)vlxdata"],
+		"cwd": "${workspaceFolder}",
+		"stopAtEntry": false,
+		"console": "internalConsole"
+}]]>
+			</JsonData>
+		</PropertyGroup>
+		<Message Text="Paste following JSON into your launch.json file:" Importance="high" />
+		<Message Text="$(JsonData)" Importance="high" />
+	</Target>
 </Project>
