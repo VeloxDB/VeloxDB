@@ -1,5 +1,6 @@
 using System.Net.Security;
 using System.Security.Cryptography.X509Certificates;
+using VeloxDB.Common;
 
 namespace VeloxDB.Networking;
 
@@ -53,7 +54,7 @@ internal class SslClientOptionsFactory
             X509Certificate2 serverCert = certificateMap.GetCert(host);
             if (serverCert != null)
                 sslOptions.RemoteCertificateValidationCallback = (sender, cert, chain, errors) =>
-				KeysEqual(serverCert.GetPublicKey(), cert.GetPublicKey());
+				Utils.ByteArrayEqual(serverCert.GetPublicKey(), cert.GetPublicKey());
         }
 
 		if (caCert != null)
@@ -70,16 +71,4 @@ internal class SslClientOptionsFactory
 
         return sslOptions;
     }
-
-	private static bool KeysEqual(byte[] key1, byte[] key2)
-	{
-		if (key1.Length != key2.Length)
-			return false;
-
-		for (int i = 0; i < key1.Length; i++)
-			if (key1[i] != key2[i])
-				return false;
-
-		return true;
-	}
 }
