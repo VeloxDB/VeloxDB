@@ -88,9 +88,9 @@ internal sealed class InsertLWClusterCommand : Command
 		{
 			node1 = new LocalWriteNode()
 			{
-				AdministrationAdress = existingNode.AdministrationAdress,
-				ElectorAddress = new Endpoint() { Address = existingNode.AdministrationAdress.Address, Port = (ushort)ElectorPort },
-				ExecutionAdress = existingNode.ExecutionAdress,
+				AdministrationAddress = existingNode.AdministrationAddress,
+				ElectorAddress = new Endpoint() { Address = existingNode.AdministrationAddress.Address, Port = (ushort)ElectorPort },
+				ExecutionAddress = existingNode.ExecutionAddress,
 				ReplicationAddress = existingNode.ReplicationAddress,
 				IsMember = true,
 				Name = NodeName1
@@ -100,9 +100,9 @@ internal sealed class InsertLWClusterCommand : Command
 		{
 			node1 = new LocalWriteNode()
 			{
-				AdministrationAdress = new Endpoint() { Address = Host1, Port = (ushort)AdministrationPort },
+				AdministrationAddress = new Endpoint() { Address = Host1, Port = (ushort)AdministrationPort },
 				ElectorAddress = new Endpoint() { Address = Host1, Port = (ushort)ElectorPort },
-				ExecutionAdress = new Endpoint() { Address = Host1, Port = (ushort)ExecutionPort },
+				ExecutionAddress = new Endpoint() { Address = Host1, Port = (ushort)ExecutionPort },
 				ReplicationAddress = new Endpoint() { Address = Host1, Port = (ushort)ReplicationPort },
 				IsMember = true,
 				Name = NodeName1 ?? Host1
@@ -111,9 +111,9 @@ internal sealed class InsertLWClusterCommand : Command
 
 		LocalWriteNode node2 = new LocalWriteNode()
 		{
-			AdministrationAdress = new Endpoint() { Address = Host2, Port = (ushort)AdministrationPort2 },
+			AdministrationAddress = new Endpoint() { Address = Host2, Port = (ushort)AdministrationPort2 },
 			ElectorAddress = new Endpoint() { Address = Host2, Port = (ushort)ElectorPort2 },
-			ExecutionAdress = new Endpoint() { Address = Host2, Port = (ushort)ExecutionPort2 },
+			ExecutionAddress = new Endpoint() { Address = Host2, Port = (ushort)ExecutionPort2 },
 			ReplicationAddress = new Endpoint() { Address = Host2, Port = (ushort)ReplicationPort2 },
 			IsMember = true,
 			Name = NodeName2 ?? Host2

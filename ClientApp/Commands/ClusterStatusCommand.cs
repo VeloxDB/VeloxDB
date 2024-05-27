@@ -35,7 +35,7 @@ internal sealed class ClusterStatusCommand : BindableCommand
 		Task[] tasks = new Task[nodes.Count];
 		for (int i = 0; i < nodes.Count; i++)
 		{
-			tasks[i] = DownloadNodeState(nodes[i], nodeStates);
+			tasks[i] = DownloadNodeState(program.CreateConnectionStringParams(), nodes[i], nodeStates);
 		}
 
 		try
@@ -299,14 +299,11 @@ internal sealed class ClusterStatusCommand : BindableCommand
 		return element.Parent == null || (element.Parent.Type == ElementType.GlobalWrite && element.IsMember);
 	}
 
-	private async Task DownloadNodeState(ReplicationNode node, Dictionary<string, NodeState> nodeStates)
+	private async Task DownloadNodeState(ConnectionStringParams cp, ReplicationNode node, Dictionary<string, NodeState> nodeStates)
 	{
-		ConnectionStringParams cp = new ConnectionStringParams();
-		cp.AddAddress(node.AdministrationAdress.ToString());
+		cp = cp.Clone();
+		cp.AddAddress(node.AdministrationAddress.ToString());
 		cp.ServiceName = AdminAPIServiceNames.NodeAdministration;
-		cp.RetryTimeout = Program.ConnectionRetryTimeout;
-		cp.OpenTimeout = Program.ConnectionOpenTimeout;
-		cp.PoolSize = 1;
 
 		INodeAdministration nodeAdministration = ConnectionFactory.Get<INodeAdministration>(cp.GenerateConnectionString());
 

@@ -1,4 +1,6 @@
 using System;
+using System.Collections;
+using System.Net.Security;
 using VeloxDB.Common;
 
 namespace VeloxDB.Descriptor;
@@ -7,16 +9,22 @@ internal class ReplicaDescriptor
 {
 	readonly string name;
 	readonly string hostAddress;
+	readonly SslServerAuthenticationOptions sslOptions;
+
 	readonly ReadOnlyArray<string> partnerAddresses;
+	ReadOnlyArray<SslClientAuthenticationOptions> partnerSSLOptions;
 	readonly int primaryWorkerCount;
 	readonly int standbyWorkerCount;
 	bool useSeparateConnectionPerWorker;
+
 
 	public ReplicaDescriptor(ReplicaSettings settings)
 	{
 		this.name = settings.Name;
 		this.hostAddress = settings.HostAddress;
+		this.sslOptions = settings.SSLOptions;
 		this.partnerAddresses = settings.PartnerAddresses == null ? null : new ReadOnlyArray<string>(settings.PartnerAddresses, true);
+		this.partnerSSLOptions = settings.PartnerSSLOptions == null ? null : new ReadOnlyArray<SslClientAuthenticationOptions>(settings.PartnerSSLOptions);
 		this.hostAddress = settings.HostAddress;
 		this.primaryWorkerCount = Math.Max(settings.SendWorkerCount, 1);
 		this.standbyWorkerCount = settings.RedoWorkerCount != 0 ? settings.RedoWorkerCount : NativeProcessorInfo.LogicalCoreCount * 2;
@@ -47,7 +55,9 @@ internal class ReplicaDescriptor
 
 	public string Name => name;
 	public string HostAddress => hostAddress;
+	public SslServerAuthenticationOptions SSLOptions => sslOptions;
 	public ReadOnlyArray<string> PartnerAddresses => partnerAddresses;
+	public ReadOnlyArray<SslClientAuthenticationOptions> PartnerSSLOptions => partnerSSLOptions;
 	public int PrimaryWorkerCount => primaryWorkerCount;
 	public int StandbyWorkerCount => standbyWorkerCount;
 	public bool ReplicationEnabled => hostAddress != null || partnerAddresses != null;

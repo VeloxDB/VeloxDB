@@ -4,8 +4,8 @@
 		"Children": null,
 		"Type": "Node",
 		"ReplicationAddress": "localhost:7570",
-		"AdministrationAdress": "localhost:7569",
-		"ExecutionAdress": "localhost:7568",
+		"AdministrationAddress": "localhost:7569",
+		"ExecutionAddress": "localhost:7568",
 		"Name": "Node"
 	}
 }

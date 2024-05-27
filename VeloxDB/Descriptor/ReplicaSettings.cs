@@ -1,4 +1,5 @@
 using System;
+using System.Net.Security;
 using VeloxDB.Common;
 
 namespace VeloxDB.Descriptor;
@@ -13,7 +14,10 @@ internal class ReplicaSettings
 
 	public string Name { get; set; }
 	public string HostAddress { get; set; }
+	public SslServerAuthenticationOptions SSLOptions { get; set; }
+
 	public string[] PartnerAddresses { get; set; }
+	public SslClientAuthenticationOptions[] PartnerSSLOptions { get; set; }
 	public int SendWorkerCount { get; set; }
 	public int RedoWorkerCount { get; set; }
 	public bool UseSeparateConnectionPerWorker { get; set; }

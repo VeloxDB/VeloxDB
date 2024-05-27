@@ -155,11 +155,11 @@ internal sealed class ShowClusterConfigurationCommand : BindableCommand
 	{
 		Console.WriteLine("Node: {0}", node.Name);
 
-		if (node.AdministrationAdress != null)
-			Console.WriteLine("Administration endpoint: {0}", node.AdministrationAdress);
+		if (node.AdministrationAddress != null)
+			Console.WriteLine("Administration endpoint: {0}", node.AdministrationAddress);
 
-		if (node.ExecutionAdress != null)
-			Console.WriteLine("Execution endpoint: {0}", node.ExecutionAdress);
+		if (node.ExecutionAddress != null)
+			Console.WriteLine("Execution endpoint: {0}", node.ExecutionAddress);
 
 		if (node.ReplicationAddress != null)
 			Console.WriteLine("Replication endpoint: {0}", node.ReplicationAddress);

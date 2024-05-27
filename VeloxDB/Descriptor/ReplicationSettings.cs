@@ -10,7 +10,6 @@ internal sealed class ReplicationSettings
 		LocalReadReplicas = Array.Empty<ReplicaSettings>();
 		GlobalReadReplicas = Array.Empty<ReplicaSettings>();
 	}
-
 	public string NodeName { get; set; }
 	public ReplicaSettings LocalWriteReplica { get; set; }
 	public GlobalWriteReplicaSettings GlobalWriteReplica { get; set; }

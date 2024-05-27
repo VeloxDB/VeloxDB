@@ -22,6 +22,13 @@
 	"Database": {
 		"SystemDatabasePath": "${Base}/data"
 	},
+	"SSLConfiguration": {
+		"Enabled": false,
+		"CACertificatePath": "",
+		"CertificateKeyPath": "",
+		"CertificateStorePath":"",
+		"Password": ""
+	},
 	"Logging": {
 		"Path": "${Base}/log",
 		"Level": "Info",

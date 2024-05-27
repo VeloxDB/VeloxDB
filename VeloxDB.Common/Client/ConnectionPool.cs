@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Net;
+using System.Net.Security;
+using System.Security.Cryptography.X509Certificates;
 using System.Threading;
 using System.Threading.Tasks;
 using VeloxDB.Common;
@@ -9,7 +11,6 @@ using VeloxDB.Networking;
 using VeloxDB.Protocol;
 
 namespace VeloxDB.Client;
-
 internal class ConnectionPool
 {
 	const int reuseSameConnCountPerCPU = 8; // Must be pow of 2
@@ -28,7 +29,7 @@ internal class ConnectionPool
 	int connectionCount;
 	ConnectionEntry[] connections;
 	Stopwatch timer;
-
+	SslClientAuthenticationOptions[] sslOptions;
 	MessageChunkPool chunkPool;
 
 	public unsafe ConnectionPool(MessageChunkPool chunkPool, string connectionString)
@@ -51,6 +52,28 @@ internal class ConnectionPool
 
 		connections = new ConnectionEntry[connParams.PoolSize];
 		timer = Stopwatch.StartNew();
+
+		sslOptions = CreateSSLOptions(connParams);
+	}
+
+	private static SslClientAuthenticationOptions[] CreateSSLOptions(ConnectionStringParams connParams)
+	{
+		SslClientAuthenticationOptions[] sslOptionsArray = new SslClientAuthenticationOptions[connParams.Addresses.Length];
+		string[] addresses = connParams.Addresses;
+
+		if (!connParams.UseSSL)
+			return sslOptionsArray;
+
+		SslClientOptionsFactory factory = SslClientOptionsFactory.Create(connParams.ServerCerts, connParams.VerifyCert,
+																		 connParams.CACert);
+
+		for (var i = 0; i < addresses.Length; i++)
+		{
+			string host = addresses[i].Split(":")[0];
+			sslOptionsArray[i] = factory.CreateSslOptions(host);
+		}
+
+		return sslOptionsArray;
 	}
 
 	~ConnectionPool()
@@ -201,6 +224,7 @@ internal class ConnectionPool
 		return new ConnectionEntry(pooledConn, descriptor);
 	}
 
+	private record struct EndPointWithSSL(IPEndPoint EndPoint, SslClientAuthenticationOptions SSLOptions);
 	private async Task<ConnectionEntry> CreateConnection()
 	{
 		string[] addresses = connParams.Addresses;
@@ -212,10 +236,13 @@ internal class ConnectionPool
 
 		await Task.WhenAll(ipTasks);
 
-		List<IPEndPoint> endpoints = new List<IPEndPoint>(connParams.Addresses.Length * 2);
+		List<EndPointWithSSL> endpoints = new List<EndPointWithSSL>(connParams.Addresses.Length * 2);
 		for (int i = 0; i < addresses.Length; i++)
 		{
-			endpoints.AddRange(ipTasks[i].Result);
+			for (int j = 0; j < ipTasks[i].Result.Length; j++)
+			{
+				endpoints.Add(new EndPointWithSSL(ipTasks[i].Result[j], sslOptions[i]));
+			}
 		}
 
 		CancellationTokenSource delayCancel = new CancellationTokenSource();
@@ -225,8 +252,8 @@ internal class ConnectionPool
 		List<Task<ConnectionEntry>> tasks = new List<Task<ConnectionEntry>>(endpoints.Count + 1);
 		for (int i = 0; i < endpoints.Count; i++)
 		{
-			connections.Add(new ClientConnection(endpoints[i], chunkPool,
-				TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5), int.MaxValue, true, null));
+			connections.Add(new ClientConnection(endpoints[i].EndPoint, chunkPool,
+							TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5), int.MaxValue, true, null, sslOptions: endpoints[i].SSLOptions));
 			tasks.Add(OpenConnection(connections[i]));
 		}
 

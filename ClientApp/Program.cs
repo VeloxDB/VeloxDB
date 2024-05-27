@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Text;
+using VeloxDB.Client;
 using VeloxDB.ClientApp.Modes;
 
 namespace VeloxDB.ClientApp;
@@ -86,7 +87,7 @@ internal class Program
 			{
 				ConsoleHelper.ShowError(error);
 			}
-			else 
+			else
 			{
 				RunCommand(args);
 			}
@@ -190,6 +191,24 @@ internal class Program
 		{
 			return x.IsDefined(typeof(CommandAttribute)) && x.GetCustomAttribute<CommandAttribute>().SupportsMode(programMode);
 		}).ToArray();
+	}
+
+	public ConnectionStringParams CreateConnectionStringParams()
+	{
+		ConnectionStringParams csp =  new ConnectionStringParams()
+		{
+			RetryTimeout = ConnectionRetryTimeout,
+			OpenTimeout = ConnectionOpenTimeout,
+			PoolSize = 1
+		};
+
+		InitialMode initialMode = Mode as InitialMode;
+		if(initialMode != null)
+		{
+			initialMode.SetCSP(csp);
+		}
+
+		return csp;
 	}
 }
 

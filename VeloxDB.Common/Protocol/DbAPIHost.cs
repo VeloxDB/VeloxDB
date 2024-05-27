@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
+using System.Net.Security;
 using System.Reflection;
 using System.Reflection.Emit;
 using VeloxDB.Common;
@@ -45,12 +46,14 @@ internal sealed class DbAPIHost
 
 	public DbAPIHost(int backlogSize, int maxOpenConnCount, IPEndPoint endpoint, int bufferPoolSize,
 		TimeSpan inactivityInterval, TimeSpan inactivityTimeout, int maxQueuedChunkCount) :
-		this(backlogSize, maxOpenConnCount, new IPEndPoint[] { endpoint }, bufferPoolSize, inactivityInterval, inactivityTimeout, maxQueuedChunkCount)
+		this(backlogSize, maxOpenConnCount, new IPEndPoint[] { endpoint }, bufferPoolSize, inactivityInterval,
+			 inactivityTimeout, maxQueuedChunkCount)
 	{
 	}
 
 	public DbAPIHost(int backlogSize, int maxOpenConnCount, IPEndPoint[] endpoints, int bufferPoolSize,
-		TimeSpan inactivityInterval, TimeSpan inactivityTimeout, int maxQueuedChunkCount)
+		TimeSpan inactivityInterval, TimeSpan inactivityTimeout, int maxQueuedChunkCount,
+		SslServerAuthenticationOptions sslOptions = null)
 	{
 		this.backlogSize = backlogSize;
 		this.maxOpenConnCount = maxOpenConnCount;
@@ -63,7 +66,8 @@ internal sealed class DbAPIHost
 
 		services = new Dictionary<string, HostedService>(2, StringComparer.OrdinalIgnoreCase);
 		host = new Host(backlogSize, maxOpenConnCount, endpoints, chunkPool,
-			inactivityInterval, inactivityTimeout, maxQueuedChunkCount, true, MessageHandler);
+			            inactivityInterval, inactivityTimeout, maxQueuedChunkCount,
+						true, MessageHandler, sslOptions: sslOptions);
 	}
 
 	~DbAPIHost()

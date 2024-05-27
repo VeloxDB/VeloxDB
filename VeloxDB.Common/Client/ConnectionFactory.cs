@@ -56,6 +56,7 @@ public static class ConnectionFactory
 	/// <param name="connectionString">Connection string.</param>
 	/// <returns>Proxy object implementing T.</returns>
 	/// <exception cref="ArgumentException">T is not an interface.</exception>
+	/// <exception cref="InvalidConnectionStringException">If supplied connection string is not valid</exception>
 	public static T Get<T>(string connectionString) where T : class
 	{
 		return Get<T>(connectionString, null);
@@ -71,6 +72,7 @@ public static class ConnectionFactory
 	/// with additional assemblies containing protocl classes.</param>
 	/// <returns>Proxy object implementing T.</returns>
 	/// <exception cref="ArgumentException">T is not an interface.</exception>
+	/// <exception cref="InvalidConnectionStringException">If supplied connection string is not valid</exception>
 	public static T Get<T>(string connectionString, IAssemblyProvider assemblyProvider) where T : class
 	{
 		Type type = typeof(T);

@@ -1,4 +1,5 @@
 using System;
+using System.Net.Security;
 
 namespace VeloxDB.Storage.Replication.HighAvailability;
 
@@ -42,9 +43,10 @@ internal interface IElector
 internal interface IElectorFactory
 {
 	ILeaderElector CreateLocalElector(string address, string path, int electionTimeout,
-		WitnessConfiguration witnessConfig, string replicaAddress, bool robustHost);
+		WitnessConfiguration witnessConfig, string replicaAddress, bool robustHost, SslClientAuthenticationOptions sslReplicaOptions,
+		SslServerAuthenticationOptions sslServerOptions);
 	ILeaderElector CreateGlobalElector();
 
 	WitnessConfiguration CreateSharedFolderWitnessConfiguration(string path, int remoteFileTimeout);
-	WitnessConfiguration GetWitnessServerConfiguration(string address);
+	WitnessConfiguration GetWitnessServerConfiguration(string address, SslClientAuthenticationOptions sslOptions);
 }

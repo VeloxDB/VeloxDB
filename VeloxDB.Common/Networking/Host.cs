@@ -1,10 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Security;
 using System.Net.Sockets;
 using System.Threading;
+using System.Threading.Tasks;
 using VeloxDB.Common;
 
 namespace VeloxDB.Networking;
@@ -17,7 +20,7 @@ internal sealed class Host
 
 	IPEndPoint[] endpoints;
 	Socket[] listenSockets;
-	SocketAsyncEventArgs[][] acceptArgs;
+	SocketAsyncEventArgsEx[][] acceptArgs;
 
 	HashSet<ServerConnection> connections;
 	HandleMessageDelegate messageHandler;
@@ -34,6 +37,12 @@ internal sealed class Host
 	int maxOpenConnCount;
 
 	JobWorkers<Action> priorityWorkers;
+	SslServerAuthenticationOptions sslOptions;
+
+	private class SocketAsyncEventArgsEx : SocketAsyncEventArgs
+	{
+		public Socket ListenSocket { get; set; }
+	}
 
 #if HUNT_CHG_LEAKS
 	static HashSet<IPEndPoint> activeEndpoints = new HashSet<IPEndPoint>(ReferenceEqualityComparer<IPEndPoint>.Instance);
@@ -49,7 +58,7 @@ internal sealed class Host
 
 	public Host(int backlogSize, int maxOpenConnCount, IPEndPoint[] endpoints, MessageChunkPool chunkPool, TimeSpan inactivityInterval,
 		TimeSpan inactivityTimeout, int maxQueuedChunkCount, bool groupSmallMessages, HandleMessageDelegate messageHandler,
-		JobWorkers<Action> priorityWorkers = null)
+		JobWorkers<Action> priorityWorkers = null, SslServerAuthenticationOptions sslOptions = null)
 	{
 		this.endpoints = endpoints;
 		this.inactivityInterval = inactivityInterval;
@@ -60,12 +69,13 @@ internal sealed class Host
 		this.groupSmallMessages = groupSmallMessages;
 		this.chunkPool = chunkPool;
 		this.priorityWorkers = priorityWorkers;
+		this.sslOptions = sslOptions;
 
-		acceptArgs = new SocketAsyncEventArgs[endpoints.Length][];
+		acceptArgs = new SocketAsyncEventArgsEx[endpoints.Length][];
 		for (int i = 0; i < endpoints.Length; i++)
 		{
 			Tracing.Debug("Host started on {0}.", endpoints[i]);
-			acceptArgs[i] = new SocketAsyncEventArgs[concurrentAcceptCount];
+			acceptArgs[i] = new SocketAsyncEventArgsEx[concurrentAcceptCount];
 		}
 
 		connections = new HashSet<ServerConnection>(32, ReferenceEqualityComparer<ServerConnection>.Instance);
@@ -100,16 +110,17 @@ internal sealed class Host
 
 			for (int j = 0; j < concurrentAcceptCount; j++)
 			{
-				acceptArgs[i][j] = new SocketAsyncEventArgs();
+				acceptArgs[i][j] = new SocketAsyncEventArgsEx();
 				acceptArgs[i][j].Completed += AcceptCompleted;
+				acceptArgs[i][j].ListenSocket = listenSockets[i];
 
 				if (!listenSockets[i].AcceptAsync(acceptArgs[i][j]))
 				{
 					ThreadPool.UnsafeQueueUserWorkItem(x =>
 					{
-						var t = (Tuple<Socket, SocketAsyncEventArgs>)x;
-						AcceptCompleted(t.Item1, t.Item2);
-					}, new Tuple<Socket, SocketAsyncEventArgs>(listenSockets[i], acceptArgs[i][j]));
+						var e = (SocketAsyncEventArgsEx)x;
+						AcceptCompleted(e.ListenSocket, e);
+					}, acceptArgs[i][j]);
 				}
 			}
 		}
@@ -158,6 +169,11 @@ internal sealed class Host
 		if (socket == null)
 			return;
 
+		CreateServerConnection(socket, null);
+	}
+
+	private void CreateServerConnection(Socket socket, Stream stream)
+	{
 		lock (sync)
 		{
 			if (stopped || connections.Count >= maxOpenConnCount)
@@ -166,7 +182,32 @@ internal sealed class Host
 			}
 			else
 			{
-				ServerConnection conn = new ServerConnection(this, socket, chunkPool,
+				if (stream == null)
+				{
+					stream = new NetworkStream(socket);
+					if (sslOptions != null)
+					{
+						stream = new SslStream(stream);
+					}
+				}
+
+				if (sslOptions != null)
+				{
+					SslStream sslStream = (SslStream)stream;
+					if (!sslStream.IsAuthenticated)
+					{
+						sslStream.AuthenticateAsServerAsync(sslOptions).ContinueWith((t) =>
+						{
+							if (t.Exception != null)
+								socket.Close();
+							else
+								CreateServerConnection(socket, stream);
+						});
+						return;
+					}
+				}
+
+				ServerConnection conn = new ServerConnection(this, socket, stream, chunkPool,
 					inactivityInterval, inactivityTimeout, maxQueuedChunkCount, groupSmallMessages, messageHandler, priorityWorkers);
 				connections.Add(conn);
 			}

@@ -45,7 +45,7 @@ internal sealed class MonitorClusterStatusCommand : Command
 		CancellationTokenSource cts = new CancellationTokenSource();
 		for (int i = 0; i < nodes.Count; i++)
 		{
-			RefreshNodeState(nodes[i], nodeStates, cts.Token);
+			RefreshNodeState(program.CreateConnectionStringParams(), nodes[i], nodeStates, cts.Token);
 		}
 
 		int top = ReadLine.IsRedirectedOrAlternate ? 0 : Console.CursorTop;
@@ -136,14 +136,11 @@ internal sealed class MonitorClusterStatusCommand : Command
 		return nodes;
 	}
 
-	private async void RefreshNodeState(ReplicationNode node, Dictionary<string, NodeState> nodeStates, CancellationToken cancelToken)
+	private async void RefreshNodeState(ConnectionStringParams cp, ReplicationNode node, Dictionary<string, NodeState> nodeStates, CancellationToken cancelToken)
 	{
-		ConnectionStringParams cp = new ConnectionStringParams();
-		cp.AddAddress(node.AdministrationAdress.ToString());
+		cp = cp.Clone();
+		cp.AddAddress(node.AdministrationAddress.ToString());
 		cp.ServiceName = AdminAPIServiceNames.NodeAdministration;
-		cp.RetryTimeout = Program.ConnectionRetryTimeout;
-		cp.OpenTimeout = Program.ConnectionOpenTimeout;
-		cp.PoolSize = 1;
 
 		INodeAdministration nodeAdministration = ConnectionFactory.Get<INodeAdministration>(cp.GenerateConnectionString());
 

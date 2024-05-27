@@ -18,6 +18,11 @@ internal sealed class InitialMode : Mode
 	public override string Title => "vlx";
 	public override Mode Parent => null;
 
+	public bool UseSSL { get; private set; }
+	public bool IgnoreCertificate { get; set; }
+	public string CACertificate { get; private set; }
+	public string[] Certificates { get; private set; }
+
 	public string ClusterConfigFileName => clusterConfigFileName;
 
 	internal ClusterConfiguration ClusterConfig => clusterConfig;
@@ -34,14 +39,14 @@ internal sealed class InitialMode : Mode
 		{
 			LocalWriteCluster lwCluster = (LocalWriteCluster)nodeOrCluster;
 			if (lwCluster.First != null)
-				addresses.Add(lwCluster.First.AdministrationAdress.ToString());
+				addresses.Add(lwCluster.First.AdministrationAddress.ToString());
 
 			if (lwCluster.Second != null)
-				addresses.Add(lwCluster.Second.AdministrationAdress.ToString());
+				addresses.Add(lwCluster.Second.AdministrationAddress.ToString());
 		}
 		else
 		{
-			addresses.Add((nodeOrCluster as StandaloneNode).AdministrationAdress.ToString());
+			addresses.Add((nodeOrCluster as StandaloneNode).AdministrationAddress.ToString());
 		}
 	}
 
@@ -70,8 +75,29 @@ internal sealed class InitialMode : Mode
 		cp.ServiceName = AdminAPIServiceNames.DatabaseAdministration;
 		cp.RetryTimeout = Program.ConnectionRetryTimeout;
 		cp.OpenTimeout = Program.ConnectionOpenTimeout;
+		cp.VerifyCert = !IgnoreCertificate;
+		cp.UseSSL = IgnoreCertificate;
 		cp.PoolSize = 1;
+		SetCSP(cp);
 
 		return cp.GenerateConnectionString();
+	}
+
+	public void SetSSLConfiguration(bool useSSL, bool ignoreCertificate, string caCertificate, string[] certificates)
+	{
+		UseSSL = useSSL;
+		IgnoreCertificate = ignoreCertificate;
+		CACertificate = caCertificate;
+		Certificates = certificates;
+	}
+
+	public void SetCSP(ConnectionStringParams csp)
+	{
+		csp.UseSSL = UseSSL;
+		csp.VerifyCert = !IgnoreCertificate;
+		csp.CACert = CACertificate;
+
+		foreach (string cert in Certificates)
+			csp.AddServerCert(cert);
 	}
 }

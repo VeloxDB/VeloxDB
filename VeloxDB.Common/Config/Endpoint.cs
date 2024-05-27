@@ -23,6 +23,13 @@ internal sealed class Endpoint
 	{
 		Checker.AssertNotNull(Address, Port);
 
+		#if TEST_BUILD
+			if(Address.EndsWith(".localhost"))
+			{
+				return new IPEndPoint(IPAddress.Loopback, (int)Port);
+			}
+		#endif
+
 		IPAddress[] ipAddresses;
 		if (IPAddress.TryParse(Address, out IPAddress ipAddress))
 		{

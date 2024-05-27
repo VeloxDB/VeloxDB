@@ -1,4 +1,6 @@
 using System;
+using System.IO;
+using System.Net.Security;
 using System.Net.Sockets;
 using VeloxDB.Common;
 
@@ -8,10 +10,11 @@ internal sealed class ServerConnection : Connection
 {
 	Host host;
 
-	public ServerConnection(Host host, Socket socket, MessageChunkPool chunkPool, TimeSpan inactivityInterval,
+	public ServerConnection(Host host, Socket socket, Stream stream, MessageChunkPool chunkPool, TimeSpan inactivityInterval,
 		TimeSpan inactivityTimeout, int maxQueuedChunkCount, bool groupSmallMessages, HandleMessageDelegate messageHandler,
 		JobWorkers<Action> priorityWorkers = null) :
-		base(socket, chunkPool, inactivityInterval, inactivityTimeout, maxQueuedChunkCount, groupSmallMessages, messageHandler, priorityWorkers)
+		base(socket, stream, chunkPool, inactivityInterval, inactivityTimeout, maxQueuedChunkCount, groupSmallMessages,
+		     messageHandler, priorityWorkers)
 	{
 		this.host = host;
 

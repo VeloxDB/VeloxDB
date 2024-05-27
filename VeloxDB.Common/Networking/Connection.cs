@@ -1,8 +1,10 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Security;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -49,6 +51,8 @@ internal abstract class Connection
 	protected MultiSpinRWLock sync;
 
 	protected Socket socket;
+
+	protected Stream stream;
 
 	// This should be internal AND protected (or just protected, but not possible in C# because ConnectionState is internal)
 	internal ConnectionState state;
@@ -103,12 +107,14 @@ internal abstract class Connection
 		pendingRequests = new PendingRequests(this);
 	}
 
-	public Connection(Socket socket, MessageChunkPool chunkPool, TimeSpan inactivityInterval,
+	public Connection(Socket socket, Stream stream, MessageChunkPool chunkPool, TimeSpan inactivityInterval,
 		TimeSpan inactivityTimeout, int maxQueuedChunkCount, bool groupSmallMessages, HandleMessageDelegate messageHandler,
 		JobWorkers<Action> priorityWorkers) :
 		this(chunkPool, inactivityInterval, inactivityTimeout, maxQueuedChunkCount, groupSmallMessages, messageHandler, priorityWorkers)
 	{
 		this.socket = socket;
+		this.stream = stream;
+
 		state = ConnectionState.Opened;
 	}
 
@@ -360,7 +366,7 @@ internal abstract class Connection
 				if (responseCallback != null)
 					pendingRequests.TryRemove(messageId, out _);
 
-				if (e is SocketException)
+				if (e is IOException)
 				{
 					Task.Run(() => CloseAsyncInternal());
 					throw new CommunicationException("Error occurred while sending data through a socket.", e);
@@ -415,7 +421,7 @@ internal abstract class Connection
 				if (responseCallback != null)
 					pendingRequests.TryRemove(messageId, out _);
 
-				if (e is SocketException)
+				if (e is IOException)
 				{
 					Task.Run(() => CloseAsyncInternal());
 					throw new CommunicationException("Error occurred while sending data through a socket.", e);
@@ -470,7 +476,7 @@ internal abstract class Connection
 				if (responseCallback != null)
 					pendingRequests.TryRemove(messageId, out _);
 
-				if (e is SocketException)
+				if (e is IOException)
 				{
 					Task.Run(() => CloseAsyncInternal());
 					throw new CommunicationException("Error occurred while sending data through a socket.", e);
@@ -525,7 +531,7 @@ internal abstract class Connection
 				if (responseCallback != null)
 					pendingRequests.TryRemove(messageId, out _);
 
-				if (e is SocketException)
+				if (e is IOException)
 				{
 					Task.Run(() => CloseAsyncInternal());
 					throw new CommunicationException("Error occurred while sending data through a socket.", e);
@@ -580,7 +586,7 @@ internal abstract class Connection
 				if (responseCallback != null)
 					pendingRequests.TryRemove(messageId, out _);
 
-				if (e is SocketException)
+				if (e is IOException)
 				{
 					Task.Run(() => CloseAsyncInternal());
 					throw new CommunicationException("Error occurred while sending data through a socket.", e);
@@ -635,7 +641,7 @@ internal abstract class Connection
 				if (responseCallback != null)
 					pendingRequests.TryRemove(messageId, out _);
 
-				if (e is SocketException)
+				if (e is IOException)
 				{
 					Task.Run(() => CloseAsyncInternal());
 					throw new CommunicationException("Error occurred while sending data through a socket.", e);
@@ -691,7 +697,7 @@ internal abstract class Connection
 				if (responseCallback != null)
 					pendingRequests.TryRemove(messageId, out _);
 
-				if (e is SocketException)
+				if (e is IOException)
 				{
 					Task.Run(() => CloseAsyncInternal());
 					throw new CommunicationException("Error occurred while sending data through a socket.", e);
@@ -747,7 +753,7 @@ internal abstract class Connection
 				if (responseCallback != null)
 					pendingRequests.TryRemove(messageId, out _);
 
-				if (e is SocketException)
+				if (e is IOException)
 				{
 					Task.Run(() => CloseAsyncInternal());
 					throw new CommunicationException("Error occurred while sending data through a socket.", e);
@@ -803,7 +809,7 @@ internal abstract class Connection
 				if (responseCallback != null)
 					pendingRequests.TryRemove(messageId, out _);
 
-				if (e is SocketException)
+				if (e is IOException)
 				{
 					Task.Run(() => CloseAsyncInternal());
 					throw new CommunicationException("Error occurred while sending data through a socket.", e);
@@ -854,8 +860,8 @@ internal abstract class Connection
 		{
 			try
 			{
-				lock(socket)
-					socket.Send(new ReadOnlySpan<byte>(chunk.PBuffer, chunk.ChunkSize));
+				lock(stream)
+					stream.Write(new ReadOnlySpan<byte>(chunk.PBuffer, chunk.ChunkSize));
 
 				if (chunk.IsLast)
 					chunkPool.Put(chunk);
@@ -865,7 +871,7 @@ internal abstract class Connection
 			catch (Exception e)
 			{
 				chunkPool.Put(chunk);
-				if (e is SocketException)
+				if (e is IOException)
 					throw new CommunicationObjectAbortedException(AbortedPhase.Communication, "Failed to send data over a socket.", e);
 
 				throw;
@@ -884,7 +890,7 @@ internal abstract class Connection
 		}
 		else
 		{
-			groupingSender = new GroupingSender(socket, priorityWorkers != null);    // At this point we are guaranteed to have a socket
+			groupingSender = new GroupingSender(stream, priorityWorkers != null);    // At this point we are guaranteed to have a socket
 		}
 
 		t.IsBackground = true;
@@ -904,10 +910,10 @@ internal abstract class Connection
 				int n;
 				try
 				{
-					n = socket.Receive(new Span<byte>((byte*)receiveChunk.PBuffer + totalReceived,
+					n = stream.Read(new Span<byte>((byte*)receiveChunk.PBuffer + totalReceived,
 						MessageChunk.LargeBufferSize - totalReceived));
 				}
-				catch (Exception e) when (e is ObjectDisposedException || e is SocketException)
+				catch (Exception e) when (e is ObjectDisposedException || e is IOException)
 				{
 					n = 0;
 				}
@@ -1282,7 +1288,7 @@ internal abstract class Connection
 				ReleaseReader(reader);
 			}
 		}
-		catch (Exception e) when (e is ObjectDisposedException || e is SocketException ||
+		catch (Exception e) when (e is ObjectDisposedException || e is IOException ||
 			e is CommunicationObjectAbortedException || e is CorruptMessageException || e is ChunkTimeoutException)
 		{
 			Task.Run(() => CloseAsyncInternal());
@@ -1435,7 +1441,7 @@ internal abstract class Connection
 
 		try
 		{
-			socket.Close();
+			stream.Dispose();
 			OnDisconnected();
 		}
 		finally
@@ -1482,6 +1488,12 @@ internal abstract class Connection
 			return new IPEndPoint[] { new IPEndPoint(IPAddress.Any, port) };
 
 		IPEndPoint[] endpoints = null;
+
+#if TEST_BUILD
+		if (address.EndsWith(".localhost"))
+			return new IPEndPoint[] { new IPEndPoint(IPAddress.Loopback, port) };
+#endif
+
 		AddressFamily faimly = preferIPV6 ? AddressFamily.InterNetworkV6 : AddressFamily.InterNetwork;
 
 		try
@@ -1497,9 +1509,9 @@ internal abstract class Connection
 		{
 			throw new ArgumentException("Invalid IP address.");
 		}
-		catch (SocketException e)
+		catch (IOException e)
 		{
-			throw new CommunicationException(e);
+			throw new CommunicationException(e.InnerException);
 		}
 
 		if (endpoints.Length == 0)

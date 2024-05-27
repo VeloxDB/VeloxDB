@@ -48,8 +48,8 @@ internal sealed class InsertNodeCommand : Command
 		StandaloneNode node = new StandaloneNode()
 		{
 			Children = new ReplicationElement[0],
-			AdministrationAdress = new Endpoint() { Address = Host, Port = (ushort)AdministrationPort },
-			ExecutionAdress = new Endpoint() { Address = Host, Port = (ushort)ExecutionPort },
+			AdministrationAddress = new Endpoint() { Address = Host, Port = (ushort)AdministrationPort },
+			ExecutionAddress = new Endpoint() { Address = Host, Port = (ushort)ExecutionPort },
 			ReplicationAddress = new Endpoint() { Address = Host, Port = (ushort)ReplicationPort },
 			IsMember = false,
 			Name = Name ?? Host

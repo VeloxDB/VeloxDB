@@ -22,6 +22,13 @@
 	"Database": {
 		"SystemDatabasePath": "${LocalApplicationData}/vlxdb/data"
 	},
+	"SSLConfiguration": {
+		"Enabled": false,
+		"CACertificatePath": "",
+		"CertificateKeyPath": "",
+		"CertificateStorePath":"",
+		"Password": ""
+	},
 	"Logging": {
 		"Path": "${LocalApplicationData}/vlxdb/log",
 		"Level": "Info",

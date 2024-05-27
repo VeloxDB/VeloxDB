@@ -70,8 +70,8 @@ internal sealed class DeleteReplicationElementCommand : Command
 			LocalWriteNode otherNode = object.ReferenceEquals(lwCluster.First, node) ? lwCluster.Second : lwCluster.First;
 			StandaloneNode newNode = new StandaloneNode()
 			{
-				AdministrationAdress = otherNode.AdministrationAdress,
-				ExecutionAdress = otherNode.ExecutionAdress,
+				AdministrationAddress = otherNode.AdministrationAddress,
+				ExecutionAddress = otherNode.ExecutionAddress,
 				ReplicationAddress = otherNode.ReplicationAddress,
 				Children = lwCluster.Children,
 				IsMember = false,

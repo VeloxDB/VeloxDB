@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
+using System.IO;
 using System.Linq;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
@@ -18,7 +19,7 @@ internal unsafe sealed class GroupingSender
 	const int waitGroupSize = 64;   // Max WaitHandle.WaitAny count
 
 	bool closed;
-	Socket socket;
+	Stream stream;
 
 	SendBuffer[] sendBuffers1;
 	SendBuffer[] sendBuffers2;
@@ -30,9 +31,9 @@ internal unsafe sealed class GroupingSender
 
 	CPUGroupWaiter[] waiters;
 
-	public GroupingSender(Socket socket, bool isPriority)
+	public GroupingSender(Stream stream, bool isPriority)
 	{
-		this.socket = socket;
+		this.stream = stream;
 
 		sendBuffers1 = new SendBuffer[ProcessorNumber.CoreCount];
 		sendBuffers2 = new SendBuffer[ProcessorNumber.CoreCount];
@@ -137,10 +138,17 @@ internal unsafe sealed class GroupingSender
 		int n;
 		try
 		{
-			lock(socket)
-				n = socket.Send(sendSegments);
+			lock (stream)
+			{
+				n = 0;
+				for (int i = 0; i < sendSegments.Count; i++)
+				{
+					stream.Write(sendSegments[i]);
+					n += sendSegments[i].Count;
+				}
+			}
 		}
-		catch (SocketException)
+		catch (IOException)
 		{
 			n = 0;
 		}

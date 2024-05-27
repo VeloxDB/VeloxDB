@@ -1,10 +1,9 @@
-﻿using System.Collections.Concurrent;
-using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
+﻿using System.Diagnostics.CodeAnalysis;
 using System.Net;
+using System.Net.Security;
 using System.Reflection;
-using System.Runtime;
-using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using VeloxDB.Common;
 using VeloxDB.Config;
 using VeloxDB.Descriptor;
@@ -35,6 +34,9 @@ internal sealed class Server : IDisposable
 	readonly string? persistenceDir;
 	DbAPIHost? adminHost;
 	DbAPIHost? execHost;
+	SslServerAuthenticationOptions? sslOptions;
+	SslClientOptionsFactory? sslClientOptionsFactory;
+
 	StorageEngine? engine;
 	DatabaseAdministration? databaseAdministration;
 	ObjectModelContextPool? ctxPool;
@@ -63,6 +65,9 @@ internal sealed class Server : IDisposable
 	{
 		LogVersion();
 		if (!LoadClusterConfiguration())
+			return false;
+
+		if (!InitSSL())
 			return false;
 
 		if (!InitDatabaseEngine())
@@ -197,7 +202,7 @@ internal sealed class Server : IDisposable
 		ReplicationSettings? replication;
 
 		CreateElectors();
-		replication = configuration.Replication.ToRepplicationSettings();
+		replication = configuration.Replication.ToRepplicationSettings(sslOptions, sslClientOptionsFactory);
 
 		try
 		{
@@ -398,12 +403,18 @@ internal sealed class Server : IDisposable
 
 		Checker.AssertNotNull(node.ElectorAddress, replica.ElectorAddress);
 
+		SslClientAuthenticationOptions? sslReplicaOptions = null;
+		if (sslClientOptionsFactory != null)
+			sslReplicaOptions = sslClientOptionsFactory.CreateSslOptions(replica.ElectorAddress.Address);
+
 		return elecFactory.CreateLocalElector(node.ElectorAddress.ToString(),
 							   configuration.Database.SystemDatabasePath,
 							   (int)(localWriteCluster.ElectionTimeout * 1000 + 0.5),
-							   localWriteCluster.Witness.AsWitnessConfig(elecFactory),
+							   localWriteCluster.Witness.AsWitnessConfig(elecFactory, sslClientOptionsFactory),
 							   replica.ElectorAddress.ToString(),
-							   false);
+							   false,
+							   sslReplicaOptions,
+							   sslOptions);
 	}
 
 	private void CreateHosts()
@@ -412,14 +423,15 @@ internal sealed class Server : IDisposable
 		Checker.AssertNotNull(configuration.Replication.ThisNode);
 
 		ReplicationNode node = configuration.Replication.ThisNode;
-		Checker.AssertNotNull(node.AdministrationAdress);
+		Checker.AssertNotNull(node.AdministrationAddress);
 
-		List<IPEndPoint> endpoints = new List<IPEndPoint>(2) { node.AdministrationAdress.ToIPEndPoint() };
+		List<IPEndPoint> endpoints = new List<IPEndPoint>(2) { node.AdministrationAddress.ToIPEndPoint() };
 		if (!IPAddress.IsLoopback(endpoints[0].Address) && !IPAddress.Any.Equals(endpoints[0].Address))
 			endpoints.Add(new IPEndPoint(IPAddress.Loopback, endpoints[0].Port));
 
 		adminHost = new DbAPIHost(AdminBacklogSize, AdminMaxOpenConnCount, endpoints.ToArray(),
-								  AdminBufferPoolSize, AdminInactivityInterval, AdminInactivityTimeout, AdminMaxQueuedChunkCount);
+								  AdminBufferPoolSize, AdminInactivityInterval, AdminInactivityTimeout,
+								  AdminMaxQueuedChunkCount, sslOptions);
 		foreach (IPEndPoint endpoint in endpoints)
 		{
 			Tracing.Info("Administration endpoint hosted on {0}.", endpoint);
@@ -432,7 +444,7 @@ internal sealed class Server : IDisposable
 							  executionEndpoint.BufferPoolSize, executionEndpoint.InactivityTimeout);
 		Checker.AssertNotNull(executionEndpoint.MaxQueuedChunkCount);
 
-		endpoints = new List<IPEndPoint>(2) { node.ExecutionAdress.ToIPEndPoint() };
+		endpoints = new List<IPEndPoint>(2) { node.ExecutionAddress.ToIPEndPoint() };
 		if (!IPAddress.IsLoopback(endpoints[0].Address) && !IPAddress.Any.Equals(endpoints[0].Address))
 			endpoints.Add(new IPEndPoint(IPAddress.Loopback, endpoints[0].Port));
 
@@ -445,7 +457,65 @@ internal sealed class Server : IDisposable
 									  endpoints.ToArray(), (int)executionEndpoint.BufferPoolSize,
 									  TimeSpan.FromSeconds((double)executionEndpoint.InactivityInterval),
 									  TimeSpan.FromSeconds((double)executionEndpoint.InactivityTimeout),
-									  (int)executionEndpoint.MaxQueuedChunkCount);
+									  (int)executionEndpoint.MaxQueuedChunkCount, sslOptions);
+	}
+
+	private bool InitSSL()
+	{
+		Checker.AssertNotNull(configuration.SSLConfiguration);
+
+		if (!configuration.SSLConfiguration.Enabled)
+		{
+			sslOptions = null;
+			return true;
+		}
+
+		X509Certificate2? serverCert = LoadCertificate(configuration.SSLConfiguration.CertificateKeyPath,
+													   nameof(SSLConfiguration.CertificateKeyPath),
+													   configuration.SSLConfiguration.Password);
+
+		if (serverCert == null)
+			return false;
+
+		SslStreamCertificateContext context = SslStreamCertificateContext.Create(serverCert, null);
+		sslOptions = new()
+		{
+			ServerCertificate = serverCert,
+			ServerCertificateContext = context
+		};
+
+		string[] certificates = Array.Empty<string>();
+		if (!string.IsNullOrEmpty(configuration.SSLConfiguration.CertificateStorePath))
+			certificates = Directory.GetFiles(configuration.SSLConfiguration.CertificateStorePath);
+
+		sslClientOptionsFactory = SslClientOptionsFactory.Create(certificates, true, configuration.SSLConfiguration.CACertificatePath);
+
+		return true;
+	}
+
+	private static X509Certificate2? LoadCertificate(string? path, string keyName, string? password = null, bool onlyPublicKey = false)
+	{
+		if (path == null)
+		{
+			Tracing.Error("SSLConfiguration.CertificateKeyPath is not configured. Please either disable SSL or provide the path to the server key.");
+			return null;
+		}
+
+		if (!File.Exists(path))
+		{
+			Tracing.Error($"The certificate '{path}' specified at {keyName} could not be found.");
+			return null;
+		}
+
+		try
+		{
+			return SSLUtils.LoadCertificate(path, password, onlyPublicKey);
+		}
+		catch (CryptographicException e)
+		{
+			Tracing.Error(e.Message);
+			return null;
+		}
 	}
 
 	private void HostNodeAdministrationInterface()

@@ -19,6 +19,19 @@ internal abstract class BindableCommand : Command
 	[Param("fbind", "Path to a file containing cluster configuration.", ProgramMode = ProgramMode.Direct)]
 	public string BindFile { get; set; }
 
+	[Param("ignore-certificate", "Specifies whether to verify SSL certificate.", ShortName ="i", ProgramMode = ProgramMode.Direct)]
+	public bool IgnoreCertificate { get; set; } = false;
+
+	[Param("use-ssl", "Specifies whether to use SSL when connecting.", ShortName ="ssl", ProgramMode = ProgramMode.Direct)]
+	public bool UseSSL { get; set; } = false;
+
+	[Param("ca-certificate", "Specifies CA certificate to use.", ShortName = "ca", ProgramMode = ProgramMode.Direct)]
+	public string CACertificate { get; set; }
+
+	[Param("certificates", "Specifies server certificates.", ShortName = "c", ProgramMode = ProgramMode.Direct)]
+	public string[] Certificates { get; set; } = Array.Empty<string>();
+
+
 	protected override bool OnPreExecute(Program program)
 	{
 		if (program.ProgramMode == ProgramMode.Interactive)
@@ -29,6 +42,9 @@ internal abstract class BindableCommand : Command
 
 	private bool TryBind(Program program)
 	{
+		InitialMode mode = (InitialMode)program.Mode;
+		mode.SetSSLConfiguration(UseSSL, IgnoreCertificate, CACertificate, Certificates);
+
 		if (BindFile != null)
 		{
 			return BindFromFile(program, BindFile);
@@ -50,6 +66,7 @@ internal abstract class BindableCommand : Command
 
 		InitialMode mode = (InitialMode)program.Mode;
 		mode.SetClusterConfiguration(fileName, clusterConfig);
+
 		return true;
 	}
 
@@ -72,11 +89,9 @@ internal abstract class BindableCommand : Command
 			}
 		}
 
-		ConnectionStringParams cp = new ConnectionStringParams();
+		ConnectionStringParams cp = program.CreateConnectionStringParams();
 		addresses.ForEach(x => cp.AddAddress(x));
 		cp.ServiceName = AdminAPIServiceNames.NodeAdministration;
-		cp.RetryTimeout = Program.ConnectionRetryTimeout;
-		cp.OpenTimeout = Program.ConnectionOpenTimeout;
 
 		FileData fileData = null;
 

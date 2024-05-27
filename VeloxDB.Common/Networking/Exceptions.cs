@@ -52,16 +52,29 @@ public class CommunicationObjectAbortedException : CommunicationException
 		this.abortedPhase = abortedPhase;
 	}
 
+	/// <summary>
+	/// Indicates at what phase has connection been aborted.
+	/// </summary>
+	public AbortedPhase AbortedPhase => abortedPhase;
+}
+
 /// <summary>
-/// Indicates at what phase has connection been aborted.
+/// Exception thrown when authentication process fails during communication.
 /// </summary>
-public AbortedPhase AbortedPhase => abortedPhase;
+public class AuthenticationFailedException : CommunicationException
+{
+	///
+	public AuthenticationFailedException(string message = null, Exception inner = null) :
+		base(message==null?"Authentication has failed.":message, inner)
+	{
+
+	}
 }
 
 internal class ConnectionNotOpenException : CommunicationException
 {
 	public ConnectionNotOpenException() : this("Connection has not been open.", null) { }
-	public ConnectionNotOpenException(string message, Exception inner) : base(message, inner) {	}
+	public ConnectionNotOpenException(string message, Exception inner) : base(message, inner) { }
 }
 
 internal class ChunkTimeoutException : CommunicationException
@@ -73,7 +86,8 @@ internal class ChunkTimeoutException : CommunicationException
 internal class CorruptMessageException : CommunicationException
 {
 	public CorruptMessageException() :
-		this("Message data could not be read because it has either been corrupted or it is in unknown format.", null) { }
+		this("Message data could not be read because it has either been corrupted or it is in unknown format.", null)
+	{ }
 	public CorruptMessageException(string message, Exception inner) : base(message, inner) { }
 }
 

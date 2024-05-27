@@ -42,7 +42,7 @@ internal sealed class PrimarySiteCommand : BindableCommand
 		LocalWriteCluster lwCluster1 = (LocalWriteCluster)element;
 		ReplicationElement otherElement = object.ReferenceEquals(gwCluster.First, lwCluster1) ? gwCluster.Second : gwCluster.First;
 
-		if (IsOtherSitePrimary(otherElement))
+		if (IsOtherSitePrimary(program.CreateConnectionStringParams(), otherElement))
 		{
 			if (!ConsoleHelper.Confirmation("It apperas that the other site is currently designated as the primary site. Proceeding with " +
 					"this action might lead to a split brain scenarion. Do you want to continue (Y/N)?"))
@@ -51,18 +51,15 @@ internal sealed class PrimarySiteCommand : BindableCommand
 			}
 		}
 
-		ConnectionStringParams cp = new ConnectionStringParams();
+		ConnectionStringParams cp = program.CreateConnectionStringParams();
 
 		if (lwCluster1.First != null)
-			cp.AddAddress(lwCluster1.First.AdministrationAdress.ToString());
+			cp.AddAddress(lwCluster1.First.AdministrationAddress.ToString());
 
 		if (lwCluster1.Second != null)
-			cp.AddAddress(lwCluster1.Second.AdministrationAdress.ToString());
+			cp.AddAddress(lwCluster1.Second.AdministrationAddress.ToString());
 
 		cp.ServiceName = AdminAPIServiceNames.LocalWriteClusterAdministration;
-		cp.RetryTimeout = Program.ConnectionRetryTimeout;
-		cp.OpenTimeout = Program.ConnectionOpenTimeout;
-		cp.PoolSize = 1;
 
 		ILocalWriteClusterAdministration clusterAdministration = ConnectionFactory.Get<ILocalWriteClusterAdministration>(cp.GenerateConnectionString());
 
@@ -87,11 +84,11 @@ internal sealed class PrimarySiteCommand : BindableCommand
 		return true;
 	}
 
-	private bool IsOtherSitePrimary(ReplicationElement otherElement)
+	private bool IsOtherSitePrimary(ConnectionStringParams cp, ReplicationElement otherElement)
 	{
 		if (otherElement.Type == ElementType.Node)
 		{
-			NodeState otherState = GetNodeState((ReplicationNode)otherElement);
+			NodeState otherState = GetNodeState(cp, (ReplicationNode)otherElement);
 			ReplicaState gwState = ClusterStatusLive.GetReplicaState(otherState, ReplicaType.GlobalWrite);
 			if (gwState != null && gwState.IsPrimary)
 				return true;
@@ -99,8 +96,8 @@ internal sealed class PrimarySiteCommand : BindableCommand
 		else
 		{
 			LocalWriteCluster lwCluster = (LocalWriteCluster)otherElement;
-			NodeState otherState1 = GetNodeState(lwCluster.First);
-			NodeState otherState2 = GetNodeState(lwCluster.Second);
+			NodeState otherState1 = GetNodeState(cp, lwCluster.First);
+			NodeState otherState2 = GetNodeState(cp, lwCluster.Second);
 			ReplicaState gwState1 = otherState1 == null ? null : ClusterStatusLive.GetReplicaState(otherState1, ReplicaType.GlobalWrite);
 			ReplicaState gwState2 = otherState2 == null ? null : ClusterStatusLive.GetReplicaState(otherState2, ReplicaType.GlobalWrite);
 			if (gwState1 != null && gwState1.IsPrimary || gwState2 != null && gwState2.IsPrimary)
@@ -110,17 +107,15 @@ internal sealed class PrimarySiteCommand : BindableCommand
 		return false;
 	}
 
-	private NodeState GetNodeState(ReplicationNode node)
+	private NodeState GetNodeState(ConnectionStringParams cp, ReplicationNode node)
 	{
 		if (node == null)
 			return null;
 
-		ConnectionStringParams cp = new ConnectionStringParams();
-		cp.AddAddress(node.AdministrationAdress.ToString());
+		cp = cp.Clone();
+
+		cp.AddAddress(node.AdministrationAddress.ToString());
 		cp.ServiceName = AdminAPIServiceNames.NodeAdministration;
-		cp.RetryTimeout = Program.ConnectionRetryTimeout;
-		cp.OpenTimeout = Program.ConnectionOpenTimeout;
-		cp.PoolSize = 1;
 
 		INodeAdministration nodeAdministration = ConnectionFactory.Get<INodeAdministration>(cp.GenerateConnectionString());
 

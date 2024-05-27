@@ -7,6 +7,10 @@
     <Platforms>AnyCPU;x64</Platforms>
   </PropertyGroup>
 
+	<PropertyGroup Condition="'$(Configuration)'=='Debug'">
+		<DefineConstants>TEST_BUILD</DefineConstants>
+	</PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\API\API.csproj" />
   </ItemGroup>

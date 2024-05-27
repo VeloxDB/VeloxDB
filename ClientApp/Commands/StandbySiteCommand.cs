@@ -39,18 +39,15 @@ internal sealed class StandbySiteCommand : BindableCommand
 
 		LocalWriteCluster lwCluster = (LocalWriteCluster)element;
 
-		ConnectionStringParams cp = new ConnectionStringParams();
+		ConnectionStringParams cp = program.CreateConnectionStringParams();
 
 		if (lwCluster.First != null)
-			cp.AddAddress(lwCluster.First.AdministrationAdress.ToString());
+			cp.AddAddress(lwCluster.First.AdministrationAddress.ToString());
 
 		if (lwCluster.Second != null)
-			cp.AddAddress(lwCluster.Second.AdministrationAdress.ToString());
+			cp.AddAddress(lwCluster.Second.AdministrationAddress.ToString());
 
 		cp.ServiceName = AdminAPIServiceNames.LocalWriteClusterAdministration;
-		cp.RetryTimeout = Program.ConnectionRetryTimeout;
-		cp.OpenTimeout = Program.ConnectionOpenTimeout;
-		cp.PoolSize = 1;
 
 		ILocalWriteClusterAdministration clusterAdministration = ConnectionFactory.Get<ILocalWriteClusterAdministration>(cp.GenerateConnectionString());
 

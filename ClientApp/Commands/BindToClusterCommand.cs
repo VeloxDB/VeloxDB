@@ -21,6 +21,18 @@ internal sealed class BindToClusterCommand : Command
 		"a node on the local machine on the default port.", ShortName = "n")]
 	public string[] NodeEndpoints { get; set; }
 
+	[Param("ignore-certificate", "Specifies whether to verify SSL certificate.", ShortName ="i")]
+	public bool IgnoreCertificate { get; set; } = false;
+
+	[Param("use-ssl", "Specifies whether to use SSL when connecting.", ShortName ="ssl")]
+	public bool UseSSL { get; set; } = false;
+
+	[Param("ca-certificate", "Specifies CA certificate to use.", ShortName ="ca")]
+	public string CACertificate { get; set; }
+
+	[Param("certificates", "Specifies server certificates.", ShortName ="c")]
+	public string[] Certificates { get; set; } = Array.Empty<string>();
+
 	public override bool IsModeValid(Mode mode)
 	{
 		return mode.GetType() == typeof(InitialMode);
@@ -28,6 +40,7 @@ internal sealed class BindToClusterCommand : Command
 
 	protected override bool OnExecute(Program program)
 	{
+		((InitialMode)program.Mode).SetSSLConfiguration(UseSSL, IgnoreCertificate, CACertificate, Certificates);
 		if (ConfigFile != null)
 		{
 			return BindableCommand.BindFromFile(program, ConfigFile);

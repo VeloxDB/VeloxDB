@@ -32,12 +32,9 @@ internal sealed class TraceLevelCommand : BindableCommand
 
 		ReplicationNode node = (ReplicationNode)element;
 
-		ConnectionStringParams cp = new ConnectionStringParams();
-		cp.AddAddress(node.AdministrationAdress.ToString());
+		ConnectionStringParams cp = program.CreateConnectionStringParams();
+		cp.AddAddress(node.AdministrationAddress.ToString());
 		cp.ServiceName = AdminAPIServiceNames.NodeAdministration;
-		cp.RetryTimeout = Program.ConnectionRetryTimeout;
-		cp.OpenTimeout = Program.ConnectionOpenTimeout;
-		cp.PoolSize = 1;
 
 		INodeAdministration nodeAdministration = ConnectionFactory.Get<INodeAdministration>(cp.GenerateConnectionString());
 

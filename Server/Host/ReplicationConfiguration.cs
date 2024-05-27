@@ -3,6 +3,9 @@ using System.Text.Json.Serialization;
 using VeloxDB.Common;
 using VeloxDB.Descriptor;
 using VeloxDB.Config;
+using System.Net.Security;
+using VeloxDB.Networking;
+
 namespace VeloxDB.Server;
 
 internal sealed class ReplicationConfiguration
@@ -124,16 +127,25 @@ internal sealed class ReplicationConfiguration
 		return true;
 	}
 
-	public ReplicationSettings ToRepplicationSettings()
+	private record SslSettings(SslServerAuthenticationOptions SSLOptions, SslClientOptionsFactory Factory);
+
+	public ReplicationSettings ToRepplicationSettings(SslServerAuthenticationOptions? sslOptions = null, SslClientOptionsFactory? factory = null)
 	{
 		Checker.AssertNotNull(ClusterConfig, ThisNode);
 		ReplicationSettings result = new ReplicationSettings(ThisNode.Name);
 
-		CreateGWReplica(result);
-		CreateLWReplica(result);
-		CreateSourceReplica(result);
-		CreateGlobalReadReplicas(result);
-		CreateLocalReadReplicas(result);
+		SslSettings? sslSettings = null;
+		if(sslOptions != null)
+		{
+			Checker.AssertNotNull(factory);
+			sslSettings = new SslSettings(sslOptions, factory);
+		}
+
+		CreateGWReplica(result, sslSettings);
+		CreateLWReplica(result, sslSettings);
+		CreateSourceReplica(result, sslSettings);
+		CreateGlobalReadReplicas(result, sslSettings);
+		CreateLocalReadReplicas(result, sslSettings);
 
 		return result;
 	}
@@ -151,7 +163,8 @@ internal sealed class ReplicationConfiguration
 		return $"{name1}-{name2}{type}";
 	}
 
-	private void SetClusterReplicaProperties<T>(ClusterBase<T> cluster, string myName, ReplicaSettings replica, string type) where T : ReplicationElement
+	private void SetClusterReplicaProperties<T>(ClusterBase<T> cluster, string myName, ReplicaSettings replica, string type,
+											    SslSettings? sslSettings) where T : ReplicationElement
 	{
 		Checker.AssertNotNull(ThisNode);
 		T first, second;
@@ -172,8 +185,14 @@ internal sealed class ReplicationConfiguration
 		replica.Name = GetReplicaName(first.Name, second.Name, type);
 		replica.HostAddress = ThisNode.ReplicationAddress.ToString();
 		replica.PartnerAddresses = second.GetPrimaryAdresses();
+
+		if(sslSettings != null)
+		{
+			replica.SSLOptions = sslSettings.SSLOptions;
+			replica.PartnerSSLOptions = second.GetSSLOptions(sslSettings.Factory);
+		}
 	}
-	private void CreateGWReplica(ReplicationSettings settings)
+	private void CreateGWReplica(ReplicationSettings settings, SslSettings? sslSettings)
 	{
 		Checker.AssertNotNull(ThisNode);
 		GlobalWriteCluster? cluster;
@@ -184,13 +203,13 @@ internal sealed class ReplicationConfiguration
 
 		string myName = (ThisNode.Parent.Type == ElementType.GlobalWrite)?ThisNode.Name:ThisNode.Parent.Name;
 
-		SetClusterReplicaProperties(cluster, myName, replica, "GW");
+		SetClusterReplicaProperties(cluster, myName, replica, "GW", sslSettings);
 		replica.IsSyncMode = cluster.SynchronousReplication;
 
 		settings.GlobalWriteReplica = replica;
 	}
 
-	private void CreateLWReplica(ReplicationSettings settings)
+	private void CreateLWReplica(ReplicationSettings settings, SslSettings? sslSettings)
 	{
 		Checker.AssertNotNull(ThisNode);
 		LocalWriteCluster? cluster;
@@ -198,11 +217,11 @@ internal sealed class ReplicationConfiguration
 			return;
 
 		ReplicaSettings replica = new ReplicaSettings();
-		SetClusterReplicaProperties(cluster, ThisNode.Name, replica, "LW");
+		SetClusterReplicaProperties(cluster, ThisNode.Name, replica, "LW", sslSettings);
 		settings.LocalWriteReplica = replica;
 	}
 
-	private void CreateSourceReplica(ReplicationSettings settings)
+	private void CreateSourceReplica(ReplicationSettings settings, SslSettings? sslSettings)
 	{
 		Checker.AssertNotNull(ThisNode);
 
@@ -235,10 +254,15 @@ internal sealed class ReplicationConfiguration
 		replica.HostAddress = ThisNode.ReplicationAddress.ToString();
 		replica.PartnerAddresses = null;
 
+		if(sslSettings != null)
+		{
+			replica.SSLOptions = sslSettings.SSLOptions;
+		}
+
 		settings.SourceReplica = replica;
 	}
 
-	private ReplicaSettings[] CreateChildrenReplicas(ReplicationElement[] children, string type)
+	private ReplicaSettings[] CreateChildrenReplicas(ReplicationElement[] children, string type, SslSettings? sslSettings)
 	{
 		Checker.AssertNotNull(ThisNode);
 		ReplicaSettings[] replicas = new ReplicaSettings[children.Length];
@@ -254,22 +278,26 @@ internal sealed class ReplicationConfiguration
 			replica.Name = GetReplicaName(ThisNode.Name, child.Name, type);
 			replica.HostAddress = null;
 			replica.PartnerAddresses = child.GetPrimaryAdresses();
+
+			if(sslSettings != null)
+				replica.PartnerSSLOptions = child.GetSSLOptions(sslSettings.Factory);
+
 			replicas[i] = replica;
 		}
 
 		return replicas;
 	}
 
-	private void CreateGlobalReadReplicas(ReplicationSettings settings)
+	private void CreateGlobalReadReplicas(ReplicationSettings settings, SslSettings? sslSettings)
 	{
 		GlobalWriteCluster? cluster;
 		if(!TryGetGlobalWriteCluster(out cluster) || cluster.Children == null)
 			return;
 
-		settings.GlobalReadReplicas = CreateChildrenReplicas(cluster.Children, "GR");
+		settings.GlobalReadReplicas = CreateChildrenReplicas(cluster.Children, "GR", sslSettings);
 	}
 
-	private void CreateLocalReadReplicas(ReplicationSettings settings)
+	private void CreateLocalReadReplicas(ReplicationSettings settings, SslSettings? sslSettings)
 	{
 		Checker.AssertNotNull(ThisNode);
 		ReplicationElement[]? children = null;
@@ -288,6 +316,6 @@ internal sealed class ReplicationConfiguration
 		if(children == null)
 			return;
 
-		settings.LocalReadReplicas = CreateChildrenReplicas(children, "LR");
+		settings.LocalReadReplicas = CreateChildrenReplicas(children, "LR", sslSettings);
 	}
 }

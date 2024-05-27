@@ -1,5 +1,7 @@
 using System;
+using System.IO;
 using System.Net;
+using System.Net.Security;
 using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
@@ -10,14 +12,17 @@ namespace VeloxDB.Networking;
 internal sealed partial class ClientConnection : Connection
 {
 	IPEndPoint endpoint;
+	SslClientAuthenticationOptions sslOptions;
 	bool failedToOpen;
 
 	public unsafe ClientConnection(IPEndPoint endpoint, MessageChunkPool chunkPool, TimeSpan inactivityInterval,
 		TimeSpan inactivityTimeout, int maxQueuedChunkCount, bool groupSmallMessages, HandleMessageDelegate messageHandler,
-		JobWorkers<Action> priorityWorkers = null) :
-		base(chunkPool, inactivityInterval, inactivityTimeout, maxQueuedChunkCount, groupSmallMessages, messageHandler, priorityWorkers)
+		JobWorkers<Action> priorityWorkers = null, SslClientAuthenticationOptions sslOptions = null) :
+		base(chunkPool, inactivityInterval, inactivityTimeout, maxQueuedChunkCount, groupSmallMessages, messageHandler,
+		     priorityWorkers)
 	{
 		this.endpoint = endpoint;
+		this.sslOptions = sslOptions;
 	}
 
 	public bool FailedToOpen => failedToOpen;
@@ -62,6 +67,11 @@ internal sealed partial class ClientConnection : Connection
 		await ConnectAsync();
 	}
 
+	private class SocketAsyncEventArgsEx : SocketAsyncEventArgs
+	{
+		public Exception Exception { get; set; }
+	}
+
 	private Task ConnectAsync()
 	{
 		socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
@@ -75,7 +85,7 @@ internal sealed partial class ClientConnection : Connection
 
 		TaskCompletionSource<bool> tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-		SocketAsyncEventArgs e = new SocketAsyncEventArgs();
+		SocketAsyncEventArgs e = new SocketAsyncEventArgsEx();
 		e.RemoteEndPoint = endpoint;
 		e.Completed += ConnectCompleted;
 		e.UserToken = tcs;
@@ -119,10 +129,39 @@ internal sealed partial class ClientConnection : Connection
 			{
 				state = ConnectionState.Closed;
 				failedToOpen = true;
-				tcs.SetException(new CommunicationObjectAbortedException(AbortedPhase.OpenAttempt, "Failed to open connection.",
-					new SocketException((int)e.SocketError)));
+
+				Exception exc = ((SocketAsyncEventArgsEx)e).Exception;
+				if (exc == null)
+				{
+					tcs.SetException(new CommunicationObjectAbortedException(AbortedPhase.OpenAttempt, "Failed to open connection.",
+									 new SocketException((int)e.SocketError)));
+				}else
+				{
+					tcs.SetException(new AuthenticationFailedException(inner:exc));
+				}
 
 				return;
+			}
+
+			if(stream == null)
+				CreateStream();
+
+			if (sslOptions != null)
+			{
+				SslStream sslStream = (SslStream)stream;
+				if (!sslStream.IsAuthenticated)
+				{
+					sslStream.AuthenticateAsClientAsync(sslOptions).ContinueWith((t)=>
+					{
+						if (t.Exception != null)
+						{
+							((SocketAsyncEventArgsEx)e).Exception = t.Exception.InnerException;
+							e.SocketError = SocketError.ConnectionRefused;
+						}
+						ProcessConnect(e);
+					});
+					return;
+				}
 			}
 
 			state = ConnectionState.Opened;
@@ -137,4 +176,17 @@ internal sealed partial class ClientConnection : Connection
 			sync.ExitWriteLock();
 		}
 	}
+
+	private void CreateStream()
+	{
+		Checker.AssertNotNull(socket);
+		Stream stream = new NetworkStream(socket);
+		if(sslOptions != null)
+		{
+			stream = new SslStream(stream);
+		}
+
+		this.stream = stream;
+	}
+
 }

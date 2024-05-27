@@ -3,10 +3,12 @@ using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
+using System.Net.Security;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using VeloxDB.Common;
+using VeloxDB.Networking;
 
 namespace VeloxDB.Config;
 
@@ -129,6 +131,8 @@ internal class ClusterConfiguration
 		Checker.AssertNotNull(elementsByName);
 		return elementsByName.TryGetValue(name, out element);
 	}
+
+	public IEnumerable<ReplicationElement> Elements => elementsByName.Values;
 
 	public string AsJson()
 	{
@@ -312,6 +316,11 @@ internal abstract class ReplicationElement
 	{
 		throw new NotSupportedException("This element does not provide primary addresses");
 	}
+
+	public virtual SslClientAuthenticationOptions[] GetSSLOptions(SslClientOptionsFactory factory)
+	{
+		throw new NotSupportedException("This element does not provide ssl options");
+	}
 	internal string NodeIdentifier => $"{Type}({Name ?? ""})";
 }
 
@@ -319,8 +328,8 @@ internal abstract class ReplicationElement
 internal abstract class ReplicationNode : ReplicationElement
 {
 	public Endpoint ReplicationAddress { get; set; }
-	public Endpoint AdministrationAdress { get; set; }
-	public Endpoint ExecutionAdress { get; set; }
+	public Endpoint AdministrationAddress { get; set; }
+	public Endpoint ExecutionAddress { get; set; }
 
 	internal override void FillDefaults()
 	{
@@ -329,8 +338,8 @@ internal abstract class ReplicationNode : ReplicationElement
 		ReplicationAddress = SetDefault(ReplicationAddress, "0.0.0.0", ClusterConfiguration.DefaultReplicationPort);
 		Checker.AssertNotNull(ReplicationAddress.Address);
 
-		AdministrationAdress = SetDefault(AdministrationAdress, ReplicationAddress.Address, ClusterConfiguration.DefaultAdministrationPort);
-		ExecutionAdress = SetDefault(ExecutionAdress, ReplicationAddress.Address, ClusterConfiguration.DefaultExecutionPort);
+		AdministrationAddress = SetDefault(AdministrationAddress, ReplicationAddress.Address, ClusterConfiguration.DefaultAdministrationPort);
+		ExecutionAddress = SetDefault(ExecutionAddress, ReplicationAddress.Address, ClusterConfiguration.DefaultExecutionPort);
 	}
 
 	protected static Endpoint SetDefault(Endpoint endPoint, string address, ushort port)
@@ -364,6 +373,15 @@ internal abstract class ReplicationNode : ReplicationElement
 	{
 		Checker.AssertNotNull(ReplicationAddress);
 		return new string[] { ReplicationAddress.ToString() };
+	}
+
+	public override SslClientAuthenticationOptions[] GetSSLOptions(SslClientOptionsFactory factory)
+	{
+		if (factory == null)
+			return null;
+
+		Checker.AssertNotNull(ReplicationAddress);
+		return new SslClientAuthenticationOptions[]{factory.CreateSslOptions(ReplicationAddress.Address)};
 	}
 }
 
@@ -564,6 +582,20 @@ internal sealed class LocalWriteCluster : ClusterBase<LocalWriteNode>
 		{
 			First.ReplicationAddress.ToString(),
 			Second.ReplicationAddress.ToString()
+		};
+	}
+
+	public override SslClientAuthenticationOptions[] GetSSLOptions(SslClientOptionsFactory factory)
+	{
+		if (factory == null)
+			return null;
+
+		Checker.AssertNotNull(First, Second);
+		Checker.AssertNotNull(First.ReplicationAddress, Second.ReplicationAddress);
+		return new SslClientAuthenticationOptions[]
+		{
+			factory.CreateSslOptions(First.ReplicationAddress.Address),
+			factory.CreateSslOptions(Second.ReplicationAddress.Address)
 		};
 	}
 }

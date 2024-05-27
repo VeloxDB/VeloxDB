@@ -23,9 +23,9 @@ internal sealed class Configuration
 
 	public int Version { get; set; } = 1;
 	public HostEndpointConfiguration? ExecutionEndpoint { get; set; }
+	public SSLConfiguration? SSLConfiguration { get; set; }
 	public DatabaseConfiguration? Database { get; set; }
 	public LoggingConfiguration? Logging { get; set; }
-
 	public ReplicationConfiguration? Replication { get; set; }
 
 	public string AsJson()
@@ -37,10 +37,13 @@ internal sealed class Configuration
 	{
 		Checker.AssertNotNull(Database, Logging, Replication);
 		Checker.AssertNotNull(Database.SystemDatabasePath, Logging.Path, obj3: Replication.ClusterConfigFile);
+		Checker.AssertNotNull(SSLConfiguration);
 
 		Database.SystemDatabasePath = TryEvaluatePath(Database.SystemDatabasePath);
 		Logging.Path = TryEvaluatePath(Logging.Path);
 		Replication.ClusterConfigFile = TryEvaluatePath(Replication.ClusterConfigFile);
+
+		SSLConfiguration.Evaluate(TryEvaluatePath);
 
 		if (Replication.ClusterConfig != null)
 			Replication.ClusterConfig.FillDefaults();
@@ -51,7 +54,7 @@ internal sealed class Configuration
 		List<string> errors;
 		string result = PathTemplate.TryEvaluate(path, out errors, Replication?.ThisNodeName);
 
-		if(errors.Count > 0)
+		if (errors.Count > 0)
 		{
 			throw new ConfigurationException(string.Join(",", errors));
 		}
@@ -62,9 +65,13 @@ internal sealed class Configuration
 	public void Override(Configuration newConfig)
 	{
 		Checker.AssertNotNull(ExecutionEndpoint, Database, Logging, Replication);
+		Checker.AssertNotNull(SSLConfiguration);
 
 		if (newConfig.ExecutionEndpoint != null)
 			ExecutionEndpoint.Override(newConfig.ExecutionEndpoint);
+
+		if (newConfig.SSLConfiguration != null)
+			SSLConfiguration.Override(newConfig.SSLConfiguration);
 
 		if (newConfig.Database != null)
 			Database.Override(newConfig.Database);
@@ -182,6 +189,13 @@ internal sealed class Configuration
 				PrimaryWorkerCount = 4,
 				StandbyWorkerCount = 0,
 				UseSeparateConnectionPerWorker = true,
+			},
+			SSLConfiguration = new()
+			{
+				CACertificatePath = "",
+				CertificateKeyPath = "",
+				CertificateStorePath = "",
+				Password = ""
 			}
 		};
 	}
@@ -318,6 +332,51 @@ internal sealed class HostEndpointConfiguration
 
 		if (newHostEndpoint.MaxQueuedChunkCount != null)
 			MaxQueuedChunkCount = newHostEndpoint.MaxQueuedChunkCount;
+	}
+}
+
+internal sealed class SSLConfiguration
+{
+	public bool Enabled { get; set; }
+	public string? CACertificatePath { get; set; }
+	public string? CertificateStorePath { get; set; }
+	public string? CertificateKeyPath { get; set; }
+	public string? Password { get; set; }
+
+	public void Override(SSLConfiguration newSSL)
+	{
+		if(newSSL.Enabled != Enabled)
+		{
+			Enabled = newSSL.Enabled;
+		}
+
+		if(newSSL.CACertificatePath != null)
+		{
+			CACertificatePath = newSSL.CACertificatePath;
+		}
+
+		if(newSSL.CertificateKeyPath != null)
+		{
+			CertificateKeyPath = newSSL.CertificateKeyPath;
+		}
+
+		if(newSSL.Password != null)
+		{
+			Password = newSSL.Password;
+		}
+
+		if(newSSL.CertificateStorePath != null)
+		{
+			CertificateStorePath = newSSL.CertificateStorePath;
+		}
+	}
+
+	public void Evaluate(Func<string, string> tryEvaluatePath)
+	{
+		Checker.AssertNotNull(CACertificatePath, CertificateKeyPath, obj3: CertificateStorePath);
+		CACertificatePath = tryEvaluatePath(CACertificatePath);
+		CertificateKeyPath = tryEvaluatePath(CertificateKeyPath);
+		CertificateStorePath = tryEvaluatePath(CertificateStorePath);
 	}
 }
 

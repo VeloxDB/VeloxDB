@@ -1,16 +1,19 @@
+using System.Net.Security;
 using VeloxDB.Config;
+using VeloxDB.Networking;
 using VeloxDB.Storage.Replication.HighAvailability;
 
 namespace VeloxDB.Server;
 
 internal static class ExtensionMethods
 {
-	public static WitnessConfiguration AsWitnessConfig(this Config.Witness witness, IElectorFactory electorFactory)
+	public static WitnessConfiguration AsWitnessConfig(this Config.Witness witness, IElectorFactory electorFactory,
+													   SslClientOptionsFactory? factory)
 	{
 		switch(witness.Type)
 		{
 			case WitnessType.Standalone:
-				return CreateWitnessConfig((Config.StandaloneWitness)witness, electorFactory);
+				return CreateWitnessConfig((Config.StandaloneWitness)witness, electorFactory, factory);
 			case WitnessType.SharedFolder:
 				return CreateWitnessConfig((Config.SharedFolderWitness)witness, electorFactory);
 			default:
@@ -23,8 +26,13 @@ internal static class ExtensionMethods
 		return electorFactory.CreateSharedFolderWitnessConfiguration(witness.Path, (int)(witness.RemoteFileTimeout*1000+0.5f));
 	}
 
-	private static WitnessConfiguration CreateWitnessConfig(Config.StandaloneWitness witness, IElectorFactory electorFactory)
+	private static WitnessConfiguration CreateWitnessConfig(Config.StandaloneWitness witness, IElectorFactory electorFactory,
+															SslClientOptionsFactory? factory)
 	{
-		return electorFactory.GetWitnessServerConfiguration(witness.Address.ToString());
+		SslClientAuthenticationOptions? options = null;
+		if(factory != null)
+			options = factory.CreateSslOptions(witness.Address.Address);
+
+		return electorFactory.GetWitnessServerConfiguration(witness.Address.ToString(), options);
 	}
 }
