@@ -8,7 +8,6 @@
 [assembly: InternalsVisibleTo("__ObjectModel")]
 [assembly: InternalsVisibleTo("__IndexReaders")]
 
-#if TEST_BUILD
 [assembly: InternalsVisibleTo("CommonTestSuite")]
 [assembly: InternalsVisibleTo("ProtocolTestSuite")]
 [assembly: InternalsVisibleTo("NetworkingTestSuite")]
@@ -16,4 +15,3 @@
 [assembly: InternalsVisibleTo("StorageEngineTestSuite")]
 [assembly: InternalsVisibleTo("stressrun")]
 [assembly: InternalsVisibleTo("ServerTestSuite")]
-#endif

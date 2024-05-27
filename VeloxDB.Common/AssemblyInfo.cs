@@ -8,7 +8,6 @@ using System.Runtime.CompilerServices;
 [assembly: InternalsVisibleTo("__dynprotmodule")]
 [assembly: InternalsVisibleTo("__connfactmodule")]
 
-#if TEST_BUILD
 [assembly: InternalsVisibleTo("CommonTestSuite")]
 [assembly: InternalsVisibleTo("ProtocolTestSuite")]
 [assembly: InternalsVisibleTo("NetworkingTestSuite")]
@@ -16,4 +15,3 @@ using System.Runtime.CompilerServices;
 [assembly: InternalsVisibleTo("StorageEngineTestSuite")]
 [assembly: InternalsVisibleTo("stressrun")]
 [assembly: InternalsVisibleTo("ServerTestSuite")]
-#endif

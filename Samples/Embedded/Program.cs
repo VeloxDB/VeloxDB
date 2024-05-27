@@ -14,7 +14,7 @@ internal class Program
 {
     private static void Main(string[] args)
     {
-		using VeloxDBEmbedded db = new VeloxDBEmbedded("/home/div0/Development/temp/vlx", [typeof(Message).Assembly], false);
+		using VeloxDBEmbedded db = new VeloxDBEmbedded("./data", [typeof(Message).Assembly], false);
 
 		using (VeloxDBTransaction trans = db.BeginTransaction())
 		{
