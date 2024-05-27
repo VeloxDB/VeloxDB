@@ -2131,7 +2131,10 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 	private IReplicator CreateReplicator(ReplicationSettings replicationSettings,
 		ILeaderElector localElector, ILeaderElector globalElector)
 	{
-		Assembly repAssembly = IReplicatorFactory.FindReplicatorAssembly();
+		Assembly repAssembly = null;
+
+		if(replicationSettings != null)
+			repAssembly = IReplicatorFactory.FindReplicatorAssembly();
 
 		if (repAssembly != null)
 		{

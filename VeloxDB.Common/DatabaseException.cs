@@ -517,6 +517,19 @@ public enum DatabaseErrorType
 	DatabaseClassNotPublic = 79,
 
 	/// <summary>
+	/// Database model mismatch. The supplied assemblies do not match the existing database model.
+	/// To update the model, set allowModelUpdate to true.
+	/// </summary>
+	[ErrorCode("Database model mismatch. The supplied assemblies do not match the existing database model.")]
+	DatabaseModelMismatch = 80,
+
+	/// <summary>
+	/// VeloxDBEmbedded cannot be used from .NET Interactive at the moment.
+	/// </summary>
+	[ErrorCode("VeloxDBEmbedded cannot be currently used from .NET Interactive")]
+	DotNetInteractiveNotSupported = 81,
+
+	/// <summary>
 	/// Base error for all DbAPI errors.
 	/// </summary>
 	DbAPIBaseError = 2000,
@@ -994,182 +1007,189 @@ public sealed class DatabaseErrorDetail
 
 internal static class Throw
 {
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void UsingDetail(DatabaseErrorDetail detail)
 	{
 		throw new DatabaseException(detail);
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static void UsingErrorType(DatabaseErrorType errorType)
+	{
+		throw new DatabaseException(new DatabaseErrorDetail(errorType));
+	}
+
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void AssemblyNameAlreadyExists(string name)
 	{
 		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.AssemblyNameAlreadyExists, primaryName: name));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void UnknownUserAssembly(long id, string name)
 	{
 		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.UnknownUserAssembly, id, primaryName: name));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void NullArgument(string argumentName)
 	{
 		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.NullArgument, primaryName: argumentName));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void InvalidArgument(string argumentName, string reason)
 	{
 		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.InvalidArgument, primaryName: argumentName, message: reason));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void InvalidAssemblyFilename(string name)
 	{
 		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.InvalidAssemblyFilename, primaryName: name));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void InvalidDirectoryName(string name)
 	{
 		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.InvalidDirectoryName, primaryName: name));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void InvalidLogName(string name)
 	{
 		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.InvalidLogName, primaryName: name));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void InvalidAssembly(string name)
 	{
 		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.InvalidAssembly, primaryName: name));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void InvalidPropertyType(string className, string propName)
 	{
 		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.InvalidPropertyType, memberName: propName, primaryName: className));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void InvalidClassId(string className)
 	{
 		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.InvalidClassId, primaryName: className));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void MaximumNumberOfIndexesPerClassExceeded(string className)
 	{
 		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.MaximumNumberOfIndexesPerClassExceeded, primaryName: className));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void UnknownIndex(string className, string indexName)
 	{
 		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.UnknownIndex, primaryName: className, secondaryName: indexName));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void MaximumNumberOfPropertiesInClassExceeded(string className)
 	{
 		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.MaximumNumberOfPropertiesInClassExceeded, primaryName: className));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void MaximumNumberOfInverseReferencesPerClass(string className)
 	{
 		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.MaximumNumberOfInverseReferencesPerClass, primaryName: className));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void UnknownBaseClass(string className)
 	{
 		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.UnknownBaseClass, primaryName: className));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void AbstractClassNonAbstractParent(string className)
 	{
 		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.AbstractClassNonAbstractParent, primaryName: className));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void CircularInheritance(string className)
 	{
 		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.CircularInheritance, primaryName: className));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void DuplicatePropertyName(string className, string propName)
 	{
 		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.DuplicatePropertyName, primaryName: className, memberName: propName));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void DuplicatePropertyId(string className, string propName)
 	{
 		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.DuplicatePropertyId, primaryName: className, memberName: propName));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void DuplicateIndexName(string indexName, short id)
 	{
 		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.DuplicateIndexName, primaryName: indexName, id: id));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void DuplicateClassId(string className, short id)
 	{
 		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.DuplicateClassId, primaryName: className, id: id));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void DuplicateClassName(string className, short id)
 	{
 		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.DuplicateClassName, primaryName: className, id: id));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void IndexWithoutProperties(string indexName)
 	{
 		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.IndexWithoutProperties, primaryName: indexName));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void IndexWithoutClasses(string indexName)
 	{
 		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.IndexWithoutClasses, primaryName: indexName));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void MaximumNumberOfPropertiesInIndexExceeded(string indexName)
 	{
@@ -1177,7 +1197,7 @@ internal static class Throw
 															primaryName: indexName));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void IndexIndexesUnknownProperty(string className, string indexName, string propName)
 	{
@@ -1185,7 +1205,7 @@ internal static class Throw
 															secondaryName: indexName, memberName: propName));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void IndexIndexesInvalidProperty(string indexName, string propName)
 	{
@@ -1193,7 +1213,7 @@ internal static class Throw
 															memberName: propName));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void IndexIndexesPropertyMultipleTimes(string indexName, string propName)
 	{
@@ -1201,7 +1221,7 @@ internal static class Throw
 															primaryName: indexName, memberName: propName));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void ReferencePropertyReferencesInvalidClass(string className, string propName, string refClassName)
 	{
@@ -1209,7 +1229,7 @@ internal static class Throw
 															primaryName: className, memberName: propName, secondaryName: refClassName));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void InvalidInverseReferencePropertyType(string className, string propName)
 	{
@@ -1217,7 +1237,7 @@ internal static class Throw
 															primaryName: className, memberName: propName));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void ReferencePropertyWithSetter(string className, string propName)
 	{
@@ -1225,7 +1245,7 @@ internal static class Throw
 															primaryName: className, memberName: propName));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void PropertyCantBeSetToNull(string className, string propName)
 	{
@@ -1233,7 +1253,7 @@ internal static class Throw
 															primaryName: className, memberName: propName));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void InvalidDeleteTargetAction(string className, string refName)
 	{
@@ -1241,7 +1261,7 @@ internal static class Throw
 															memberName: refName));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void PropertyReferencesUnknownClass(string className, string propName, string refClassName)
 	{
@@ -1249,7 +1269,7 @@ internal static class Throw
 															primaryName: className, memberName: propName, secondaryName: refClassName));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void StringPropertyCantHaveDefaultValue(string className, string propName)
 	{
@@ -1257,7 +1277,7 @@ internal static class Throw
 															primaryName: className, memberName: propName));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void InvalidDefaultValue(string className, string propName)
 	{
@@ -1265,7 +1285,7 @@ internal static class Throw
 															primaryName: className, memberName: propName));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void InverseReferencePropertyTargetsUnknownClass(string className, string propName, string targetClass)
 	{
@@ -1273,7 +1293,7 @@ internal static class Throw
 															primaryName: className, memberName: propName, secondaryName: targetClass));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void InverseReferencePropertyTargetsUnknownProperty(string className, string propName, string targetPropName)
 	{
@@ -1281,7 +1301,7 @@ internal static class Throw
 															primaryName: className, memberName: propName, secondaryName: targetPropName));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void InverseReferencePropertyTargetsUntrackedProperty(string className, string propName, string targetPropName)
 	{
@@ -1289,7 +1309,7 @@ internal static class Throw
 															primaryName: className, memberName: propName, secondaryName: targetPropName));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void InverseReferencePropertyTargetsInvalidClass(string className, string propName, string targetClass)
 	{
@@ -1297,35 +1317,35 @@ internal static class Throw
 															primaryName: className, memberName: propName, secondaryName: targetClass));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void MissingAttribute(string className)
 	{
 		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.MissingAttribute, primaryName: className));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void ClassWithoutNamespace(string className)
 	{
 		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.ClassWithoutNamespace, primaryName: className));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void MustInheritDatabaseObject(string className)
 	{
 		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.MustInheritDatabaseObject, primaryName: className));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void GenericClassNotSupported(string className)
 	{
 		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.GenericClassNotSupported, primaryName: className));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void InvalidInverseReferenceTarget(string className, string propertyName)
 	{
@@ -1333,21 +1353,21 @@ internal static class Throw
 			primaryName: className, memberName: propertyName));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void DatabaseClassNotPublic(string className)
 	{
 		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.DatabaseClassNotPublic, primaryName: className));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void MissingEmptyConstructor(string className)
 	{
 		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.MissingEmptyConstructor, primaryName: className));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void AbstractPropertyInNonAbstractClass(string className, string propName)
 	{
@@ -1355,7 +1375,7 @@ internal static class Throw
 															memberName: propName));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void AbstractMethodInNonAbstractClass(string className, string methodName)
 	{
@@ -1363,7 +1383,7 @@ internal static class Throw
 															memberName: methodName));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void AbstractEventInNonAbstractClass(string className, string eventName)
 	{
@@ -1371,21 +1391,21 @@ internal static class Throw
 															memberName: eventName));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void MissingGetter(string className, string propName)
 	{
 		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.MissingGetter, primaryName: className, memberName: propName));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void SetterFound(string className, string propName)
 	{
 		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.SetterFound, primaryName: className, memberName: propName));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void InverseRereferncePropertyIsNotAbstract(string className, string propName)
 	{
@@ -1393,7 +1413,7 @@ internal static class Throw
 															memberName: propName));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void PropertyIsNotAbstract(string className, string propName)
 	{
@@ -1401,7 +1421,7 @@ internal static class Throw
 															memberName: propName));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void PropertyMissingGetterAndSetter(string className, string propName)
 	{
@@ -1409,7 +1429,7 @@ internal static class Throw
 															memberName: propName));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void PropertyTypeInvalid(string className, string propName)
 	{
@@ -1417,7 +1437,7 @@ internal static class Throw
 															memberName: propName));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void FailedToCreateInstance(string className, string exception)
 	{
@@ -1425,14 +1445,14 @@ internal static class Throw
 															message: exception));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void InvalidInverseReferenceTarget(string apiName)
 	{
 		throw new DatabaseException(new DatabaseErrorDetail(DatabaseErrorType.InvalidInverseReferenceTarget, primaryName: apiName));
 	}
 
-	[DoesNotReturnAttribute]
+	[DoesNotReturn]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void DbAPIDefinitionException(Protocol.DbAPIDefinitionException exc)
 	{

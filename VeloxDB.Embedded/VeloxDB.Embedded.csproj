@@ -1,0 +1,66 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net8.0</TargetFramework>
+		<Platforms>x64</Platforms>
+		<AssemblyName>vlxdbem</AssemblyName>
+		<RootNamespace>VeloxDB.Embedded</RootNamespace>
+		<PackageOutputPath>$(VlxRootDir)\bin\nuget</PackageOutputPath>
+		<Company>VeloxDB</Company>
+		<Product>VeloxDB</Product>
+		<GenerateDocumentationFile>true</GenerateDocumentationFile>
+		<UseCommonOutputDirectory>true</UseCommonOutputDirectory>
+		<Authors>VeloxDB</Authors>
+		<PackageId>VeloxDB.Embedded</PackageId>
+		<PackageIcon>icon.png</PackageIcon>
+		<RepositoryUrl>https://github.com/VeloxDB/VeloxDB.git</RepositoryUrl>
+		<PackageProjectUrl>https://www.vlxdb.com</PackageProjectUrl>
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+		<Description>An object oriented database for building next generation solutions with .NET and C#.</Description>
+	</PropertyGroup>
+
+	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+		<GenerateSerializationAssemblies>Off</GenerateSerializationAssemblies>
+		<OutputPath>$(VlxRootDir)\bin</OutputPath>
+		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+		<NoWarn>$(NoWarn);1701;1702;CA1063;CA1416</NoWarn>
+		<DefineConstants>$(DefineConstants);TEST_BUILD;TTTRACE;X86_64</DefineConstants>
+	</PropertyGroup>
+
+	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|arm64'">
+		<GenerateSerializationAssemblies>Off</GenerateSerializationAssemblies>
+		<OutputPath>$(VlxRootDir)\bin</OutputPath>
+		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+		<DefineConstants>TRACE;ARM_64;TEST_BUILD</DefineConstants>
+		<NoWarn>$(NoWarn);1701;1702;CA1063;</NoWarn>
+	</PropertyGroup>
+
+	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+		<OutputPath>$(VlxRootDir)\bin</OutputPath>
+		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+		<GenerateSerializationAssemblies>Off</GenerateSerializationAssemblies>
+		<DefineConstants>$(DefineConstants);X86_64</DefineConstants>
+		<NoWarn>$(NoWarn);1701;1702;CA1063;CA1416;</NoWarn>
+	</PropertyGroup>
+
+	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|arm64'">
+		<OutputPath>$(VlxRootDir)\bin</OutputPath>
+		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+		<GenerateSerializationAssemblies>Off</GenerateSerializationAssemblies>
+		<DefineConstants>TRACE;ARM_64</DefineConstants>
+		<NoWarn>$(NoWarn);1701;1702;CA1063;</NoWarn>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\VeloxDB.Common\VeloxDB.Common.csproj" />
+		<ProjectReference Include="..\VeloxDB\VeloxDB.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+    <None Include="../LICENSE.txt" Pack="true" PackagePath="" />
+		<None Include="../README.md" Pack="true" PackagePath="" />
+    <None Include="../icon.png" Pack="true" PackagePath="" />
+  </ItemGroup>
+
+</Project>

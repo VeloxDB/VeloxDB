@@ -1,4 +1,4 @@
-
+﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.32112.339
@@ -21,6 +21,8 @@ EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "VeloxDB.SourceGenerator", "VeloxDB.SourceGenerator\VeloxDB.SourceGenerator.csproj", "{AFA18C5B-D3D1-44E2-9B92-1BFABE80C7C3}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ClientApp", "ClientApp\ClientApp.csproj", "{7DC338EB-4E36-4931-88B6-0A93215AF121}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VeloxDB.Embedded", "VeloxDB.Embedded\VeloxDB.Embedded.csproj", "{1CE2D1CA-4000-4360-866D-FB8F20A2A4A1}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -52,6 +54,10 @@ Global
 		{7DC338EB-4E36-4931-88B6-0A93215AF121}.Debug|x64.Build.0 = Debug|x64
 		{7DC338EB-4E36-4931-88B6-0A93215AF121}.Release|x64.ActiveCfg = Release|x64
 		{7DC338EB-4E36-4931-88B6-0A93215AF121}.Release|x64.Build.0 = Release|x64
+		{1CE2D1CA-4000-4360-866D-FB8F20A2A4A1}.Debug|x64.ActiveCfg = Debug|x64
+		{1CE2D1CA-4000-4360-866D-FB8F20A2A4A1}.Debug|x64.Build.0 = Debug|x64
+		{1CE2D1CA-4000-4360-866D-FB8F20A2A4A1}.Release|x64.ActiveCfg = Release|x64
+		{1CE2D1CA-4000-4360-866D-FB8F20A2A4A1}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
