@@ -7,6 +7,8 @@
 
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+		<OutputPath>$(VlxRootDir)\bin</OutputPath>
+		<RootNamespace>VeloxDB.Tests.Hermitage</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>

@@ -26,7 +26,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VeloxDB.Embedded", "VeloxDB
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Test", "Test", "{559969BB-0BBA-4B60-92DD-AA69E6E6E1F8}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Hermitage", "Test\Hermitage\Hermitage.csproj", "{701F891D-D8AC-45A0-9B59-CD61E891E768}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Hermitage", "Tests\Hermitage\Hermitage.csproj", "{701F891D-D8AC-45A0-9B59-CD61E891E768}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
