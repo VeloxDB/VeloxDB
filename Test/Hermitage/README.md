@@ -1,4 +1,3 @@
-```markdown
 # Hermitage Test for VeloxDB
 
 [Hermitage](https://github.com/ept/hermitage) is a database test suite designed to evaluate database isolation levels. It identifies various anomalies, and based on which anomalies are observed, you can determine the isolation level the database supports. Since VeloxDB supports only the serializable isolation level, no anomalies should be observed during these tests.
