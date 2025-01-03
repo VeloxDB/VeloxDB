@@ -34,13 +34,6 @@
 			<Exec Command="docfx build"/>
 		</Target>
 
-		<Target Name="ReplaceVersion" AfterTargets="Build">
-				<WriteLinesToFile	File="../bin/_site/download.html"
-				Lines="$([System.IO.File]::ReadAllText(../bin/_site/download.html).Replace('__vlxversion__','$(Version)'))"
-				Overwrite="true"
-				Encoding="UTF-8"/>
-		</Target>
-
 		<Target Name="Pack" DependsOnTargets="Build">
 			<ZipDirectory SourceDirectory="$(OutputPath)" DestinationFile="$(OutputPath)/../site.zip" Overwrite="true"/>
 		</Target>

@@ -3,9 +3,3 @@
 - name: API Documentation
   href: api/
   homepage: api/index.md
-- name: Services
-  href: services.md
-- name: Download
-  href: download.md
-- name: Contact
-  href: contact.md
