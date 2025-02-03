@@ -1,9 +1,9 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
-    <AssemblyName>vlxsg</AssemblyName>
-		<RootNamespace>VeloxDB.SourceGenerator</RootNamespace>
+    <AssemblyName>vlxcfp</AssemblyName>
+		<RootNamespace>VeloxDB.CodeFixProvider</RootNamespace>
 		<OutputPath>$(VlxRootDir)\bin</OutputPath>
     <Product>VeloxDB</Product>
     <Company>VeloxDB</Company>
@@ -21,15 +21,12 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.12.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.12.0" />
   </ItemGroup>
 
   <ItemGroup>
     <None Include="$(OutputPath)\$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
   </ItemGroup>
 
-	<ItemGroup>
-		<AdditionalFiles Include="AnalyzerReleases.Shipped.md" />
-		<AdditionalFiles Include="AnalyzerReleases.Unshipped.md" />
-	</ItemGroup>
 
 </Project>

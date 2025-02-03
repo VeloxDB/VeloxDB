@@ -10,6 +10,7 @@
 		<OutputPath>$(VlxRootDir)\bin</OutputPath>
 		<RootNamespace>VeloxDB.Tests.Hermitage</RootNamespace>
 		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <IsPackable>false</IsPackable>
   </PropertyGroup>
 
   <ItemGroup>

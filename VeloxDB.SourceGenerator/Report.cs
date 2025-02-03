@@ -161,6 +161,19 @@ namespace VeloxDB.SourceGenerator
 			"Classes '{0}' and '{1}' either both need to be abstract or both be non-abstract"
 		);
 
+		public static readonly DiagnosticDescriptor GenerateClientInterfaceDesc = CreateDesc(
+			"Generate Client Interface",
+			"Class '{0}' is marked with DbAPIAttribute. Use this rule to generate a client interface if needed.",
+			DiagnosticSeverity.Info);
+
+		public static readonly DiagnosticDescriptor DbAPIClassMustBePublicDesc = CreateDesc(
+			"DbAPI class must be public",
+			"The class '{0}' marked with DbAPIAttribute must be public");
+
+		public static readonly DiagnosticDescriptor DbAPIOperationMustBePublicDesc = CreateDesc(
+			"DbAPI operation must be public",
+			"The method '{0}' marked with DbAPIOperationAttribute must be public");
+
 		static int errorId = 0;
 
 		private static DiagnosticDescriptor CreateDesc(string title, string message, DiagnosticSeverity severity = DiagnosticSeverity.Error)
@@ -168,114 +181,114 @@ namespace VeloxDB.SourceGenerator
 			return new DiagnosticDescriptor($"VLX{++errorId:000}", title, message, "VLX", severity, true);
 		}
 
-		public static void InvalidArrayType(Context context, IPropertySymbol property)
+		public static void InvalidArrayType(BaseContext context, IPropertySymbol property)
 		{
 			context.Report(InvalidArrayTypeDesc, property);
 		}
 
-		public static void ClassMustBeBoth(Context context, INamedTypeSymbol type)
+		public static void ClassMustBeBoth(BaseContext context, INamedTypeSymbol type)
 		{
 			context.Report(ClassMustBeBothDesc, type, type.ToString());
 		}
 
-		public static void ClassWithoutNamespace(Context context, INamedTypeSymbol type)
+		public static void ClassWithoutNamespace(BaseContext context, INamedTypeSymbol type)
 		{
 			context.Report(ClassWithoutNamespaceDesc,type, type.ToString());
 		}
 
-		public static void GenericClassNotSupported(Context context, INamedTypeSymbol type)
+		public static void GenericClassNotSupported(BaseContext context, INamedTypeSymbol type)
 		{
 			context.Report(GenericClassNotSupportedDesc,type, type.ToString());
 		}
 
-		public static void InvalidPropertyType(Context context, IPropertySymbol property)
+		public static void InvalidPropertyType(BaseContext context, IPropertySymbol property)
 		{
 			context.Report(InvalidPropertyTypeDesc, property, property.Name, property.ContainingType.ToString());
 		}
 
-		public static void FailedToMatchProperty(Context context, IPropertySymbol property)
+		public static void FailedToMatchProperty(BaseContext context, IPropertySymbol property)
 		{
 			context.Report(FailedToMatchPropertyDesc, property, property.Name, property.ContainingType.ToString());
 		}
 
-		public static void PropertyTypeMismatch(Context context, IPropertySymbol dboProperty, IPropertySymbol dtoProperty)
+		public static void PropertyTypeMismatch(BaseContext context, IPropertySymbol dboProperty, IPropertySymbol dtoProperty)
 		{
 			context.Report(PropertyTypeMismatchDesc, dtoProperty, dtoProperty.Type, dboProperty.Type);
 		}
 
-		public static void ReferenceMustBeDatabaseObject(Context context, IPropertySymbol property)
+		public static void ReferenceMustBeDatabaseObject(BaseContext context, IPropertySymbol property)
 		{
 			context.Report(ReferenceMustBeDatabaseObjectDesc, property, property.Type.ToString());
 		}
 
-		public static void DatabaseClassIsNotAbstract(Context context, INamedTypeSymbol type)
+		public static void DatabaseClassIsNotAbstract(BaseContext context, INamedTypeSymbol type)
 		{
 			context.Report(DatabaseClassIsNotAbstractDesc, type, type.ToString());
 		}
 
-		public static void InvalidFromArgument(Context context, IMethodSymbol method, INamedTypeSymbol type, string position)
+		public static void InvalidFromArgument(BaseContext context, IMethodSymbol method, INamedTypeSymbol type, string position)
 		{
 			context.Report(InvalidFromArgumentDesc, method, method.ToString(), type.ToString(), position);
 		}
 
-		public static void InvalidArgumentsForFromMethod(Context context, IMethodSymbol methodSym)
+		public static void InvalidArgumentsForFromMethod(BaseContext context, IMethodSymbol methodSym)
 		{
 			context.Report(InvalidArgumentsForFromMethodDesc, methodSym, methodSym.ToString(), methodSym.ContainingType.ToString());
 		}
 
-		public static void FromMethodMustBeStatic(Context context, IMethodSymbol methodSym)
+		public static void FromMethodMustBeStatic(BaseContext context, IMethodSymbol methodSym)
 		{
 			context.Report(FromMethodMustBeStaticDesc, methodSym, methodSym.ToString(), methodSym.ContainingType.ToString());
 		}
 
-		public static void ReturnTypeMustBeTheSame(Context context, IMethodSymbol methodSym)
+		public static void ReturnTypeMustBeTheSame(BaseContext context, IMethodSymbol methodSym)
 		{
 			context.Report(ReturnTypeMustBeTheSameDesc, methodSym, methodSym.ToString(), methodSym.ContainingType.ToString());
 		}
 
-		public static void InvalidRefArrayType(Context context, IPropertySymbol property)
+		public static void InvalidRefArrayType(BaseContext context, IPropertySymbol property)
 		{
 			context.Report(InvalidRefArrayTypeDesc, property);
 		}
 
-		public static void NotYetSupported(Context context, string message, ISymbol symbol)
+		public static void NotYetSupported(BaseContext context, string message, ISymbol symbol)
 		{
 			context.Report(NotYetSupportedDesc, symbol, message);
 		}
 
-		public static void InvalidInverseReferenceType(Context context, IPropertySymbol property)
+		public static void InvalidInverseReferenceType(BaseContext context, IPropertySymbol property)
 		{
 			context.Report(InvalidInverseReferenceTypeDesc, property, property.Name);
 		}
 
-		public static void InvalidInverseReferenceProperty(Context context, IPropertySymbol property, string message)
+		public static void InvalidInverseReferenceProperty(BaseContext context, IPropertySymbol property, string message)
 		{
 			context.Report(InvalidInverseReferencePropertyDesc, property, message);
 		}
 
-		public static void InvalidDTOType(Context context, IMethodSymbol methodSym)
+		public static void InvalidDTOType(BaseContext context, IMethodSymbol methodSym)
 		{
 			context.Report(InvalidDTOTypeDesc, methodSym);
 		}
 
-		public static void ToMethodHasArguments(Context context, IMethodSymbol methodSym)
+		public static void ToMethodHasArguments(BaseContext context, IMethodSymbol methodSym)
 		{
 			context.Report(ToMethodHasArgumentsDesc, methodSym);
 		}
 
-		public static void ToMethodCantBeVirtual(Context context, IMethodSymbol methodSym)
+		public static void ToMethodCantBeVirtual(BaseContext context, IMethodSymbol methodSym)
 		{
 			context.Report(ToMethodCantBeVirtualDesc, methodSym);
 		}
 
-		public static void ToMethodCantBeStatic(Context context, IMethodSymbol methodSym)
+		public static void ToMethodCantBeStatic(BaseContext context, IMethodSymbol methodSym)
 		{
 			context.Report( ToMethodCantBeStaticDesc, methodSym);
 		}
 
 		private static HashSet<IMethodSymbol> reported = new HashSet<IMethodSymbol>(SymbolEqualityComparer.Default);
 
-		public static void MissingSupportPolymorphism(Context context, IMethodSymbol methodSym)
+		public static void MissingSupportPolymorphism(BaseContext context, IMethodSymbol methodSym)
 		{
 			if(reported.Contains(methodSym))
 				return;
@@ -285,71 +298,86 @@ namespace VeloxDB.SourceGenerator
 			context.Report(MissingSupportPolymorphismDesc, methodSym, methodSym.ToString());
 		}
 
-		public static void MissingPolymorphicMethod(Context context, INamedTypeSymbol type, IMethodSymbol method)
+		public static void MissingPolymorphicMethod(BaseContext context, INamedTypeSymbol type, IMethodSymbol method)
 		{
 			context.Report(MissingPolymorphicMethodDesc, type, type.ToString(), method.Name, method.ContainingType.ToString());
 		}
 
-		public static void SupportPolymorphismAlreadyDeclared(Context context, IMethodSymbol method, IMethodSymbol baseMethod)
+		public static void SupportPolymorphismAlreadyDeclared(BaseContext context, IMethodSymbol method, IMethodSymbol baseMethod)
 		{
 			context.Report(SupportPolymorphismAlreadyDeclaredDesc, method, method.ToString(), baseMethod.ToString());
 		}
 
-		public static void InvalidDTOInheritance(Context context, IMethodSymbol method, INamedTypeSymbol dtoType, INamedTypeSymbol parentDtoType)
+		public static void InvalidDTOInheritance(BaseContext context, IMethodSymbol method, INamedTypeSymbol dtoType, INamedTypeSymbol parentDtoType)
 		{
 			context.Report(InvalidDTOInheritanceDesc, method, dtoType.ToString(), parentDtoType.ToString());
 		}
 
-		public static void DuplicateDTOType(Context context, IMethodSymbol method, INamedTypeSymbol type, IMethodSymbol origin)
+		public static void DuplicateDTOType(BaseContext context, IMethodSymbol method, INamedTypeSymbol type, IMethodSymbol origin)
 		{
 			context.Report(DuplicateDTOTypeDesc, method, type.ToString(), origin.ToString());
 		}
 
-		public static void ReferencedTypeMissingMethod(Context context, IPropertySymbol property, INamedTypeSymbol type, string methodName,
+		public static void ReferencedTypeMissingMethod(BaseContext context, IPropertySymbol property, INamedTypeSymbol type, string methodName,
 													   INamedTypeSymbol dtoType)
 		{
 			context.Report(ReferencedTypeMissingMethodDesc, property, type.ToString(), methodName, dtoType.ToString());
 		}
 
-		public static void MethodTypeMismatch(Context context, IPropertySymbol property, IMethodSymbol method, INamedTypeSymbol dtoType)
+		public static void MethodTypeMismatch(BaseContext context, IPropertySymbol property, IMethodSymbol method, INamedTypeSymbol dtoType)
 		{
 			context.Report(MethodTypeMismatchDesc, property, method.Name, method.ContainingType.ToString(), method.ReturnType.ToString(),
 						   dtoType.ToString());
 		}
 
-		public static void InaccessibleReferencedType(Context context, INamedTypeSymbol type, IMethodSymbol refMethod)
+		public static void InaccessibleReferencedType(BaseContext context, INamedTypeSymbol type, IMethodSymbol refMethod)
 		{
 			context.Report(InaccessibleReferencedTypeDesc, refMethod, refMethod.Name, refMethod.ContainingType.ToString(), type.ToString());
 		}
 
-		public static void OverloadNotSupported(Context context, IMethodSymbol methodSym)
+		public static void OverloadNotSupported(BaseContext context, IMethodSymbol methodSym)
 		{
 			context.Report(OverloadNotSupportedDesc, methodSym, methodSym.Name);
 		}
 
-		public static void PropertyAlreadyMatched(Context context, IPropertySymbol property)
+		public static void PropertyAlreadyMatched(BaseContext context, IPropertySymbol property)
 		{
 			context.Report(PropertyAlreadyMatchedDesc, property, property.Name);
 		}
 
-		public static void UnexpectedReference(Context context, IPropertySymbol property)
+		public static void UnexpectedReference(BaseContext context, IPropertySymbol property)
 		{
 			context.Report(UnexpectedReferenceDesc, property, property.Name);
 		}
 
-		public static void NullableReturnType(Context context, IMethodSymbol methodSym)
+		public static void NullableReturnType(BaseContext context, IMethodSymbol methodSym)
 		{
 			context.Report(NullableReturnTypeDesc, methodSym, methodSym.Name);
 		}
 
-		public static void ParentIsNotAbstract(Context context, INamedTypeSymbol type)
+		public static void ParentIsNotAbstract(BaseContext context, INamedTypeSymbol type)
 		{
 			context.Report(ParentIsNotAbstractDesc, type, type.ToString(), type.BaseType.ToString());
 		}
 
-		public static void DBOAndDTOAbstractMismatch(Context context, ITypeSymbol dtoType, INamedTypeSymbol dboType)
+		public static void DBOAndDTOAbstractMismatch(BaseContext context, ITypeSymbol dtoType, INamedTypeSymbol dboType)
 		{
 			context.Report(DBOAndDTOAbstractMismatchDesc, dtoType, dboType.ToString(), dtoType.ToString());
+		}
+
+		public static void GenerateClientInterface(BaseContext context, INamedTypeSymbol type)
+		{
+			context.Report(GenerateClientInterfaceDesc, type, type.Name);
+		}
+
+		public static void DbAPIClassMustBePublic(BaseContext context, INamedTypeSymbol symbol)
+		{
+			context.Report(DbAPIClassMustBePublicDesc, symbol, symbol.ToString());
+		}
+
+		public static void DbAPIOperationMustBePublic(BaseContext context, IMethodSymbol method)
+		{
+			context.Report(DbAPIOperationMustBePublicDesc, method, method.ToString());
 		}
 	}
 }

@@ -6,7 +6,8 @@ using Microsoft.CodeAnalysis.Text;
 
 namespace VeloxDB.SourceGenerator
 {
-	[Generator]
+
+	[Generator(LanguageNames.CSharp)]
 	public sealed class AutoMapperGenerator : ISourceGenerator
 	{
 		public const int AbsoluteMaxGraphDepth = 200;

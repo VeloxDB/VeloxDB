@@ -2,14 +2,45 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.Diagnostics;
 using Microsoft.CodeAnalysis.Operations;
 using static VeloxDB.SourceGenerator.Utils;
 
 namespace VeloxDB.SourceGenerator
 {
-	internal sealed class Context
+	internal abstract class BaseContext
 	{
-		GeneratorExecutionContext genctx;
+		public abstract void Report(DiagnosticDescriptor descriptor, ISymbol locSymbol, params object[] messageArgs);
+
+		protected static Location GetLocation(ISymbol locSymbol)
+		{
+			if(locSymbol.Locations.Length == 0)
+				return null;
+
+			return locSymbol.Locations[0];
+		}
+
+	}
+
+	internal sealed class SymContext : BaseContext
+	{
+		private Microsoft.CodeAnalysis.Diagnostics.SymbolAnalysisContext context;
+
+		public SymContext(Microsoft.CodeAnalysis.Diagnostics.SymbolAnalysisContext context)
+		{
+			this.context = context;
+		}
+
+		public override void Report(DiagnosticDescriptor descriptor, ISymbol locSymbol, params object[] messageArgs)
+		{
+			context.ReportDiagnostic(Diagnostic.Create(descriptor, GetLocation(locSymbol), messageArgs));
+		}
+
+	}
+
+	internal sealed class Context : BaseContext
+	{
+		private GeneratorExecutionContext genctx;
 
 		public ContextTypes Types { get; private set; }
 		public CancellationToken CancellationToken => genctx.CancellationToken;
@@ -21,17 +52,9 @@ namespace VeloxDB.SourceGenerator
 			Types = new ContextTypes(generatorContext.Compilation);
 		}
 
-		public void Report(DiagnosticDescriptor descriptor, ISymbol locSymbol, params object[] messageArgs)
+		public override void Report(DiagnosticDescriptor descriptor, ISymbol locSymbol, params object[] messageArgs)
 		{
 			genctx.ReportDiagnostic(Diagnostic.Create(descriptor, GetLocation(locSymbol), messageArgs));
-		}
-
-		private Location GetLocation(ISymbol locSymbol)
-		{
-			if(locSymbol.DeclaringSyntaxReferences.Length == 0)
-				return null;
-
-			return locSymbol.DeclaringSyntaxReferences[0].GetSyntax().GetLocation();
 		}
 
 		public class ContextTypes

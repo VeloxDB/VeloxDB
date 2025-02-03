@@ -4,5 +4,6 @@
 	</Target>
 	<Target Name="BuildSourceGen" BeforeTargets="GenerateNuspec">
 		<Exec Command="dotnet build /p:Platform=x64 -c Release" WorkingDirectory="$(ProjectDir)/../VeloxDB.SourceGenerator"/>
+		<Exec Command="dotnet build /p:Platform=x64 -c Release" WorkingDirectory="$(ProjectDir)/../VeloxDB.CodeFixProvider"/>
 	</Target>
 </Project>

@@ -28,6 +28,7 @@
 		<file src="$vlxrootdir$bin/vlxdb.dll" target="lib/net8.0"/>
 		<file src="$vlxrootdir$bin/vlxdb.xml" target="lib/net8.0"/>
 		<file src="$vlxrootdir$bin/vlxsg.dll" target="analyzers/dotnet/cs"/>
+		<file src="$vlxrootdir$bin/vlxcfp.dll" target="analyzers/dotnet/cs"/>
 		<file src="$vlxdbsrv_temp$" target="tools"/>
 		<file src="$vlxrootdir$Public/Server/Host/DotnetToolSettings.xml" target="tools"/>
 		<file src="nuget/VeloxDB.targets" target="build"/>

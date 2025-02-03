@@ -28,6 +28,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Test", "Test", "{559969BB-0
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Hermitage", "Tests\Hermitage\Hermitage.csproj", "{701F891D-D8AC-45A0-9B59-CD61E891E768}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VeloxDB.CodeFixProvider", "VeloxDB.CodeFixProvider\VeloxDB.CodeFixProvider.csproj", "{415B3D2C-0993-42AF-A7E4-1E1F8DC88FBC}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -66,6 +68,10 @@ Global
 		{701F891D-D8AC-45A0-9B59-CD61E891E768}.Debug|x64.Build.0 = Debug|Any CPU
 		{701F891D-D8AC-45A0-9B59-CD61E891E768}.Release|x64.ActiveCfg = Release|Any CPU
 		{701F891D-D8AC-45A0-9B59-CD61E891E768}.Release|x64.Build.0 = Release|Any CPU
+		{415B3D2C-0993-42AF-A7E4-1E1F8DC88FBC}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{415B3D2C-0993-42AF-A7E4-1E1F8DC88FBC}.Debug|x64.Build.0 = Debug|Any CPU
+		{415B3D2C-0993-42AF-A7E4-1E1F8DC88FBC}.Release|x64.ActiveCfg = Release|Any CPU
+		{415B3D2C-0993-42AF-A7E4-1E1F8DC88FBC}.Release|x64.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
