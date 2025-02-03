@@ -303,6 +303,8 @@ internal sealed class Server : IDisposable
 		Checker.AssertNotNull(execHost, engine, ctxPool);
 		object[] apis = CreateExecutionApis(loadedAssemblies.Loaded);
 
+		LogAPIs(loadedAssemblies.Loaded.Length, apis.Length);
+
 		HostedModel? oldHostedModel = hostedModel;
 		hostedModel = new HostedModel(engine, ctxPool, modelVersionGuid, assemblyVersionGuid, modelDesc, loadedAssemblies);
 
@@ -312,6 +314,21 @@ internal sealed class Server : IDisposable
 		execHost.HostService(string.Empty, typeof(ObjectModel), apis, hostedModel.ExecutionRequestCallback,
 			engine.AssemblyVersionGuid.ToGuid(), new AssemblyProvider(loadedAssemblies.Loaded),
 			serializerManager, deserializerManager, discoveryContext, !isPrimary);
+	}
+
+	private static void LogAPIs(int loadedAssemblies, int loadedApis)
+	{
+		if (loadedAssemblies != 0)
+		{
+			if (loadedApis == 0)
+			{
+				Tracing.Warning("No APIs were found to host in the {0} loaded assemblies.", loadedAssemblies.Loaded.Length);
+			}
+			else
+			{
+				Tracing.Info("Hosting {0} APIs.", loadedApis);
+			}
+		}
 	}
 
 	private object[] CreateExecutionApis(Assembly[] assemblies)
