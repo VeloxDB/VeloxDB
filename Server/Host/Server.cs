@@ -322,7 +322,7 @@ internal sealed class Server : IDisposable
 		{
 			if (loadedApis == 0)
 			{
-				Tracing.Warning("No APIs were found to host in the {0} loaded assemblies.", loadedAssemblies.Loaded.Length);
+				Tracing.Warning("No APIs were found to host in the {0} loaded assemblies.", loadedAssemblies);
 			}
 			else
 			{
