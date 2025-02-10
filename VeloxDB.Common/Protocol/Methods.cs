@@ -182,7 +182,7 @@ internal static class Methods
 
 		TypeSerializerEntry e = context.SerializerManager.GetTypeSerializer(value.GetType());
 		if (e == null)
-			throw new DbAPIMismatchException();
+			throw new DbAPIMismatchException($"Type {value.GetType().FullName} is not supported by the serializer.");
 
 		writer.WriteUShort(e.TypeDesc.Id);
 		e.Delegate(writer, value, context, depth);
@@ -196,7 +196,7 @@ internal static class Methods
 			return null;
 
 		if (typeId >= deserializerTable.Length || deserializerTable[typeId] == null)
-			throw new DbAPIMismatchException();
+			throw new DbAPIMismatchException($"Type with ID {typeId} is not supported by the deserializer.");
 
 		ProtocolDeserializeDelegate d = (deserializerTable[typeId] as ProtocolDeserializeDelegate);
 		if (d != null)

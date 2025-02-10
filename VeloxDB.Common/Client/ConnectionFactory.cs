@@ -135,7 +135,7 @@ public static class ConnectionFactory
 		Delegate serializer = serverInterfaceEntry.Serializers[operationId];
 		Delegate deserializer = serverInterfaceEntry.Deserializers[operationId];
 		if (serializer == null || deserializer == null)
-			throw new DbAPIMismatchException();
+			throw new DbAPIMismatchException(serverInterfaceEntry.OperationMismatchReason[operationId]);
 
 		return new OperationData()
 		{
@@ -632,15 +632,18 @@ public static class ConnectionFactory
 	{
 		Delegate[] serializers;
 		Delegate[] deserializers;
+		string[] operationMismatchReason;
 
-		public ServerInterfaceEntry(Delegate[] serializers, Delegate[] deserializers)
+		public ServerInterfaceEntry(Delegate[] serializers, Delegate[] deserializers, string[] operationMismatchReason)
 		{
 			this.serializers = serializers;
 			this.deserializers = deserializers;
+			this.operationMismatchReason = operationMismatchReason;
 		}
 
 		public Delegate[] Serializers => serializers;
 		public Delegate[] Deserializers => deserializers;
+		public string[] OperationMismatchReason => operationMismatchReason;
 	}
 
 	private sealed class ServerEntry
@@ -701,17 +704,29 @@ public static class ConnectionFactory
 
 			ProtocolInterfaceDescriptor serverInterfaceDesc = protocolDescriptor.GetInterface(clientInterfaceDesc.Name);
 			if (serverInterfaceDesc == null)
-				throw new DbAPINotFoundException();
+				throw new DbAPINotFoundException(clientInterfaceDesc.Name);
 
 			Delegate[] serializers = new Delegate[clientInterfaceDesc.Operations.Length];
 			Delegate[] deserializers = new Delegate[clientInterfaceDesc.Operations.Length];
+			string[] operationMismatchReason = new string[clientInterfaceDesc.Operations.Length];
+
 			serverInterfaceDesc.TargetType = clientInterfaceDesc.TargetType;
 			for (int i = 0; i < clientInterfaceDesc.Operations.Length; i++)
 			{
 				ProtocolOperationDescriptor clientOpDesc = clientInterfaceDesc.Operations[i];
 				ProtocolOperationDescriptor serverOpDesc = serverInterfaceDesc.GetOperationByName(clientOpDesc.Name);
-				if (serverOpDesc != null && clientOpDesc.IsMatch(serverOpDesc, matchedTypes))
-					serverOpDesc.TargetMethod = clientOpDesc.TargetMethod;
+				if (serverOpDesc != null)
+				{					
+					if(clientOpDesc.IsMatch(serverOpDesc, matchedTypes, out string mismatchReason))
+						serverOpDesc.TargetMethod = clientOpDesc.TargetMethod;
+					else
+						operationMismatchReason[i] =  $"The operation {clientOpDesc.Name} exists in server interface {serverInterfaceDesc.Name} but there is a mismatch: {mismatchReason}";
+				}
+				else
+				{
+					operationMismatchReason[i] = $"The operation {clientOpDesc.Name} not found in server interface {serverInterfaceDesc.Name}.";
+				}
+
 			}
 
 			MapServerTypes(serverInterfaceDesc, inTypes, true);
@@ -738,7 +753,7 @@ public static class ConnectionFactory
 			}
 
 			deserializerTable = deserializerManager.GetDeserializerTable();
-			return new ServerInterfaceEntry(serializers, deserializers);
+			return new ServerInterfaceEntry(serializers, deserializers, operationMismatchReason);
 		}
 
 		private Delegate CreateDeserializerDelegate(MethodInfo methodInfo)

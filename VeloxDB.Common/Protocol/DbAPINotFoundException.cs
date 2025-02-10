@@ -8,5 +8,17 @@ namespace VeloxDB.Protocol;
 public class DbAPINotFoundException : DbAPIErrorException
 {
 	///
-	public DbAPINotFoundException() : base("Unknown database API requested.") { }
+	/// <summary>
+	/// Initializes a new instance of the <see cref="DbAPINotFoundException"/> class with a specified error message.
+	/// </summary>
+	/// <param name="unkownApi">The name of the database API that was not found.</param>
+	public DbAPINotFoundException(string unkownApi) : base($"Unknown database API: {unkownApi}")
+	{
+		this.UnknownAPI = unkownApi;
+	}
+
+	/// <summary>
+	/// Gets the name of the database API that was not found.
+	/// </summary>
+	public string UnknownAPI { get; private set; }
 }

@@ -9,7 +9,13 @@ public sealed class DbAPIMismatchException : DbAPIErrorException
 {
 	///
 	public DbAPIMismatchException() :
-		base("Operation could not be executed because of the mismatch in client and server API definitions.")
+		base("The operation could not be executed due to a mismatch between the client and server API definitions.")
+	{
+	}
+
+	///
+	public DbAPIMismatchException(string reason) :
+		base($"The operation could not be executed due to a mismatch between the client and server API definitions. {reason}")
 	{
 	}
 }

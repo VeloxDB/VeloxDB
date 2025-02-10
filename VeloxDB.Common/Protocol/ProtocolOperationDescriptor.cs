@@ -176,30 +176,53 @@ internal sealed class ProtocolOperationDescriptor
 		return p;
 	}
 
-	public bool IsMatch(ProtocolOperationDescriptor operDesc, Dictionary<ProtocolTypeDescriptor, bool> checkedTypes)
+	public bool IsMatch(ProtocolOperationDescriptor operDesc, Dictionary<ProtocolTypeDescriptor, bool> checkedTypes, out string mismatchReason)
 	{
-		Checker.AssertTrue(name.Equals(operDesc.Name));
+		mismatchReason = null;
+
 		if (!name.Equals(operDesc.Name))
+		{
+			mismatchReason = $"Name mismatch: {name} != {operDesc.Name}";
 			return false;
+		}
 
 		if (operationType != operDesc.operationType)
+		{
+			mismatchReason = $"OperationType mismatch: {operationType} != {operDesc.operationType}";
 			return false;
+		}
 
 		if (objectGraphSupport != operDesc.objectGraphSupport)
+		{
+			mismatchReason = $"ObjectGraphSupport mismatch: {objectGraphSupport} != {operDesc.objectGraphSupport}";
 			return false;
+		}
 
 		if (inputParameters.Length != operDesc.inputParameters.Length)
+		{
+			mismatchReason = $"Argument length mismatch: {inputParameters.Length} != {operDesc.inputParameters.Length}";
 			return false;
+		}
 
 		for (int i = 0; i < inputParameters.Length; i++)
 		{
 			if (!inputParameters[i].IsMatch(operDesc.inputParameters[i], true, checkedTypes))
+			{
+				mismatchReason = $"Argument {inputParameters[i].Name} type mismatch";
 				return false;
+			}
 		}
 
-		return returnValue.IsMatch(operDesc.returnValue, false, checkedTypes);
-	}
+		if (!returnValue.IsMatch(operDesc.returnValue, false, checkedTypes))
+		{
+			mismatchReason = "Return value mismatch";
+			return false;
+		}
 
+		return true;
+	}
+	
+	// Add to string here
 	private static string GetOperationName(MethodInfo method)
 	{
 		DbAPIOperationAttribute cta = (DbAPIOperationAttribute)method.GetCustomAttribute(typeof(DbAPIOperationAttribute));
