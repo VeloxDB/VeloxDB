@@ -388,7 +388,7 @@ internal unsafe sealed partial class SortedIndex
 				while (true)
 				{
 					// We need volatile read, otherwise compiler might optimize this read and the one after this
-					int seenVersion = Thread.VolatileRead(ref this.version);
+					int seenVersion = Volatile.Read(ref this.version);
 
 					RWLock sync = this.sync;
 #if !X86_64

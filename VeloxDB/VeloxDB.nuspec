@@ -16,7 +16,7 @@
     <tags>Database;RDBMS;ORM</tags>
 		<readme>$readme$</readme>
 		<dependencies>
-      <group targetFramework="net8.0">
+      <group targetFramework="net9.0">
 				<dependency id="VeloxDB.Protocol" version="$version$"/>
 			</group>
     </dependencies>
@@ -25,8 +25,8 @@
 		</contentFiles>
   </metadata>
 	<files>
-		<file src="$vlxrootdir$bin/vlxdb.dll" target="lib/net8.0"/>
-		<file src="$vlxrootdir$bin/vlxdb.xml" target="lib/net8.0"/>
+		<file src="$vlxrootdir$bin/vlxdb.dll" target="lib/net9.0"/>
+		<file src="$vlxrootdir$bin/vlxdb.xml" target="lib/net9.0"/>
 		<file src="$vlxrootdir$bin/vlxsg.dll" target="analyzers/dotnet/cs"/>
 		<file src="$vlxrootdir$bin/vlxcfp.dll" target="analyzers/dotnet/cs"/>
 		<file src="$vlxdbsrv_temp$" target="tools"/>

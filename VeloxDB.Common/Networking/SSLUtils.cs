@@ -6,9 +6,14 @@ internal class SSLUtils
 {
 	public static X509Certificate2 LoadCertificate(string path, string password = "", bool onlyPublicKey = false)
 	{
-		if (onlyPublicKey || path.EndsWith(".pfx"))
+		if(path.EndsWith(".pfx"))
 		{
-			return new X509Certificate2(path, password);
+			return X509CertificateLoader.LoadPkcs12FromFile(path, password);
+		}
+
+		if (onlyPublicKey)
+		{
+			return X509CertificateLoader.LoadCertificateFromFile(path);
 		}
 		else
 		{

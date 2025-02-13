@@ -64,7 +64,7 @@ internal sealed class MonitorClusterStatusCommand : Command
 		while (true)
 		{
 			Thread.Sleep(100);
-			if (Console.KeyAvailable)
+			if (!ReadLine.IsRedirectedOrAlternate && Console.KeyAvailable)
 			{
 				if (Console.ReadKey(true).Key == ConsoleKey.Q)
 				{

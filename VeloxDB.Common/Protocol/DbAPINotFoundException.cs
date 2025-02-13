@@ -8,6 +8,11 @@ namespace VeloxDB.Protocol;
 public class DbAPINotFoundException : DbAPIErrorException
 {
 	///
+	public DbAPINotFoundException()
+	{
+	}
+
+	///
 	/// <summary>
 	/// Initializes a new instance of the <see cref="DbAPINotFoundException"/> class with a specified error message.
 	/// </summary>

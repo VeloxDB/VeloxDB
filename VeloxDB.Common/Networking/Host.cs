@@ -103,7 +103,7 @@ internal sealed class Host
 
 				Stop();
 				if (NativeSocket.IsAddressAlreadyInUseError(e.ErrorCode))
-					throw new AddressAlreadyInUseException("Address is already in use.", e);
+					throw new AddressAlreadyInUseException($"Address {endpoints[i]} is already in use.", e);
 				else
 					throw new CommunicationException("Error occurred while creating the listening socket.", e);
 			}
