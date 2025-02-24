@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-		<PackageReference Include="veloxdb.embedded" Version="0.4.0" />
+		<PackageReference Include="veloxdb.embedded" Version="0.5.0" />
   </ItemGroup>
 
   <PropertyGroup>
