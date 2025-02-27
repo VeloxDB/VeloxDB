@@ -7,7 +7,7 @@
 		<OutputPath>$(VlxRootDir)\bin</OutputPath>
     <Product>VeloxDB</Product>
     <Company>VeloxDB</Company>
-		<Copyright>Copyright © 2023 VeloxDB. All rights reserved.</Copyright>
+		<Copyright>Copyright © 2025 VeloxDB. All rights reserved.</Copyright>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
 		<UseCommonOutputDirectory>true</UseCommonOutputDirectory>
 		<GenerateRuntimeConfigDevFile>true</GenerateRuntimeConfigDevFile>
