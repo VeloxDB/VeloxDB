@@ -41,14 +41,23 @@ internal class RedisMobilityService : IMobilityService
     public async Task<long[]> InsertVehicles(VehicleDTO[] vehicleDTOs)
     {
         var vehicleIds = new long[vehicleDTOs.Length];
+        IBatch batch = redis.CreateBatch();
+        Task[] tasks = new Task[vehicleDTOs.Length];
+
         for (int i = 0; i < vehicleDTOs.Length; i++)
         {
             vehicleIds[i] = GenerateId();
             var json = JsonSerializer.Serialize(vehicleDTOs[i]);
-            await redis.HashSetAsync($"vehicle:{vehicleIds[i]}", [new("data", json),
-                                                                  new("PositionX", vehicleDTOs[i].PositionX),
-                                                                  new("PositionY", vehicleDTOs[i].PositionY)]);
+            tasks[i] = batch.HashSetAsync($"vehicle:{vehicleIds[i]}", new HashEntry[]
+            {
+                new HashEntry("data", json),
+                new HashEntry("PositionX", vehicleDTOs[i].PositionX),
+                new HashEntry("PositionY", vehicleDTOs[i].PositionY)
+            });
         }
+
+        batch.Execute();
+        await Task.WhenAll(tasks);
         return vehicleIds;
     }
 
@@ -74,33 +83,34 @@ internal class RedisMobilityService : IMobilityService
 
     public async Task DeleteVehicles(long[] vehicleIds)
     {
-		IBatch batch = redis.CreateBatch();
+        IBatch batch = redis.CreateBatch();
 
-		Task<RedisValue[]>[] rideIdsTasks = new Task<RedisValue[]>[vehicleIds.Length];
+        Task<RedisValue[]>[] rideIdsTasks = new Task<RedisValue[]>[vehicleIds.Length];
 
-		for (int i = 0; i < vehicleIds.Length; i++)
+        for (int i = 0; i < vehicleIds.Length; i++)
         {
-			long vehicleId = vehicleIds[i];
-			rideIdsTasks[i] = batch.SetMembersAsync($"vehicle:{vehicleId}:rides");
+            long vehicleId = vehicleIds[i];
+            rideIdsTasks[i] = batch.SetMembersAsync($"vehicle:{vehicleId}:rides");
         }
 
-		batch.Execute();
+        batch.Execute();
 
-		List<RedisKey> keys = new List<RedisKey>(vehicleIds.Length*2);
+        List<RedisKey> keys = new List<RedisKey>(vehicleIds.Length * 3);
 
-		for (int i = 0; i < rideIdsTasks.Length; i++)
-		{
-			RedisValue[] rideIds = await rideIdsTasks[i];
-			foreach (var rideId in rideIds)
-			{
-				keys.Add(new RedisKey($"ride:{rideId}"));
-			}
-		}
+        for (int i = 0; i < rideIdsTasks.Length; i++)
+        {
+            RedisValue[] rideIds = await rideIdsTasks[i];
+            foreach (var rideId in rideIds)
+            {
+                keys.Add(new RedisKey($"ride:{rideId}"));
+            }
+        }
 
         for (var i = 0; i < vehicleIds.Length; i++)
         {
             long id = vehicleIds[i];
             keys.Add(new RedisKey($"vehicle:{id}"));
+            keys.Add(new RedisKey($"vehicle:{id}:rides"));
         }
 
         await redis.KeyDeleteAsync(keys.ToArray());
@@ -109,14 +119,23 @@ internal class RedisMobilityService : IMobilityService
     public async Task<long[]> InsertRides(RideDTO[] rideDTOs)
     {
         var rideIds = new long[rideDTOs.Length];
+        IBatch batch = redis.CreateBatch();
+        Task[] tasks = new Task[rideDTOs.Length*2];
+
         for (int i = 0; i < rideDTOs.Length; i++)
         {
             rideIds[i] = GenerateId();
             rideDTOs[i].Id = rideIds[i];
             var json = JsonSerializer.Serialize(rideDTOs[i]);
-            await redis.HashSetAsync($"ride:{rideIds[i]}", "data", json);
-            await redis.SetAddAsync($"vehicle:{rideDTOs[i].VehicleId}:rides", rideIds[i]);
+            tasks[2*i] = batch.HashSetAsync($"ride:{rideIds[i]}",
+			[
+				new HashEntry("data", json)
+            ]);
+            tasks[2*i+1] = batch.SetAddAsync($"vehicle:{rideDTOs[i].VehicleId}:rides", rideIds[i]);
         }
+
+        batch.Execute();
+        await Task.WhenAll(tasks);
         return rideIds;
     }
 
@@ -151,11 +170,13 @@ internal class RedisMobilityService : IMobilityService
 
         foreach (long rideId in rideIds)
         {
-            string rideJson = await rideJsons[rideId];
+            RedisValue rideValue = await rideJsons[rideId];
 
-            if (rideJson != null)
+
+            if (rideValue.HasValue)
             {
-                RideDTO ride = JsonSerializer.Deserialize<RideDTO>(rideJson);
+                ReadOnlyMemory<byte> rideJson = rideValue;
+                RideDTO ride = JsonSerializer.Deserialize<RideDTO>(rideJson.Span);
 
                 Debug.Assert(ride != null);
 
@@ -203,10 +224,10 @@ internal class RedisMobilityService : IMobilityService
                 }
                 else if (entry.Name == "data")
                 {
-                    string json = entry.Value;
-                    if (json == null)
+                    RedisValue value = entry.Value;
+                    if (!value.HasValue)
                         continue;
-                    vehicle = JsonSerializer.Deserialize<VehicleDTO>(json);
+                    vehicle = JsonSerializer.Deserialize<VehicleDTO>(((ReadOnlyMemory<byte>)value).Span);
                 }
             }
 
@@ -238,13 +259,13 @@ internal class RedisMobilityService : IMobilityService
 
         for (int i = 0; i < tasks.Length; i++)
         {
-            string rideJson = await tasks[i];
-            if (rideJson == null)
+            RedisValue value = await tasks[i];
+            if (!value.HasValue)
             {
                 throw new ArgumentException($"Unknown ride with id {rideIds[i]}");
             }
 
-            RideDTO ride = JsonSerializer.Deserialize<RideDTO>(rideJson);
+            RideDTO ride = JsonSerializer.Deserialize<RideDTO>(((ReadOnlyMemory<byte>)value).Span);
 
             if (ride == null)
                 throw new ArgumentException($"Invalid ride at {rideIds[i]}");
@@ -257,9 +278,9 @@ internal class RedisMobilityService : IMobilityService
 
     public async Task<RideDTO[][]> GetVehicleRides(long[] vehicleIds)
     {
-		IBatch batch = redis.CreateBatch();
-		Dictionary<long, Task<RedisValue[]>> rideIdsTasks = new Dictionary<long, Task<RedisValue[]>>();
-		Dictionary<long, Dictionary<RedisValue, Task<RedisValue>>> rideJsonTasks = new Dictionary<long, Dictionary<RedisValue, Task<RedisValue>>>();
+        IBatch batch = redis.CreateBatch();
+        Dictionary<long, Task<RedisValue[]>> rideIdsTasks = new Dictionary<long, Task<RedisValue[]>>();
+        Dictionary<long, Dictionary<RedisValue, Task<RedisValue>>> rideJsonTasks = new Dictionary<long, Dictionary<RedisValue, Task<RedisValue>>>();
 
 
         foreach (long vehicleId in vehicleIds)
@@ -274,7 +295,7 @@ internal class RedisMobilityService : IMobilityService
         for (int i = 0; i < vehicleIds.Length; i++)
         {
             long vehicleId = vehicleIds[i];
-			RedisValue[] rideIds = await rideIdsTasks[vehicleId];
+            RedisValue[] rideIds = await rideIdsTasks[vehicleId];
 
             rideJsonTasks[vehicleId] = new Dictionary<RedisValue, Task<RedisValue>>();
 
@@ -289,17 +310,18 @@ internal class RedisMobilityService : IMobilityService
         for (int i = 0; i < vehicleIds.Length; i++)
         {
             long vehicleId = vehicleIds[i];
-			RedisValue[] rideIds = await rideIdsTasks[vehicleId];
+            RedisValue[] rideIds = await rideIdsTasks[vehicleId];
             RideDTO[] rides = new RideDTO[rideIds.Length];
 
-			for (var j = 0; j < rideIds.Length; j++)
+            for (var j = 0; j < rideIds.Length; j++)
             {
-				var rideId = rideIds[j];
-				string rideJson = await rideJsonTasks[vehicleId][rideId];
+                var rideId = rideIds[j];
+                RedisValue value = await rideJsonTasks[vehicleId][rideId];
 
-                if (rideJson != null)
+                if (value.HasValue)
                 {
-					RideDTO rideDTO = JsonSerializer.Deserialize<RideDTO>(rideJson);
+                    ReadOnlySpan<byte> rideJson = ((ReadOnlyMemory<byte>)value).Span;
+                    RideDTO rideDTO = JsonSerializer.Deserialize<RideDTO>(rideJson);
                     Debug.Assert(rideDTO != null);
                     rides[j] = rideDTO;
                 }
