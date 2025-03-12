@@ -70,6 +70,7 @@ internal class RedisMobilityService : IMobilityService
 			]);
 		}
 
+		batch.Execute();
 		await Task.WhenAll(tasks);
 	}
 
