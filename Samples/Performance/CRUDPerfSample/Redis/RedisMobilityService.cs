@@ -8,7 +8,6 @@ namespace Client;
 
 internal class RedisMobilityService : IMobilityService
 {
-	private readonly IDatabase redis;
 	private long maxId = 0;
 
 	private const long VEHICLES = 0 << 62;
@@ -25,12 +24,11 @@ internal class RedisMobilityService : IMobilityService
 	private const int END_TIME = 7;
 	private const int COVERED_DISTANCE = 8;
 
-	public RedisMobilityService(IConnectionMultiplexer redis)
+	public RedisMobilityService()
 	{
-		this.redis = redis.GetDatabase();
 	}
 
-	public async Task<long[]> InsertVehicles(VehicleDTO[] vehicleDTOs)
+	public async Task<long[]> InsertVehicles(IDatabase redis, VehicleDTO[] vehicleDTOs)
 	{
 		var vehicleIds = new long[vehicleDTOs.Length];
 		IBatch batch = redis.CreateBatch();
@@ -57,7 +55,7 @@ internal class RedisMobilityService : IMobilityService
 		return vehicleIds;
 	}
 
-	public async Task UpdateVehiclePositions(long[] vehicleIds, double positionX, double positionY)
+	public async Task UpdateVehiclePositions(IDatabase redis, long[] vehicleIds, double positionX, double positionY)
 	{
 		IBatch batch = redis.CreateBatch();
 		Task[] tasks = new Task[vehicleIds.Length];
@@ -74,7 +72,7 @@ internal class RedisMobilityService : IMobilityService
 		await Task.WhenAll(tasks);
 	}
 
-	public async Task CopyVehiclePositions(SourceDestinationPair[] pairs)
+	public async Task CopyVehiclePositions(IDatabase redis, SourceDestinationPair[] pairs)
 	{
 		Task<RedisValue[]>[] tasks = new Task<RedisValue[]>[pairs.Length];
 		Task[] setTasks = new Task[pairs.Length];
@@ -101,7 +99,7 @@ internal class RedisMobilityService : IMobilityService
 		await Task.WhenAll(setTasks);
 	}
 
-	public async Task DeleteVehicles(long[] vehicleIds)
+	public async Task DeleteVehicles(IDatabase redis, long[] vehicleIds)
 	{
 		IBatch batch = redis.CreateBatch();
 
@@ -114,29 +112,30 @@ internal class RedisMobilityService : IMobilityService
 		}
 
 		batch.Execute();
-
-		List<RedisKey> keys = new List<RedisKey>(vehicleIds.Length * 3);
+		List<Task<bool>> deleteTasks = new List<Task<bool>>();
 
 		for (int i = 0; i < rideIdsTasks.Length; i++)
 		{
 			RedisValue[] rideIds = await rideIdsTasks[i];
 			foreach (var rideId in rideIds)
 			{
-				keys.Add(new RedisKey(rideId));
+				deleteTasks.Add(batch.KeyDeleteAsync(new RedisKey(rideId)));
 			}
 		}
 
 		for (var i = 0; i < vehicleIds.Length; i++)
 		{
 			long id = vehicleIds[i];
-			keys.Add(new RedisKey((RedisValue)id));
-			keys.Add(new RedisKey((RedisValue)(id | VEHICLE_RIDES)));
+			deleteTasks.Add(batch.KeyDeleteAsync(new RedisKey((RedisValue)id)));
+			deleteTasks.Add(batch.KeyDeleteAsync(new RedisKey((RedisValue)(id | VEHICLE_RIDES))));
 		}
 
-		await redis.KeyDeleteAsync(keys.ToArray());
+		batch.Execute();
+
+		await Task.WhenAll(deleteTasks);
 	}
 
-	public async Task<long[]> InsertRides(RideDTO[] rideDTOs)
+	public async Task<long[]> InsertRides(IDatabase redis, RideDTO[] rideDTOs)
 	{
 		var rideIds = new long[rideDTOs.Length];
 		IBatch batch = redis.CreateBatch();
@@ -167,7 +166,7 @@ internal class RedisMobilityService : IMobilityService
 		];
 	}
 
-	public async Task UpdateRides(RideDTO[] rideDTOs)
+	public async Task UpdateRides(IDatabase redis, RideDTO[] rideDTOs)
 	{
 		IBatch batch = redis.CreateBatch();
 		Task[] tasks = new Task[rideDTOs.Length];
@@ -182,7 +181,7 @@ internal class RedisMobilityService : IMobilityService
 		await Task.WhenAll(tasks);
 	}
 
-	public async Task DeleteRides(long[] rideIds)
+	public async Task DeleteRides(IDatabase redis, long[] rideIds)
 	{
 		IBatch batch = redis.CreateBatch();
 		Dictionary<long, Task<RedisValue>> rideData = [];
@@ -213,7 +212,7 @@ internal class RedisMobilityService : IMobilityService
 
 		await Task.WhenAll(deleteTasks);
 	}
-	public async Task<VehicleDTO[]> GetVehicles(long[] vehicleIds)
+	public async Task<VehicleDTO[]> GetVehicles(IDatabase redis, long[] vehicleIds)
 	{
 		IBatch batch = redis.CreateBatch();
 		Task<HashEntry[]>[] tasks = new Task<HashEntry[]>[vehicleIds.Length];
@@ -263,7 +262,7 @@ internal class RedisMobilityService : IMobilityService
 		return result;
 	}
 
-	public async Task<VehicleDTO[]> GetRideVehicle(long[] rideIds)
+	public async Task<VehicleDTO[]> GetRideVehicle(IDatabase redis, long[] rideIds)
 	{
 		IBatch batch = redis.CreateBatch();
 		Task<RedisValue>[] tasks = new Task<RedisValue>[rideIds.Length];
@@ -288,10 +287,10 @@ internal class RedisMobilityService : IMobilityService
 			vehicleIds[i] = (long)value;
 		}
 
-		return await GetVehicles(vehicleIds);
+		return await GetVehicles(redis, vehicleIds);
 	}
 
-	public async Task<RideDTO[][]> GetVehicleRides(long[] vehicleIds)
+	public async Task<RideDTO[][]> GetVehicleRides(IDatabase redis, long[] vehicleIds)
 	{
 		IBatch batch = redis.CreateBatch();
 		Dictionary<long, Task<RedisValue[]>> rideIdsTasks = new Dictionary<long, Task<RedisValue[]>>();

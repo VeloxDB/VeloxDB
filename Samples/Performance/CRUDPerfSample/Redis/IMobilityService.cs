@@ -3,23 +3,23 @@ using System.Threading.Tasks;
 namespace Client;
 internal interface IMobilityService
 {
-    Task<long[]> InsertVehicles(VehicleDTO[] vehicleDTOs);
+    Task<long[]> InsertVehicles(IDatabase redis, VehicleDTO[] vehicleDTOs);
 
-    Task UpdateVehiclePositions(long[] vehicleIds, double positionX, double positionY);
+    Task UpdateVehiclePositions(IDatabase redis, long[] vehicleIds, double positionX, double positionY);
 
-    Task CopyVehiclePositions(SourceDestinationPair[] pairs);
+    Task CopyVehiclePositions(IDatabase redis, SourceDestinationPair[] pairs);
 
-    Task DeleteVehicles(long[] vehicleIds);
+    Task DeleteVehicles(IDatabase redis, long[] vehicleIds);
 
-    Task<long[]> InsertRides(RideDTO[] rideDTOs);
+    Task<long[]> InsertRides(IDatabase redis, RideDTO[] rideDTOs);
 
-    Task UpdateRides(RideDTO[] rideDTOs);
+    Task UpdateRides(IDatabase redis, RideDTO[] rideDTOs);
 
-    Task DeleteRides(long[] rideIds);
+    Task DeleteRides(IDatabase redis, long[] rideIds);
 
-    Task<VehicleDTO[]> GetVehicles(long[] vehicleIds);
+    Task<VehicleDTO[]> GetVehicles(IDatabase redis, long[] vehicleIds);
 
-    Task<VehicleDTO[]> GetRideVehicle(long[] rideIds);
+    Task<VehicleDTO[]> GetRideVehicle(IDatabase redis, long[] rideIds);
 
-    Task<RideDTO[][]> GetVehicleRides(long[] vehicleIds);
+    Task<RideDTO[][]> GetVehicleRides(IDatabase redis, long[] vehicleIds);
 }

@@ -3,21 +3,22 @@
 using System;
 using System.Collections.Concurrent;
 using System.Data;
+using System.Runtime.CompilerServices;
 using System.Text.Json.Serialization;
 using StackExchange.Redis;
 
 internal class VehicleDTO
 {
 	[JsonIgnore]
-    public double PositionX { get; set; }
+	public double PositionX { get; set; }
 
 	[JsonIgnore]
-    public double PositionY { get; set; }
+	public double PositionY { get; set; }
 
-    public string ModelName { get; set; }
+	public string ModelName { get; set; }
 	public int Year { get; set; }
 
-    public int PassengerCapacity { get; set; }
+	public int PassengerCapacity { get; set; }
 
 	public VehicleDTO()
 	{
@@ -79,11 +80,20 @@ internal class Program
 	static int workerCount = 1;
 	static string[] vehicleNames = new string[0];
 
+	static LinuxProcessor processor = new LinuxProcessor();
+	private static IDatabase[] redis;
+
 	public static void Main(string[] args)
 	{
+
+		System.IO.File.WriteAllText("/tmp/client.pid", Environment.ProcessId.ToString());
 		var service = Init(args);
 
 		PrepareData();
+
+		// Warm up
+		long[][] vehicleIds = InsertVehicles(service, new Statistics("Insert Vehicles Warmup"), vehicleCount, workerCount, 1);
+		DeleteVehicles(service, new Statistics("Delete Vehicles Warmup"), workerCount, 1, vehicleIds);
 
 		Statistics[][] statistics = new Statistics[5][];
 
@@ -103,7 +113,7 @@ internal class Program
 				new Statistics($"Delete vehicles [{objsPerTran}]"),
 			};
 
-			long[][] vehicleIds = InsertVehicles(service, statistics[objsPerTran][0], vehicleCount, workerCount, objsPerTran);
+			vehicleIds = InsertVehicles(service, statistics[objsPerTran][0], vehicleCount, workerCount, objsPerTran);
 			UpdateVehicles(service, statistics[objsPerTran][1], workerCount, objsPerTran, vehicleIds);
 			CopyVehiclesPosition(service, statistics[objsPerTran][2], workerCount, objsPerTran, vehicleIds);
 			long[][] rideIds = InsertRides(service, statistics[objsPerTran][3], vehicleCount, workerCount, objsPerTran, vehicleIds);
@@ -148,9 +158,11 @@ internal class Program
 		if (args.Length > 3)
 			connCount = int.Parse(args[3]);
 
-		ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(address);
-	
-		IMobilityService service = new RedisMobilityService(redis);
+		redis = new IDatabase[processor.PhysicalCoreCount];
+		for (int i = 0; i < redis.Length; i++)
+			redis[i] = ConnectionMultiplexer.Connect(address, (c) => c.SocketManager = SocketManager.ThreadPool).GetDatabase();
+
+		IMobilityService service = new RedisMobilityService();
 		return service;
 	}
 	
@@ -192,8 +204,13 @@ internal class Program
 	private static async Task CopyVehiclesPositionWorker(IMobilityService service,
 		Statistics statistics, int objsPerTran, BlockingCollection<long[]> work)
 	{
+		int iteration = 0;
+		IDatabase redis = null;
 		while (true)
 		{
+			redis = GetRedis(redis, iteration);
+			iteration++;
+
 			long[] group = work.Take();
 			if (group == null)
 				return;
@@ -211,12 +228,20 @@ internal class Program
 					c++;
 				}
 
-				await service.CopyVehiclePositions(pairs);
+				await service.CopyVehiclePositions(redis, pairs);
 				statistics.Inc();
 			}
 		}
 	}
 
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	private static IDatabase GetRedis(IDatabase redis, int iteration)
+	{
+		if (redis != null && (iteration & 64) != 0)
+			return redis;
+
+		return Program.redis[processor.GetExecutingPhysicalCore()];
+	}
 
 	private static void PrepareData()
 	{
@@ -272,8 +297,13 @@ internal class Program
 
 	private static async Task InsertVehiclesWorker(IMobilityService service, Statistics statistics, int objsPerTran, BlockingCollection<long[]> work)
 	{
+		int iteration = 0;
+		IDatabase redis = null;
 		while (true)
 		{
+			redis = GetRedis(redis, iteration);
+			iteration++;
+
 			long[] group = work.Take();
 			if (group == null)
 				return;
@@ -298,7 +328,7 @@ internal class Program
 					vehicles[i].PassengerCapacity = i;
 				}
 
-				long[] tids = await service.InsertVehicles(vehicles);
+				long[] tids = await service.InsertVehicles(redis, vehicles);
 				for (int i = 0; i < tids.Length; i++)
 				{
 					group[c++] = tids[i];
@@ -346,8 +376,13 @@ internal class Program
 
 	private static async Task UpdateVehiclesWorker(IMobilityService service, Statistics statistics, int objsPerTran, BlockingCollection<long[]> work)
 	{
+		int iteration = 0;
+		IDatabase redis = null;
 		while (true)
 		{
+			redis = GetRedis(redis, iteration);
+			iteration++;
+
 			long[] group = work.Take();
 			if (group == null)
 				return;
@@ -362,7 +397,7 @@ internal class Program
 					vehicleIds[k] = group[c++];
 				}
 
-				await service.UpdateVehiclePositions(vehicleIds, 3.0, 3.0);
+				await service.UpdateVehiclePositions(redis, vehicleIds, 3.0, 3.0);
 				statistics.Inc();
 			}
 		}
@@ -415,8 +450,13 @@ internal class Program
 	{
 		DateTime dt = DateTime.UtcNow;
 
+		int iteration = 0;
+		IDatabase redis = null;
 		while (true)
 		{
+			redis = GetRedis(redis, iteration);
+			iteration++;
+
 			Tuple<long[], long[]> t = work.Take();
 			if (t == null)
 				return;
@@ -433,7 +473,7 @@ internal class Program
 					rides[i] = new RideDTO(vehicleGroup[c % vehicleGroup.Length], dt, dt, 1.0);
 				}
 
-				long[] tids = await service.InsertRides(rides);
+				long[] tids = await service.InsertRides(redis, rides);
 				for (int i = 0; i < tids.Length; i++)
 				{
 					group[c++] = tids[i];
@@ -485,8 +525,13 @@ internal class Program
 	{
 		DateTime dt = DateTime.UtcNow;
 
+		int iteration = 0;
+		IDatabase redis = null;
 		while (true)
 		{
+			redis = GetRedis(redis, iteration);
+			iteration++;
+
 			Tuple<long[], long[]> t = work.Take();
 			if (t == null)
 				return;
@@ -505,7 +550,7 @@ internal class Program
 					c++;
 				}
 
-				await service.UpdateRides(rides);
+				await service.UpdateRides(redis, rides);
 				statistics.Inc();
 			}
 		}
@@ -549,8 +594,13 @@ internal class Program
 	private static async Task GetVehiclesWorker(IMobilityService service,
 		Statistics statistics, int objsPerTran, BlockingCollection<long[]> work)
 	{
+		int iteration = 0;
+		IDatabase redis = null;
 		while (true)
 		{
+			redis = GetRedis(redis, iteration);
+			iteration++;
+
 			long[] group = work.Take();
 			if (group == null)
 				return;
@@ -565,7 +615,7 @@ internal class Program
 					vehicleIds[k] = group[c++];
 				}
 
-				await service.GetVehicles(vehicleIds);
+				await service.GetVehicles(redis, vehicleIds);
 				statistics.Inc();
 			}
 		}
@@ -609,8 +659,13 @@ internal class Program
 	private static async Task GetRideVehiclesWorker(IMobilityService service,
 		Statistics statistics, int objsPerTran, BlockingCollection<long[]> work)
 	{
+		int iteration = 0;
+		IDatabase redis = null;
 		while (true)
 		{
+			redis = GetRedis(redis, iteration);
+			iteration++;
+
 			long[] group = work.Take();
 			if (group == null)
 				return;
@@ -625,7 +680,7 @@ internal class Program
 					rideIds[k] = group[c++];
 				}
 
-				await service.GetRideVehicle(rideIds);
+				await service.GetRideVehicle(redis, rideIds);
 				statistics.Inc();
 			}
 		}
@@ -669,8 +724,13 @@ internal class Program
 	private static async Task GetVehicleRidesWorker(IMobilityService service,
 		Statistics statistics, int objsPerTran, BlockingCollection<long[]> work)
 	{
+		int iteration = 0;
+		IDatabase redis = null;
 		while (true)
 		{
+			redis = GetRedis(redis, iteration);
+			iteration++;
+
 			long[] group = work.Take();
 			if (group == null)
 				return;
@@ -685,7 +745,7 @@ internal class Program
 					vehicleIds[k] = group[c++];
 				}
 
-				await service.GetVehicleRides(vehicleIds);
+				await service.GetVehicleRides(redis, vehicleIds);
 				statistics.Inc();
 			}
 		}
@@ -731,8 +791,13 @@ internal class Program
 	{
 		DateTime dt = DateTime.UtcNow;
 
+		int iteration = 0;
+		IDatabase redis = null;
 		while (true)
 		{
+			redis = GetRedis(redis, iteration);
+			iteration++;
+
 			long[] group = work.Take();
 			if (group == null)
 				return;
@@ -747,7 +812,7 @@ internal class Program
 					vehicleIds[k] = group[c++];
 				}
 
-				await service.DeleteVehicles(vehicleIds);
+				await service.DeleteVehicles(redis, vehicleIds);
 				statistics.Inc();
 			}
 		}
@@ -794,8 +859,13 @@ internal class Program
 	{
 		DateTime dt = DateTime.UtcNow;
 
+		int iteration = 0;
+		IDatabase redis = null;
 		while (true)
 		{
+			redis = GetRedis(redis, iteration);
+			iteration++;
+
 			long[] group = work.Take();
 			if (group == null)
 				return;
@@ -810,7 +880,7 @@ internal class Program
 					rideIds[k] = group[c++];
 				}
 
-				await service.DeleteRides(rideIds);
+				await service.DeleteRides(redis, rideIds);
 				statistics.Inc();
 			}
 		}

@@ -51,6 +51,9 @@ public class Program
 		PrepareData();
 
 		Statistics[][] statistics = new Statistics[5][];
+		
+		long[][] vehicleIds = InsertVehicles(service, new Statistics("Warmup Insert Vehicles [1]"), vehicleCount, workerCount, 1);
+		DeleteVehicles(service, new Statistics("Warmup Delete Vehicles [1]"), workerCount, 1, vehicleIds);
 
 		for (int objsPerTran = 1; objsPerTran <= 4; objsPerTran *= 2)
 		{
@@ -68,7 +71,7 @@ public class Program
 				new Statistics($"Delete vehicles [{objsPerTran}]"),
 			};
 
-			long[][] vehicleIds = InsertVehicles(service, statistics[objsPerTran][0], vehicleCount, workerCount, objsPerTran);
+			vehicleIds = InsertVehicles(service, statistics[objsPerTran][0], vehicleCount, workerCount, objsPerTran);
 			UpdateVehicles(service, statistics[objsPerTran][1], workerCount, objsPerTran, vehicleIds);
 			CopyVehiclesPosition(service, statistics[objsPerTran][2], workerCount, objsPerTran, vehicleIds);
 			long[][] rideIds = InsertRides(service, statistics[objsPerTran][3], vehicleCount, workerCount, objsPerTran, vehicleIds);
