@@ -21,6 +21,20 @@
     }
   ],
   "build": {
+    "fileMetadata":{
+      "skip_head":{
+        "*.md":"true"
+      },
+      "_disableToc": {
+        "*.md": "true"
+      },
+      "_disableBreadcrumb": {
+        "*.md":"true"
+      },
+      "disable_beta": {
+        "articles/*.md":"true"
+      }
+    },
     "content": [
       {
         "files": [
@@ -30,6 +44,8 @@
       },
       {
         "files": [
+          "articles/**.md",
+          "articles/toc.yml",
           "guide/**.md",
           "guide/**/toc.yml",
           "toc.yml",
