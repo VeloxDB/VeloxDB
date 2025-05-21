@@ -1,7 +1,7 @@
 ---
 uid: VeloxDB.ObjectInterface.DatabaseClassAttribute
 example:
-  - '[!code-csharp[Main](../../Samples/GetStarted/VlxBlog/Model.cs#Post)]'
+  - '[!code-csharp[Main](../../Samples/SimpleExample/VlxBlog/Model.cs#Post)]'
 remarks: *content
 ---
 

@@ -1,0 +1,28 @@
+- name: "Get Started"
+  href: get_started.md
+- name: "VeloxDB: The Definitive Guide"
+  expanded: true
+  items:
+  - name: Introduction
+    href: guide/introduction.md
+  - name: Simple Example
+    href: guide/simple_example.md
+  - name: Architecture
+    href: guide/architecture.md
+  - name: Data Model
+    href: guide/data_model.md
+  - name: Database APIs
+    href: guide/database_apis.md
+  - name: Persistance
+    href: guide/persistence.md
+  - name: Model and API Updates
+    href: guide/model_api_update.md	
+- name: "Articles"
+  expanded: true
+  items:
+  - href: articles/redis.md
+  - href: articles/transactions.md
+  - href: articles/vab.md
+- name: "API"
+  expanded: false
+  href: ../api/toc.yml

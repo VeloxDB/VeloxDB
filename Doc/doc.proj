@@ -9,8 +9,8 @@
 			<ProjectReference Include="../VeloxDB/VeloxDB.csproj" />
 			<ProjectReference Include="../VeloxDB.Embedded/VeloxDB.Embedded.csproj" />
 			<ProjectReference Include="../Tools/VeloxDB.AspNet/VeloxDB.AspNet.csproj" />
-			<ProjectReference Include="../Samples/GetStarted/VlxBlog/vlxblog.csproj"/>
-			<ProjectReference Include="../Samples/GetStarted/VlxClient/vlxclient.csproj"/>
+			<ProjectReference Include="../Samples/SimpleExample/VlxBlog/vlxblog.csproj"/>
+			<ProjectReference Include="../Samples/SimpleExample/VlxClient/vlxclient.csproj"/>
 			<ProjectReference Include="../Samples/ModelExamples/models_examples.csproj"/>
 	  </ItemGroup>
 

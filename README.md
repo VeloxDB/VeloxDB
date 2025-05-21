@@ -17,7 +17,7 @@ VeloxDB is a high performance, in-memory, object oriented database. It was desig
 
 ## Getting started
 
-[The VeloxDB Getting Started Guide](https://vlxdb.com/guide/getting_started.html) - the perfect place to begin if you're new to VeloxDB. It covers everything from setting up your development environment to running your first transactions.
+[The VeloxDB Getting Started Guide](https://vlxdb.com/doc/get_started.html) - the perfect place to begin if you're new to VeloxDB. It covers everything from setting up your development environment to running your first transactions.
 
 [VeloxDB: The Definitive Guide](https://vlxdb.com/guide/introduction.html) - a comprehensive resource that covers all aspects of using VeloxDB. It includes detailed information about the database's data model, API, as well as best practices for using VeloxDB in your applications.
 

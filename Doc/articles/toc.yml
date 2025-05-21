@@ -1,5 +1,0 @@
-- name: "Articles"
-  items:
-  - href: redis.md
-  - href: transactions.md
-  - href: vab.md

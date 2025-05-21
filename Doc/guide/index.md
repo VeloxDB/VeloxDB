@@ -1,3 +1,3 @@
-<script>
-	window.location.replace("introduction.html");
-</script>
+---
+redirect_url: ../doc/guide/index.html
+---

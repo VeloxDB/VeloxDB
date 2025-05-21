@@ -1,9 +1,3 @@
-# Model and API Update
-
-## Model Update Limitations
-
-## Performance Considerations
-
-## API Updates
-
-## API Versioning
+---
+redirect_url: ../doc/guide/model_api_update.html
+---

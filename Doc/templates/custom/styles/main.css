@@ -132,3 +132,13 @@ p {
    bottom:97px;
    padding-bottom: 4px;
 }
+
+.yt-wrapper {
+	width: 100%;
+	aspect-ratio: 16 / 9; 
+}
+
+.yt-wrapper iframe {
+	width: 100%;
+	height: 100%;
+}

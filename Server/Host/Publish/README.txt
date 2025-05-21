@@ -28,12 +28,12 @@ the database
 ## Getting started
 
 The VeloxDB Getting Started Guide -
-https://vlxdb.com/guide/getting_started.html - the perfect
+https://vlxdb.com/doc/get_started.html - the perfect
 place to begin if you're new to VeloxDB. It covers everything from setting up
 your development environment to running your first transactions.
 
 VeloxDB: The Definitive Guide -
-https://vlxdb.com/guide/introduction.html - a comprehensive
+https://vlxdb.com/doc/guide/introduction.html - a comprehensive
 resource that covers all aspects of using VeloxDB. It includes detailed
 information about the database's data model, API, as well as best practices for
 using VeloxDB in your applications.
@@ -51,7 +51,7 @@ the default configuration in the vlxdbcfg.json and config.cluster.json files.
 Don't forget to configure listening addresses in the cluster.config.json file as well.
 To upload your code into the database, use the vlx client app. For more information
 about deployment see:
-http://localhost:8000/guide/getting_started.html#downloading-and-configuring-the-database
+https://vlxdb.com/doc/guide/simple_example.html#downloading-and-configuring-the-database
 
 ## License
 

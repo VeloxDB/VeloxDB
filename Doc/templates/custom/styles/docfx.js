@@ -540,7 +540,7 @@ $(function () {
           }
 
           $(e).breakWord();
-        });
+				});
 
         renderSidebar();
       });

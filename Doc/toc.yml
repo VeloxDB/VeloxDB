@@ -1,7 +1,5 @@
-- name: User Guide
-  href: guide/introduction.md
-- name: Articles
-  href: articles/redis.md  
+- name: Documentation
+  href: doc/get_started.md
 - name: API Documentation
   href: api/
   homepage: api/index.md
