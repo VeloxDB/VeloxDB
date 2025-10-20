@@ -203,6 +203,22 @@ public unsafe abstract class DatabaseArray<T> : DatabaseArray, IList<T>
 	}
 
 	/// <summary>
+	/// Creates a new instance of the <see cref="DatabaseArray{T}"/> that contains elements copied from the supplied span.
+	/// </summary>
+	/// <param name="span"></param>
+	/// <returns></returns>
+	public static DatabaseArray<T> FromSpan(ReadOnlySpan<T> span)
+	{
+		DatabaseArray<T> da = Create(span.Length);
+		for (int i = 0; i < span.Length; i++)
+		{
+			da.Add(span[i]);
+		}
+
+		return da;
+	}
+
+	/// <summary>
 	/// Gets the number of items contained in the <see cref="DatabaseArray{T}"/>.
 	/// </summary>
 	public int Count => count;
@@ -221,6 +237,18 @@ public unsafe abstract class DatabaseArray<T> : DatabaseArray, IList<T>
 	/// <exception cref="InvalidOperationException">If the parent object of the <see cref="DatabaseArray{T}"/> has been deleted or abandoned.</exception>
 	/// <exception cref="ObjectDisposedException">If the parent object of the <see cref="DatabaseArray{T}"/> has been disposed.</exception>
 	public abstract T this[int index] { get; set; }
+
+	/// <summary>
+	/// Returns a read only span over the items in the <see cref="DatabaseArray{T}"/>.
+	/// </summary>
+	internal ReadOnlySpan<T> AsSpan()
+	{
+		Owner?.VerifyAccess();
+		if (items == null)
+			return new ReadOnlySpan<T>(buffer, count);
+			
+		return new ReadOnlySpan<T>(items, 0, count);
+	}
 
 	internal override unsafe void Refresh(byte* buffer)
 	{

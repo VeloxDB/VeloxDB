@@ -55,6 +55,7 @@ internal unsafe sealed class TransactionContext : IDisposable
 
 	byte affectedLogGroups;
 	Changeset changeset;
+	Changeset lastChangeset;
 	////////////////////////////////////////////////////////////
 
 	int* invRefGroupCounts;
@@ -269,16 +270,13 @@ internal unsafe sealed class TransactionContext : IDisposable
 		if (this.changeset == null)
 		{
 			this.changeset = changeset;
+			lastChangeset = changeset;
 		}
 		else
 		{
-			Changeset last = this.changeset;
-			while (last.Next != null)
-			{
-				last = last.Next;
-			}
-
-			last.Next = changeset;
+			Checker.AssertNull(lastChangeset.Next);
+			lastChangeset.Next = changeset;
+			lastChangeset = changeset;
 		}
 	}
 
@@ -289,6 +287,7 @@ internal unsafe sealed class TransactionContext : IDisposable
 
 		Changeset curr = changeset.Next;
 		changeset.Next = null;
+		lastChangeset = changeset;
 		while (curr != null)
 		{
 			changeset.Merge(curr);
@@ -306,18 +305,23 @@ internal unsafe sealed class TransactionContext : IDisposable
 	private void MergeChangeset(TransactionContext tc)
 	{
 		if (tc.changeset == null)
+		{
+			Checker.AssertNull(tc.lastChangeset);
 			return;
+		}
 
 		for (int i = 0; i < tc.changeset.LogChangesets.Length; i++)
-		{
-			var lch = tc.changeset.LogChangesets[i];
-			affectedLogGroups = (byte)(affectedLogGroups | (1 << lch.LogIndex));
-		}
+			{
+				var lch = tc.changeset.LogChangesets[i];
+				affectedLogGroups = (byte)(affectedLogGroups | (1 << lch.LogIndex));
+			}
 
 		if (changeset == null)
 		{
 			changeset = tc.changeset;
+			lastChangeset = tc.lastChangeset;
 			tc.changeset = null;
+			tc.lastChangeset = null;
 		}
 		else
 		{
@@ -751,6 +755,8 @@ internal unsafe sealed class TransactionContext : IDisposable
 			changeset.ReleaseRef();
 			changeset = changeset.Next;
 		}
+
+		lastChangeset = null;
 
 		for (int i = 0; i < nextPersisted.Length; i++)
 		{

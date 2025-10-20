@@ -273,11 +273,15 @@ public unsafe sealed class InverseReferenceSet<T> : InverseReferenceSet, ICollec
 		int currVersion = version;
 		for (int i = 0; i < count; i++)
 		{
-			if (currVersion != version)
-				throw new InvalidOperationException("The collection has been modified. Enumeration can't continue.");
-
 			yield return Owner.Owner.GetObject<T>(ids[i]);
+
+			if (currVersion != version)
+			{
+				Checker.AssertTrue(count == -1);
+				throw new InvalidOperationException("The collection has been modified. Enumeration can't continue.");
+			}
 		}
+
 	}
 
 	IEnumerator IEnumerable.GetEnumerator()

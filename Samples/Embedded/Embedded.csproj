@@ -9,6 +9,7 @@
     <TargetFramework>net9.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <OutputPath>$(VlxRootDir)\bin</OutputPath>
   </PropertyGroup>
 
 </Project>

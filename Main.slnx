@@ -1,0 +1,39 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+  </Configurations>
+  <Folder Name="/Server/">
+    <Project Path="Server/AdminAPI/AdminAPI.csproj">
+      <Platform Solution="*|x64" Project="x64" />
+    </Project>
+  </Folder>
+  <Folder Name="/Solution Items/">
+    <File Path=".editorconfig" />
+  </Folder>
+  <Folder Name="/Test/">
+    <Project Path="Tests/Hermitage/Hermitage.csproj" />
+  </Folder>
+  <Folder Name="/Tests/">
+    <Project Path="Tests/VectorIndexTestSuite/VectorIndexTestSuite.csproj" />
+  </Folder>
+  <Folder Name="/Tools/">
+    <Project Path="Tools/VeloxDB.VectorIndex/VeloxDB.VectorIndex.csproj" />
+  </Folder>
+  <Project Path="ClientApp/ClientApp.csproj">
+    <Platform Solution="*|x64" Project="x64" />
+  </Project>
+  <Project Path="Server/Host/Host.csproj">
+    <Platform Solution="*|x64" Project="x64" />
+  </Project>
+  <Project Path="VeloxDB.CodeFixProvider/VeloxDB.CodeFixProvider.csproj" />
+  <Project Path="VeloxDB.Common/VeloxDB.Common.csproj">
+    <Platform Solution="*|x64" Project="x64" />
+  </Project>
+  <Project Path="VeloxDB.Embedded/VeloxDB.Embedded.csproj">
+    <Platform Solution="*|x64" Project="x64" />
+  </Project>
+  <Project Path="VeloxDB.SourceGenerator/VeloxDB.SourceGenerator.csproj" />
+  <Project Path="VeloxDB/VeloxDB.csproj">
+    <Platform Solution="*|x64" Project="x64" />
+  </Project>
+</Solution>

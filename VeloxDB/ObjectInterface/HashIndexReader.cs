@@ -27,7 +27,10 @@ public sealed class HashIndexReader<T, TKey1> where T : DatabaseObject
 	{
 		keyComparer = indexData.KeyComparer as Func<T, StringComparer, TKey1, bool>;
 		if (keyComparer == null)
+		{
+			HashIndexReaderHelper.CheckTypes(indexData.IndexDescriptor.Name, typeof(TKey1));
 			throw new ArgumentException("Invalid hash index class and/or key types.");
+		}
 
 		this.model = model;
 		this.indexData = indexData;
@@ -168,7 +171,10 @@ public sealed class HashIndexReader<T, TKey1, TKey2> where T : DatabaseObject
 	{
 		keyComparer = indexData.KeyComparer as Func<T, StringComparer, TKey1, TKey2, bool>;
 		if (keyComparer == null)
+		{
+			HashIndexReaderHelper.CheckTypes(indexData.IndexDescriptor.Name, typeof(TKey1), typeof(TKey2));
 			throw new ArgumentException("Invalid hash index class and/or key types.");
+		}
 
 		this.model = model;
 		this.indexData = indexData;
@@ -311,7 +317,10 @@ public sealed class HashIndexReader<T, TKey1, TKey2, TKey3> where T : DatabaseOb
 	{
 		keyComparer = indexData.KeyComparer as Func<T, StringComparer, TKey1, TKey2, TKey3, bool>;
 		if (keyComparer == null)
+		{
+			HashIndexReaderHelper.CheckTypes(indexData.IndexDescriptor.Name, typeof(TKey1), typeof(TKey2), typeof(TKey3));
 			throw new ArgumentException("Invalid hash index class and/or key types.");
+		}
 
 		this.model = model;
 		this.indexData = indexData;
@@ -457,7 +466,10 @@ public sealed class HashIndexReader<T, TKey1, TKey2, TKey3, TKey4> where T : Dat
 	{
 		keyComparer = indexData.KeyComparer as Func<T, StringComparer, TKey1, TKey2, TKey3, TKey4, bool>;
 		if (keyComparer == null)
+		{
+			HashIndexReaderHelper.CheckTypes(indexData.IndexDescriptor.Name, typeof(TKey1), typeof(TKey2), typeof(TKey3), typeof(TKey4));
 			throw new ArgumentException("Invalid hash index class and/or key types.");
+		}
 
 		this.model = model;
 		this.indexData = indexData;
@@ -580,5 +592,22 @@ public sealed class HashIndexReader<T, TKey1, TKey2, TKey3, TKey4> where T : Dat
 		}
 
 		return l;
+	}
+}
+
+
+internal static class HashIndexReaderHelper
+{
+	public static void CheckTypes(string indexName, params Type[] types)
+	{
+		Type dbo = typeof(DatabaseObject);
+		foreach (Type type in types)
+		{
+			if (dbo.IsAssignableFrom(type))
+			{
+				throw new ArgumentException($"Invalid key types for hash index. '{indexName}' cannot use '{type.Name}' " +
+			$"DatabaseObjects are not allowed. Use 'long' and pass the object's ID instead.");
+			}
+		}
 	}
 }

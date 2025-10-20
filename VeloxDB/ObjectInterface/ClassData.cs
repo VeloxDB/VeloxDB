@@ -219,12 +219,12 @@ internal sealed class ClassData
 		return (ReferenceCheckerDelegate)checker.CreateDelegate(typeof(ReferenceCheckerDelegate));
 	}
 
-	public static Delegate CreateIndexComparer(IndexDescriptor indexDesc)
+	public Delegate CreateIndexComparer(IndexDescriptor indexDesc)
 	{
-		Type definingType = indexDesc.DefiningObjectModelClass.ClassType;
+		Type definingType = generatedType;
 
 		List<Type> args = new List<Type>(5);
-		args.Add(definingType);
+		args.Add(indexDesc.DefiningObjectModelClass.ClassType);
 		args.Add(typeof(StringComparer));
 
 		for (int i = 0; i < indexDesc.Properties.Length; i++)
@@ -239,7 +239,16 @@ internal sealed class ClassData
 		for (int i = 0; i < indexDesc.Properties.Length; i++)
 		{
 			PropertyDescriptor pd = indexDesc.Properties[i];
-			MethodInfo getter = GetPublicProperty(definingType, pd.Name).GetGetMethod();
+
+			MethodInfo getter = null;
+			if (pd.PropertyType == PropertyType.Long && pd.Kind == PropertyKind.Reference)
+			{
+				getter = GetPublicProperty(definingType, pd.Name+RefIdSufix).GetGetMethod();
+			}
+			else
+			{
+				getter = GetPublicProperty(definingType, pd.Name).GetGetMethod();
+			}
 
 			Label lab = il.DefineLabel();
 			if (pd.PropertyType == PropertyType.String)

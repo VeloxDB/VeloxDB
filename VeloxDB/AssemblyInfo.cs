@@ -3,6 +3,7 @@
 [assembly: InternalsVisibleTo("vlxdbsrv")]
 [assembly: InternalsVisibleTo("vlxdbem")]
 [assembly: InternalsVisibleTo("vlxrep")]
+[assembly: InternalsVisibleTo("vlxvi")]
 
 // Internally generated assembly
 [assembly: InternalsVisibleTo("__ObjectModel")]

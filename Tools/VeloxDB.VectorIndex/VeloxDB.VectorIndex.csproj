@@ -1,0 +1,31 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net9.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<PackageOutputPath>$(VlxRootDir)\bin\nuget</PackageOutputPath>
+		<Platforms>x64</Platforms>
+		<Nullable>enable</Nullable>
+		<AssemblyName>vlxvi</AssemblyName>
+		<RootNamespace>VeloxDB.VectorIndex</RootNamespace>
+		<IsPackable>true</IsPackable>
+		<PackageId>VeloxDB.VectorIndex</PackageId>
+		<PackageIcon>icon.png</PackageIcon>
+		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+		<GenerateDocumentationFile>true</GenerateDocumentationFile>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<None Include="../../LICENSE.txt" Pack="true" PackagePath="" />
+		<None Include="README.md" Pack="true" PackagePath="" />
+		<None Include="../../icon.png" Pack="true" PackagePath="" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\..\VeloxDB\VeloxDB.csproj" />
+	</ItemGroup>
+
+
+
+
+</Project>

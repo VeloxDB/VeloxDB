@@ -1,11 +1,12 @@
 using System;
+using System.Reflection;
+using System.Runtime.Loader;
 
 namespace VeloxDB.Server;
 
 public sealed class AssemblyUpdate
 {
-    private static readonly HashSet<string> dllIgnore = new HashSet<string>() { "vlxdb.dll", "vlxc.dll" };
-
+    private static readonly HashSet<string> dllIgnore = new HashSet<string>(StringComparer.InvariantCultureIgnoreCase) { "vlxdb.dll", "vlxc.dll" };
 
     public List<UserAssembly> Inserted { get; set; }
     public List<UserAssembly> Updated { get; set; }
@@ -29,32 +30,39 @@ public sealed class AssemblyUpdate
     {
         string[] files = Directory.GetFiles(updateAsmDir);
 
-        Dictionary<string, UserAssembly> current = state.Assemblies.ToDictionary(a => a.Name.ToLower());
+        Dictionary<string, UserAssembly> current = state.Assemblies.ToDictionary(a => a.Name.ToLower(), StringComparer.InvariantCultureIgnoreCase);
 
-        List<UserAssembly> inserted = new List<UserAssembly>();
-        List<UserAssembly> updated = new List<UserAssembly>();
-        List<long> deleted = new List<long>();
+        List<UserAssembly> inserted = [];
+        List<UserAssembly> updated = [];
+        List<long> deleted = [];
 
-        HashSet<string> processed = new HashSet<string>();
+        HashSet<string> processed = new(StringComparer.InvariantCultureIgnoreCase);
+        HashSet<string> toLoad = new(StringComparer.InvariantCultureIgnoreCase);
 
         foreach (string path in files)
         {
             string filename = Path.GetFileName(path);
-            string fnLower = filename.ToLower();
-            if (!IsDLL(fnLower) || dllIgnore.Contains(fnLower))
+            if (!IsDLL(filename) || dllIgnore.Contains(filename))
                 continue;
 
-            if (processed.Contains(fnLower))
+            toLoad.Add(path);
+            GetAdditionalAssemblies(updateAsmDir, path, toLoad, errors);
+        }
+
+        foreach(string path in toLoad)
+        {
+            string filename = Path.GetFileName(path);
+
+            if (processed.Contains(filename))
             {
                 errors.Add($"Encountered duplicate filename {filename}.");
                 continue;
             }
 
             UserAssembly? existing;
-
             UserAssembly ua = ReadFromFile(path);
 
-            if (!current.TryGetValue(fnLower, out existing))
+            if (!current.TryGetValue(filename, out existing))
             {
                 inserted.Add(ua);
             }
@@ -64,7 +72,8 @@ public sealed class AssemblyUpdate
                 updated.Add(ua);
             }
 
-            processed.Add(fnLower);
+            processed.Add(filename);
+
         }
 
         foreach (string name in processed)
@@ -80,6 +89,44 @@ public sealed class AssemblyUpdate
 
         return new AssemblyUpdate(inserted, updated, deleted);
     }
+
+    private static void GetAdditionalAssemblies(string updateAsmDir, string assemblyPath, HashSet<string> additionalAssemblies, List<string> errors)
+    {
+        AssemblyLoadContext alc = new AssemblyLoadContext("tempContext", true);
+		AssemblyDependencyResolver resolver = new(assemblyPath);
+        try
+        {
+            Assembly mainAssembly = alc.LoadFromAssemblyPath(assemblyPath);
+            AssemblyName[] referencedAssemblies = mainAssembly.GetReferencedAssemblies();
+
+            foreach (var assemblyName in referencedAssemblies)
+            {
+                string? resolvedPath = resolver.ResolveAssemblyToPath(assemblyName);
+
+                if (string.IsNullOrEmpty(resolvedPath) ||
+                    !File.Exists(resolvedPath) ||
+                    (Path.GetDirectoryName(resolvedPath) == updateAsmDir) ||
+                    dllIgnore.Contains(Path.GetFileName(resolvedPath)))
+                {
+                    continue;
+                }
+                additionalAssemblies.Add(resolvedPath);
+            }
+        }
+        catch (FileNotFoundException ex)
+        {
+            errors.Add($"Error resolving dependencies: {ex.Message}. Ensure the assembly and its .deps.json file are correctly placed.");
+        }
+        catch (Exception ex)
+        {
+            errors.Add($"An unexpected error occurred during dependency resolution: {ex.Message}");
+        }
+        finally
+        {
+            alc.Unload();
+        }
+    }
+
 
     private static bool Changed(UserAssembly ua, UserAssembly existing)
     {
@@ -107,7 +154,7 @@ public sealed class AssemblyUpdate
 
     private static bool IsDLL(string fileName)
     {
-        return Path.GetExtension(fileName) == ".dll";
+        return string.Equals(Path.GetExtension(fileName), ".dll", StringComparison.InvariantCultureIgnoreCase);
     }
 }
 

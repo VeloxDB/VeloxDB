@@ -169,7 +169,7 @@ internal sealed class Program
 					break;
 				i++;
 			}
-			else if(arg == "wait")
+			else if (arg == "wait")
 			{
 				wait = true;
 			}
@@ -186,8 +186,19 @@ internal sealed class Program
 			i++;
 		}
 
+		updateAsmDir = NormalizePath(updateAsmDir);
+		persistanceDir = NormalizePath(persistanceDir);
+
 		return new Arguments(error, message, configFile, updateAsmDir, persistanceDir, interactive, wait, printHelp);
 	}
+
+	private static string? NormalizePath(string? dir)
+    {
+		if (dir == null)
+			return null;
+
+		return Path.GetFullPath(dir).Trim(Path.DirectorySeparatorChar);
+    }
 
 	private static void InitLog(Configuration configuration, bool logToConsole)
 	{

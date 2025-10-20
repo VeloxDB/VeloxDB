@@ -32,6 +32,7 @@
 			readme=$(PackageReadmeFile);
 			vlxdbsrv_temp=$(VlxDbSrvTemp);
 		</NuspecProperties>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 	</PropertyGroup>
 
 	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -53,7 +54,6 @@
 	</PropertyGroup>
 
 	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 		<OutputPath>$(VlxRootDir)\bin</OutputPath>
 		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
 		<GenerateSerializationAssemblies>Off</GenerateSerializationAssemblies>

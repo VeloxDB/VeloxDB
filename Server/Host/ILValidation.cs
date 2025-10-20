@@ -30,7 +30,7 @@ internal static class ILValidation
 	{
 		using ReaderCollection readers = new ReaderCollection(toValidate);
 		Verifier v = new Verifier(new Resolver(readers));
-		v.SetSystemModuleName(new AssemblyName("System.Runtime"));
+		v.SetSystemModuleName(new AssemblyNameInfo("System.Runtime"));
 
 		DatabaseErrorDetail? error = null;
 
@@ -355,13 +355,13 @@ internal static class ILValidation
 			return cache.GetOrAdd(simpleName, ResolveCore);
 		}
 
-		public PEReader ResolveAssembly(AssemblyName assemblyName)
+		public PEReader ResolveAssembly(AssemblyNameInfo assemblyName)
 		{
 			Debug.Assert(assemblyName.Name != null);
 			return Resolve(assemblyName.Name);
 		}
 
-		public PEReader ResolveModule(AssemblyName referencingAssembly, string fileName)
+		public PEReader ResolveModule(AssemblyNameInfo referencingAssembly, string fileName)
 		{
 			return Resolve(Path.GetFileNameWithoutExtension(fileName));
 		}

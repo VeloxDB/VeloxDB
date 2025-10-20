@@ -4,6 +4,7 @@
 		<OutputType>Exe</OutputType>
 		<TargetFramework>net9.0</TargetFramework>
 		<Platforms>x64</Platforms>
+		<Platform>x64</Platform>
 		<AssemblyName>vlx</AssemblyName>
 		<Product>VeloxDB</Product>
 		<Company>VeloxDB</Company>
@@ -14,7 +15,6 @@
 		<RootNamespace>VeloxDB.ClientApp</RootNamespace>
 		<UseCommonOutputDirectory>true</UseCommonOutputDirectory>
 	</PropertyGroup>
-
 	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
 	  <DefineConstants>$(DefineConstants)TRACE;TEST_BUILD;</DefineConstants>
 	</PropertyGroup>

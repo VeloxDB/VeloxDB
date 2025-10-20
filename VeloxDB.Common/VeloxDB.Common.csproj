@@ -24,13 +24,13 @@
 		<Description>
 			The VeloxDB Protocol Library is a package that provides classes and methods for communication between VeloxDB Server and client applications.
 		</Description>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+		<OutputPath>$(VlxRootDir)\bin</OutputPath>
 	</PropertyGroup>
 
 	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-		<OutputPath>$(VlxRootDir)\bin</OutputPath>
 		<DefineConstants>TRACE;X86_64</DefineConstants>
-		<GenerateSerializationAssemblies>Off</GenerateSerializationAssemblies>
-		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+		<GenerateSerializationAssemblies>Off</GenerateSerializationAssemblies>		
 	</PropertyGroup>
 
 	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">

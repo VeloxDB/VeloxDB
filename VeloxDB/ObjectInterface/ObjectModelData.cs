@@ -83,10 +83,10 @@ internal sealed class ObjectModelData
 			if (indexDesc.Id < 0)
 				continue;
 
-			Delegate d = ClassData.CreateIndexComparer(indexDesc);
-
 			Type definingType = indexDesc.DefiningObjectModelClass.ClassType;
 			ClassData classData = userTypeMap[definingType];
+
+			Delegate d = classData.CreateIndexComparer(indexDesc);
 
 			indexNameMap.Add(new DataModelDescriptor.SplitName(indexDesc.NamespaceName, indexDesc.Name),
 				new IndexData(d, classData, indexDesc));

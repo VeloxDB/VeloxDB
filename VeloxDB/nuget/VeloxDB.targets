@@ -2,13 +2,27 @@
 	<PropertyGroup>
 		<StartAction>Program</StartAction>
 		<StartProgram>dotnet</StartProgram>
-		<StartArguments>$(PkgVeloxDB)/tools/vlxdbsrv.dll --interactive --update-assemblies "$(TargetDir.TrimEnd('\'))" --init-persistence "$(TargetDir)vlxdata"</StartArguments>
+		<StartArguments> $(PkgVeloxDB)/tools/vlxdbsrv.dll --interactive --update-assemblies "$(TargetDir.TrimEnd('\'))" --init-persistence "$(TargetDir)vlxdata"</StartArguments>
 		<StartArguments Condition="'$(BuildingInsideVisualStudio)' == 'true'">$(StartArguments) --wait</StartArguments>
 		<StartWorkingDirectory></StartWorkingDirectory>
 	</PropertyGroup>
 	<PropertyGroup Condition="'$(Configuration)' == 'Debug'">
 		<DebugType>embedded</DebugType>
 	</PropertyGroup>
+
+	<!--Target to add additionalprobingpath to arguments, so we can find Nuget dependencies-->
+	<Target Name="GenerateAdditionalProbingPaths" 
+			BeforeTargets="ComputeRunArguments">
+		<ItemGroup>
+			<ProbingPaths Include="$([System.String]::Copy($(NuGetPackageFolders)).Split(';'))" />
+		</ItemGroup>
+		<PropertyGroup>
+        	<Additional>@(ProbingPaths -> '--additionalprobingpath &quot;%(Identity)&quot;', ' ')</Additional>	
+			<Additional>$([System.String]::Copy($(Additional)).Replace('\','\\'))</Additional>
+			<RunArguments> exec $(Additional) $(RunArguments)</RunArguments>
+		</PropertyGroup>
+	</Target>
+
 	<Target Name="PrintLaunchJson">
 		<!-- 
     This target is a utility for easier debugging from Visual Studio Code. 
