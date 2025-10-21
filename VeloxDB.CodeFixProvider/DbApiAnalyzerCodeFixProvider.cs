@@ -162,7 +162,26 @@ namespace VeloxDB.SourceGenerator
 					continue;
 
 				IMethodSymbol method = (IMethodSymbol)member;
-				if (!TryGetAttribute(method, dbAPIOperationAttributeName, out attribute))
+
+				bool hasDbApiOpAttrib = false;
+				List<AttributeListSyntax> attributeLists = new List<AttributeListSyntax>();
+				foreach(AttributeData current in member.GetAttributes())
+				{
+					if (CheckType(current.AttributeClass, dbAPIOperationAttributeName))
+					{
+						hasDbApiOpAttrib = true;
+					}
+					else if (!CheckType(current.AttributeClass, dbAPIOperationErrorAttributeName))
+					{
+						//Skip unknown attribute
+						continue;
+                    }
+					
+					SeparatedSyntaxList<AttributeSyntax> clone = SyntaxFactory.SingletonSeparatedList((AttributeSyntax)current.ApplicationSyntaxReference.GetSyntax());
+					attributeLists.Add(SyntaxFactory.AttributeList(clone));
+				}
+				
+				if (!hasDbApiOpAttrib)
 					continue;
 
 				MethodDeclarationSyntax methodSyntax = (MethodDeclarationSyntax)method.DeclaringSyntaxReferences[0].GetSyntax(cancellationToken);
@@ -193,14 +212,7 @@ namespace VeloxDB.SourceGenerator
 					method.Name
 				);
 
-				newMethod = newMethod.WithAttributeLists(
-					SyntaxFactory.SingletonList(
-						SyntaxFactory.AttributeList(
-							SyntaxFactory.SingletonSeparatedList(
-								(AttributeSyntax)attribute.ApplicationSyntaxReference.GetSyntax()
-							)
-						)
-				));
+				newMethod = newMethod.AddAttributeLists(attributeLists.ToArray());
 
 				foreach (IParameterSymbol parameter in method.Parameters)
 				{
@@ -307,6 +319,7 @@ namespace VeloxDB.SourceGenerator
 		private readonly string[] objectModel = new string[] { "VeloxDB", "ObjectInterface", "ObjectModel" };
 		private readonly string[] dbAPIAttributeName = new string[] { "VeloxDB", "Protocol", "DbAPIAttribute" };
 		private readonly string[] dbAPIOperationAttributeName = new string[] { "VeloxDB", "Protocol", "DbAPIOperationAttribute" };
+		private readonly string[] dbAPIOperationErrorAttributeName = new string[] { "VeloxDB", "Protocol", "DbAPIOperationErrorAttribute" };
 
 		private static bool CheckType(INamedTypeSymbol type, string[] fullName)
 		{
