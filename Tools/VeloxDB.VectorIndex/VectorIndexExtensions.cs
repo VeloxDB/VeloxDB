@@ -91,7 +91,7 @@ public static class VectorIndexExtensions
         HNSW? hnsw = index.GetObject(name);
 
         if (hnsw == null)
-            throw new InvalidOperationException($"Vector index with name {name} already exists.");
+            throw new InvalidOperationException($"Vector index with name {name} doesn't exist.");
 
         hnsw.SafelyDelete();
     }
