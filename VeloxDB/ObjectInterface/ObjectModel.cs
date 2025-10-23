@@ -1236,10 +1236,8 @@ public unsafe sealed partial class ObjectModel
 			}
 			finally
 			{
-				if (!isCommit)
+				if (!isCommit && !transaction.Closed)
 				{
-
-
 					for (int i = 0; i < changeList.Count; i++)
 					{
 						DatabaseObject obj = changeList[i];
