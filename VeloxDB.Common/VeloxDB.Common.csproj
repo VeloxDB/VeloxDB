@@ -1,8 +1,9 @@
-<Project Sdk="Microsoft.NET.Sdk">
-
+<Project>
+    <Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk" />
+	<Import Project="../MultiArchitecture.Pack.props"/>
 	<PropertyGroup>
 		<TargetFramework>net9.0</TargetFramework>
-		<Platforms>x64</Platforms>
+		<Platforms>x64;ARM64</Platforms>
 		<RootNamespace>VeloxDB</RootNamespace>
 		<AssemblyName>vlxc</AssemblyName>
 		<Product>VeloxDB</Product>
@@ -17,32 +18,37 @@
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<PackageId>VeloxDB.Protocol</PackageId>
 		<Authors>VeloxDB</Authors>
-    <PackageIcon>icon.png</PackageIcon>
+		<PackageIcon>icon.png</PackageIcon>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageTags>Database;RDBMS;ORM</PackageTags>
+		<PackageTags>Database;RDBMS;ORM</PackageTags>
 		<PackageProjectUrl>https://www.vlxdb.com</PackageProjectUrl>
 		<Description>
 			The VeloxDB Protocol Library is a package that provides classes and methods for communication between VeloxDB Server and client applications.
 		</Description>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 		<OutputPath>$(VlxRootDir)\bin</OutputPath>
-	</PropertyGroup>
-
-	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-		<DefineConstants>TRACE;X86_64</DefineConstants>
-		<GenerateSerializationAssemblies>Off</GenerateSerializationAssemblies>		
-	</PropertyGroup>
-
-	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-		<OutputPath>$(VlxRootDir)\bin</OutputPath>
-		<DefineConstants>TRACE;X86_64;TEST_BUILD; TTTRACE</DefineConstants>
 		<GenerateSerializationAssemblies>Off</GenerateSerializationAssemblies>
-		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+		<DefineConstants>$(DefineConstants);TRACE</DefineConstants>
+	</PropertyGroup>
+
+	<PropertyGroup Condition="'$(Platform)'=='x64'">
+		<DefineConstants>$(DefineConstants);X86_64</DefineConstants>
+	</PropertyGroup>
+
+	<PropertyGroup Condition="'$(Platform)'=='ARM64'">
+		<DefineConstants>$(DefineConstants);ARM_64</DefineConstants>
+	</PropertyGroup>	
+
+	<PropertyGroup Condition="'$(Configuration)'=='Debug'">
+		<DefineConstants>$(DefineConstants);TEST_BUILD;TTTRACE</DefineConstants>
 	</PropertyGroup>
 
 	<ItemGroup>
-    <None Include="../LICENSE.txt" Pack="true" PackagePath="" />
+		<None Include="../LICENSE.txt" Pack="true" PackagePath="" />
 		<None Include="../README.md" Pack="true" PackagePath="" />
-    <None Include="../icon.png" Pack="true" PackagePath="" />
-  </ItemGroup>
+		<None Include="../icon.png" Pack="true" PackagePath="" />
+	</ItemGroup>
+
+	<Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
+	<Import Project="../MultiArchitecture.Pack.targets" />
 </Project>

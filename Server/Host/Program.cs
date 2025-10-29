@@ -197,7 +197,7 @@ internal sealed class Program
 		if (dir == null)
 			return null;
 
-		return Path.GetFullPath(dir).Trim(Path.DirectorySeparatorChar);
+		return Path.GetFullPath(dir).TrimEnd(Path.DirectorySeparatorChar);
     }
 
 	private static void InitLog(Configuration configuration, bool logToConsole)

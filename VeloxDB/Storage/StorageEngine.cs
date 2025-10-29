@@ -53,6 +53,11 @@ internal unsafe sealed partial class StorageEngine : IDisposable
 		PersistenceSettings persistanceSettings = null, ReplicationSettings replicationSettings = null,
 		ILeaderElector localElector = null, ILeaderElector globalElector = null, Tracing.Source trace = null)
 	{
+		#if ANYCPU
+			throw new PlatformNotSupportedException("This VeloxDB assembly was built for the ANYCPU target. " + 
+													"This build is intended only for referencing from other assemblies and is not executable. " + 
+													"Please use the platform-specific (X64 or ARM64) VeloxDB runtime.");		
+		#endif
 		if (replicationSettings != null && persistanceSettings == null)
 			throw new ArgumentException("Database replication without persistence is not allowed.");
 

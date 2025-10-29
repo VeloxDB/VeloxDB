@@ -1,8 +1,9 @@
-<Project Sdk="Microsoft.NET.Sdk">
-
+<Project>
+    <Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk" />
+	<Import Project="../MultiArchitecture.Pack.props"/>
 	<PropertyGroup>
 		<TargetFramework>net9.0</TargetFramework>
-		<Platforms>x64</Platforms>
+		<Platforms>x64; ARM64</Platforms>
 		<AssemblyName>vlxdbem</AssemblyName>
 		<RootNamespace>VeloxDB.Embedded</RootNamespace>
 		<PackageOutputPath>$(VlxRootDir)\bin\nuget</PackageOutputPath>
@@ -18,38 +19,14 @@
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 		<Description>An object oriented database for building next generation solutions with .NET and C#.</Description>
-	</PropertyGroup>
-
-	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
 		<GenerateSerializationAssemblies>Off</GenerateSerializationAssemblies>
 		<OutputPath>$(VlxRootDir)\bin</OutputPath>
 		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-		<NoWarn>$(NoWarn);1701;1702;CA1063;CA1416</NoWarn>
-		<DefineConstants>$(DefineConstants);TEST_BUILD;TTTRACE;X86_64</DefineConstants>
+		<NoWarn>$(NoWarn);1701;1702;CA1063</NoWarn>
 	</PropertyGroup>
 
-	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|arm64'">
-		<GenerateSerializationAssemblies>Off</GenerateSerializationAssemblies>
-		<OutputPath>$(VlxRootDir)\bin</OutputPath>
-		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-		<DefineConstants>TRACE;ARM_64;TEST_BUILD</DefineConstants>
-		<NoWarn>$(NoWarn);1701;1702;CA1063;</NoWarn>
-	</PropertyGroup>
-
-	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-		<OutputPath>$(VlxRootDir)\bin</OutputPath>
-		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-		<GenerateSerializationAssemblies>Off</GenerateSerializationAssemblies>
-		<DefineConstants>$(DefineConstants);X86_64</DefineConstants>
-		<NoWarn>$(NoWarn);1701;1702;CA1063;CA1416;</NoWarn>
-	</PropertyGroup>
-
-	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|arm64'">
-		<OutputPath>$(VlxRootDir)\bin</OutputPath>
-		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-		<GenerateSerializationAssemblies>Off</GenerateSerializationAssemblies>
-		<DefineConstants>TRACE;ARM_64</DefineConstants>
-		<NoWarn>$(NoWarn);1701;1702;CA1063;</NoWarn>
+	<PropertyGroup Condition="'$(Configuration)'=='Debug'">
+		<DefineConstants>$(DefineConstants);TRACE;TEST_BUILD;TTTRACE</DefineConstants>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -58,9 +35,11 @@
 	</ItemGroup>
 
 	<ItemGroup>
-    <None Include="../LICENSE.txt" Pack="true" PackagePath="" />
+		<None Include="../LICENSE.txt" Pack="true" PackagePath="" />
 		<None Include="../README.md" Pack="true" PackagePath="" />
-    <None Include="../icon.png" Pack="true" PackagePath="" />
-  </ItemGroup>
-
+		<None Include="../icon.png" Pack="true" PackagePath="" />
+	</ItemGroup>
+	
+	<Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
+	<Import Project="../MultiArchitecture.Pack.targets"/>
 </Project>

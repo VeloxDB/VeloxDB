@@ -107,8 +107,18 @@ internal sealed class Server : IDisposable
 	{
 		Version? version = Assembly.GetExecutingAssembly().GetName().Version;
 		Checker.AssertNotNull(version);
-		Tracing.Info("Starting VeloxDB {0}, PID: {1}", version.ToString(), Environment.ProcessId);
+
+		Tracing.Info("Starting VeloxDB {0} ({2}), PID: {1}", version.ToString(), Environment.ProcessId, BuildPlatform);
 	}
+
+	private static string BuildPlatform =>
+	#if X86_64
+		"X64";
+	#elif ARM_64
+		"ARM64";
+	#else
+		"Unknown";
+	#endif
 
 	private bool InitPersistance(string persistenceDir)
 	{

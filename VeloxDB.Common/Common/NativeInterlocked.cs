@@ -4,7 +4,6 @@ using System.Threading;
 
 namespace VeloxDB.Common;
 
-[StructLayout(LayoutKind.Sequential, Pack = 1, Size = 1)]
 internal struct NativeInterlocked
 {
 	public int state;
@@ -40,7 +39,6 @@ internal struct NativeInterlocked
 	}
 }
 
-[StructLayout(LayoutKind.Sequential, Pack = 1, Size = 1)]
 internal struct NativeInterlocked64
 {
 	public long state;

@@ -1,10 +1,24 @@
 <Project>
-  <PropertyGroup>
-    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)obj\$(MSBuildProjectName)\</BaseIntermediateOutputPath>
+	<PropertyGroup>
+		<BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)obj\$(MSBuildProjectName)\</BaseIntermediateOutputPath>
 		<Version>0.6.0</Version>
 		<VlxRootDir>$(MSBuildThisFileDirectory)</VlxRootDir>
 		<Platform>x64</Platform>
 	</PropertyGroup>
+
+	<PropertyGroup Condition="'$(Platform)'=='x64'">
+		<DefineConstants>$(DefineConstants);X86_64</DefineConstants>
+	</PropertyGroup>
+
+	<PropertyGroup Condition="'$(Platform)'=='ARM64'">
+		<DefineConstants>$(DefineConstants);ARM_64</DefineConstants>
+		<TargetPlatform>ARM64</TargetPlatform>
+	</PropertyGroup>
+
+	<PropertyGroup Condition="'$(Platform)'=='AnyCPU'">
+		<DefineConstants>$(DefineConstants);AnyCPU</DefineConstants>
+	</PropertyGroup>
+		
 	<Import
 		Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))"
 		Condition="exists($([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../')))" />

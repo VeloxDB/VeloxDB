@@ -1,0 +1,32 @@
+<Project>
+    <ItemGroup>
+        <X64Runtimes Include="win-x64" />
+        <X64Runtimes Include="linux-x64" />
+        <X64Runtimes Include="osx-x64" />
+        <ARM64Runtimes Include="win-arm64" />
+        <ARM64Runtimes Include="linux-arm64" />
+        <ARM64Runtimes Include="osx-arm64" />
+    </ItemGroup>
+    
+    <Target Name="BuildPerRuntime">
+        <MSBuild Projects="$(MSBuildProjectFullPath)" Targets="Build" Properties="Configuration=$(Configuration); Platform=AnyCPU; OutputPath=$(VlxRootDir)\bin\runtimes\$(AssemblyName)\AnyCPU\;" />
+        <MSBuild Projects="$(MSBuildProjectFullPath)" Targets="Build" Properties="Configuration=$(Configuration); Platform=X64; OutputPath=$(VlxRootDir)\bin\runtimes\$(AssemblyName)\X64\;" />
+        <MSBuild Projects="$(MSBuildProjectFullPath)" Targets="Build" Properties="Configuration=$(Configuration); Platform=ARM64; OutputPath=$(VlxRootDir)\bin\runtimes\$(AssemblyName)\ARM64\;" />
+    </Target>
+
+    <Target Name="CreatePackageFiles" DependsOnTargets="BuildPerRuntime">
+        <ItemGroup>
+            <None Include="$(VlxRootDir)bin\runtimes\$(AssemblyName)\AnyCPU\$(AssemblyName).dll" Pack="true" PackagePath="lib/net9.0/$(AssemblyName).dll"/>
+            <None Include="$(VlxRootDir)bin\runtimes\$(AssemblyName)\AnyCPU\$(AssemblyName).xml" Pack="true" PackagePath="lib/net9.0/$(AssemblyName).xml"/>
+
+            <None Include="$(VlxRootDir)bin\runtimes\$(AssemblyName)\X64\$(AssemblyName).dll" Pack="true" PackagePath="@(X64Runtimes -> 'runtimes/%(Identity)/lib/$(TargetFramework)/$(AssemblyName).dll')"/>
+            <None Include="$(VlxRootDir)bin\runtimes\$(AssemblyName)\X64\$(AssemblyName).xml" Pack="true" PackagePath="@(X64Runtimes -> 'runtimes/%(Identity)/lib/$(TargetFramework)/$(AssemblyName).xml')"/>
+
+            <None Include="$(VlxRootDir)bin\runtimes\$(AssemblyName)\ARM64\$(AssemblyName).dll" Pack="true" PackagePath="@(ARM64Runtimes -> 'runtimes/%(Identity)/lib/$(TargetFramework)/$(AssemblyName).dll')"/>
+            <None Include="$(VlxRootDir)bin\runtimes\$(AssemblyName)\ARM64\$(AssemblyName).xml" Pack="true" PackagePath="@(ARM64Runtimes -> 'runtimes/%(Identity)/lib/$(TargetFramework)/$(AssemblyName).xml')"/>
+        </ItemGroup>
+    </Target>
+
+    <Target Name="IncrementalClean" />    
+
+</Project>

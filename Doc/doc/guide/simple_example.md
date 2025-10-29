@@ -28,22 +28,6 @@ cd vlxblog
 * Select **.NET 9.0** for framework and click **Create**.
 ---
 
-#### Change project platform to x64
-VeloxDB supports only x64 platform. In order to avoid build warnings, it is recommended to target x64 platform.
-
-#### [.NET CLI](#tab/net-cli)
-
-* Open vlxblog.csproj project file in text editor
-* Add ```<PlatformTarget>x64</PlatformTarget>``` under ```<PropertyGroup>``` tag
-
-#### [Visual Studio](#tab/visual-studio)
-
-* Open Project 🡒 vlxblog Properties
-* Go to Build 🡒 General
-* Under **Platform target** select **x64** from dropdown list
-* Click File 🡒 Save vlxblog
----
-
 #### Add NuGet package
 
 #### [.NET CLI](#tab/net-cli)
@@ -150,21 +134,6 @@ cd vlxclient
 * Select **Console App** with the **C#** tag and click **Next**
 * Enter **vlxclient** for the name and click **Next**
 * Select **.NET 9.0** for framework and click **Create**.
----
-
-#### Change project platform to x64
-
-#### [.NET CLI](#tab/net-cli)
-
-* Open vlxclient.csproj project file in text editor
-* Add ```<PlatformTarget>x64</PlatformTarget>``` under ```<PropertyGroup>``` tag
-
-#### [Visual Studio](#tab/visual-studio)
-
-* Open **Project** 🡒 **vlxclient Properties**
-* Go to **Build** 🡒 **General**
-* Under **Platform target** select **x64** from dropdown list
-* Click **File** 🡒 **Save vlxclient**
 ---
 
 #### Add NuGet package

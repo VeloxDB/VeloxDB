@@ -6,7 +6,6 @@ using System.Threading;
 
 namespace VeloxDB.Common;
 
-[StructLayout(LayoutKind.Sequential, Pack = 1, Size = 1)]
 internal struct RWLock
 {
 	const int spinCount = 500;

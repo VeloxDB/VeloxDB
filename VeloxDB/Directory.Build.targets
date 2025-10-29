@@ -1,9 +1,14 @@
 <Project>
+	<PropertyGroup Condition="'$(_IsPacking)' == 'true'">
+		<Platform>AnyCPU</Platform>
+		<PlatformTarget>AnyCPU</PlatformTarget>
+	</PropertyGroup>
 	<Target Name="PublishServer" BeforeTargets="GenerateNuspec">
-		<Exec Command="dotnet publish /p:Platform=x64 /p:NugetPublish='true' -c Release -o $(VlxRootDir)/bin/publish/_vlxdbsrv_temp" WorkingDirectory="$(ProjectDir)/../Server/Host"/>
+		<Exec Command="dotnet publish /p:Platform=ARM64 /p:NugetPublish='true' /p:OutputPath=$(VlxRootDir)/bin/publish/_vlxdbsrv_temp/build/ARM64 -c Release -o $(VlxRootDir)/bin/publish/_vlxdbsrv_temp/ARM64" WorkingDirectory="$(ProjectDir)/../Server/Host"/>
+		<Exec Command="dotnet publish /p:Platform=X64 /p:NugetPublish='true' /p:OutputPath=$(VlxRootDir)/bin/publish/_vlxdbsrv_temp/build/X64 -c Release -o $(VlxRootDir)/bin/publish/_vlxdbsrv_temp/X64" WorkingDirectory="$(ProjectDir)/../Server/Host"/>
 	</Target>
 	<Target Name="BuildSourceGen" BeforeTargets="GenerateNuspec">
-		<Exec Command="dotnet build /p:Platform=x64 -c Release" WorkingDirectory="$(ProjectDir)/../VeloxDB.SourceGenerator"/>
-		<Exec Command="dotnet build /p:Platform=x64 -c Release" WorkingDirectory="$(ProjectDir)/../VeloxDB.CodeFixProvider"/>
+		<Exec Command="dotnet build /p:Platform=AnyCPU -c Release" WorkingDirectory="$(ProjectDir)/../VeloxDB.SourceGenerator"/>
+		<Exec Command="dotnet build /p:Platform=AnyCPU -c Release" WorkingDirectory="$(ProjectDir)/../VeloxDB.CodeFixProvider"/>
 	</Target>
 </Project>

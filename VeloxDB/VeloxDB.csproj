@@ -1,8 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
 	<PropertyGroup>
 		<TargetFramework>net9.0</TargetFramework>
-		<Platforms>x64</Platforms>
+		<Platforms>x64;ARM64;AnyCPU</Platforms>
 		<AssemblyName>vlxdb</AssemblyName>
 		<RootNamespace>VeloxDB</RootNamespace>
 		<PackageOutputPath>$(VlxRootDir)\bin\nuget</PackageOutputPath>
@@ -19,8 +18,10 @@
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 		<Description>An object oriented database for building next generation solutions with .NET and C#.</Description>
-		<VlxDbSrvTemp>$(VlxRootDir)bin/publish/_vlxdbsrv_temp/*</VlxDbSrvTemp>
-		<VlxDbSrvTemp Condition="'$(OS)' == 'Windows_NT'">$(VlxDbSrvTemp.Replace("/", "\"))</VlxDbSrvTemp>
+		<ARM64Publish>$(VlxRootDir)bin/publish/_vlxdbsrv_temp/ARM64/*</ARM64Publish>
+		<X64Publish>$(VlxRootDir)bin/publish/_vlxdbsrv_temp/X64/*</X64Publish>
+		<ARM64Publish Condition="'$(OS)' == 'Windows_NT'">$(ARM64Publish.Replace("/", "\"))</ARM64Publish>
+		<X64Publish Condition="'$(OS)' == 'Windows_NT'">$(X64Publish.Replace("/", "\"))</X64Publish>
 		<NuspecProperties>
 			version=$(Version);
 			vlxrootdir=$(VlxRootDir);
@@ -30,44 +31,18 @@
 			icon=$(PackageIcon);
 			description=$(Description);
 			readme=$(PackageReadmeFile);
-			vlxdbsrv_temp=$(VlxDbSrvTemp);
+			arm64_publish=$(ARM64Publish);
+			x64_publish=$(X64Publish);
 		</NuspecProperties>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-	</PropertyGroup>
-
-	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
 		<GenerateSerializationAssemblies>Off</GenerateSerializationAssemblies>
-		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 		<OutputPath>$(VlxRootDir)\bin</OutputPath>
 		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-		<NoWarn>$(NoWarn);1701;1702;CA1063;CA1416</NoWarn>
-		<DefineConstants>$(DefineConstants);TEST_BUILD;TTTRACE;X86_64</DefineConstants>
-	</PropertyGroup>
-
-	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|arm64'">
-		<GenerateSerializationAssemblies>Off</GenerateSerializationAssemblies>
-		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-		<OutputPath>$(VlxRootDir)\bin</OutputPath>
-		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-		<DefineConstants>TRACE;ARM_64;TEST_BUILD</DefineConstants>
 		<NoWarn>$(NoWarn);1701;1702;CA1063;</NoWarn>
 	</PropertyGroup>
 
-	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-		<OutputPath>$(VlxRootDir)\bin</OutputPath>
-		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-		<GenerateSerializationAssemblies>Off</GenerateSerializationAssemblies>
-		<DefineConstants>$(DefineConstants);X86_64</DefineConstants>
-		<NoWarn>$(NoWarn);1701;1702;CA1063;CA1416;</NoWarn>
-	</PropertyGroup>
-
-	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|arm64'">
-		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-		<OutputPath>$(VlxRootDir)\bin</OutputPath>
-		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-		<GenerateSerializationAssemblies>Off</GenerateSerializationAssemblies>
-		<DefineConstants>TRACE;ARM_64</DefineConstants>
-		<NoWarn>$(NoWarn);1701;1702;CA1063;</NoWarn>
+	<PropertyGroup Condition="'$(Configuration)'=='Debug'">
+		<DefineConstants>$(DefineConstants);TEST_BUILD;TTTRACE</DefineConstants>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -100,13 +75,13 @@
 	</ItemGroup>
 
 	<ItemGroup>
-    <None Include="../LICENSE.txt" Pack="true" PackagePath="" />
+		<None Include="../LICENSE.txt" Pack="true" PackagePath="" />
 		<None Include="../README.md" Pack="true" PackagePath="" />
-    <None Include="../icon.png" Pack="true" PackagePath="" />
-  </ItemGroup>
+		<None Include="../icon.png" Pack="true" PackagePath="" />
+	</ItemGroup>
 
 	<ItemGroup>
-	  <Folder Include="Storage\Timeseries\" />
+		<Folder Include="Storage\Timeseries\" />
 	</ItemGroup>
 
 </Project>

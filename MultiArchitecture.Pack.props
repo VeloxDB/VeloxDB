@@ -1,0 +1,7 @@
+<Project>
+    <PropertyGroup>
+        <BeforePack>CreatePackageFiles;$(BeforePack)</BeforePack>
+        <Platforms>$(Platforms);AnyCPU</Platforms>
+		<IncludeBuildOutput>false</IncludeBuildOutput>
+    </PropertyGroup>
+</Project>

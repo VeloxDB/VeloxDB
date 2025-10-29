@@ -2,7 +2,8 @@
 	<PropertyGroup>
 		<StartAction>Program</StartAction>
 		<StartProgram>dotnet</StartProgram>
-		<StartArguments> $(PkgVeloxDB)/tools/vlxdbsrv.dll --interactive --update-assemblies "$(TargetDir.TrimEnd('\'))" --init-persistence "$(TargetDir)vlxdata"</StartArguments>
+		<HostArch>$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToUpperInvariant())</HostArch>
+		<StartArguments> $(PkgVeloxDB)/tools/$(HostArch)/vlxdbsrv.dll --interactive --update-assemblies "$(TargetDir.TrimEnd('\'))" --init-persistence "$(TargetDir)vlxdata"</StartArguments>
 		<StartArguments Condition="'$(BuildingInsideVisualStudio)' == 'true'">$(StartArguments) --wait</StartArguments>
 		<StartWorkingDirectory></StartWorkingDirectory>
 	</PropertyGroup>

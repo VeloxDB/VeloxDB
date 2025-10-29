@@ -4,11 +4,11 @@
     <TargetFramework>net9.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <Platforms>AnyCPU;x64</Platforms>
+    <Platforms>x64;ARM64</Platforms>
   </PropertyGroup>
 
 	<PropertyGroup Condition="'$(Configuration)'=='Debug'">
-		<DefineConstants>TEST_BUILD</DefineConstants>
+		<DefineConstants>$(DefineConstants);TEST_BUILD</DefineConstants>
 	</PropertyGroup>
 
   <ItemGroup>
