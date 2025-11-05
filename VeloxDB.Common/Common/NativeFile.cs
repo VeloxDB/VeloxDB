@@ -57,8 +57,8 @@ internal abstract class NativeFile : IDisposable
 		if (OperatingSystem.IsWindows())
 			return new WindowsFile(fileName, mode, access, share, flags);
 
-		if (OperatingSystem.IsLinux())
-			return new LinuxFile(fileName, mode, access, share, flags);
+		if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
+			return new PosixFile(fileName, mode, access, share, flags);
 
 		throw Utils.OSNotSupportedException();
 	}
@@ -96,8 +96,8 @@ internal abstract class NativeFile : IDisposable
 		if (OperatingSystem.IsWindows())
 			return WindowsFile.GetPhysicalSectorSizeInternal(fileName);
 
-		if (OperatingSystem.IsLinux())
-			return LinuxFile.GetPhysicalSectorSizeInternal(fileName);
+		if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
+			return PosixFile.GetPhysicalSectorSizeInternal(fileName);
 
 		throw Utils.OSNotSupportedException();
 	}
@@ -492,98 +492,155 @@ internal struct stat_x86_64
 	private long __glibc_reserved3;
 }
 
-internal sealed class LinuxFile : NativeFile
+internal sealed class PosixFile : NativeFile
 {
 	int hFile;
-
+	private const string lib = "libvlxdb_native";
 	private const string libc = "libc";
-
-	private const int error = -1;
-
-	//Open file mode
-	private const int S_IRUSR = 256;
-	private const int S_IWUSR = 128;
-
-	//Open flags
-	private const int O_RDONLY = 0;
-	private const int O_WRONLY = 1;
-	private const int O_RDWR = 2;
-	private const int O_CREAT = 64;
-	private const int O_EXCL = 128;
-	private const int O_TRUNC = 512;
-	private const int O_APPEND = 1024;
-	private static readonly int O_DIRECT = 16384;
-
-	//Seek flags
-	private const int SEEK_SET = 0;
-	private const int SEEK_CUR = 1;
-	private const int SEEK_END = 2;
-
-	//flock flags
-	private const int LOCK_SH = 1;
-	private const int LOCK_EX = 2;
-	private const int LOCK_NB = 4;
-
-	//FAdvise flags
-	private const int POSIX_FADV_SEQUENTIAL = 2;
-
-	//Errors
 	private const int ENOENT = 2; // No such file or directory
+	private const int error = -1;
+	private enum NativeFileError : int
+	{
+		None = 0,
+		CheckErrorCode = 1,
+		SharingViolation = 2,
+		UnknownEnumValue = 3,
+		NotImplemented = 4
+	}
 
-	private static readonly int _STAT_VER_KERNEL;
+	[StructLayout(LayoutKind.Sequential, Pack = 1)]
+	private struct DeviceInfo
+	{
+		public uint major;
+		public uint minor;
+	}
 
-	[DllImport(libc, SetLastError=true)]
+	[DllImport(lib, CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
 	[SuppressUnmanagedCodeSecurity]
-	private static extern int open(string pathname, int flags, int mode);
-
-	[DllImport(libc, SetLastError=true)]
-	[SuppressUnmanagedCodeSecurity]
-	private static extern int __fxstat(int ver, int fd, ref stat_x86_64 statbuf);
-
-	[DllImport(libc, SetLastError=true)]
-	[SuppressUnmanagedCodeSecurity]
-	private static extern int __xstat(int ver, string fileName, ref stat_x86_64 statbuf);
+	private static extern int NativeFile_Create([MarshalAs(UnmanagedType.LPStr)] string fileName, FileMode mode, FileAccess access,
+		FileShare share, FileFlags flags, out NativeFileError errorCode);
 
 
-	[DllImport(libc, SetLastError=true)]
-	[SuppressUnmanagedCodeSecurity]
-	private static extern long lseek64(int fd, long offset, int whence);
+	[DllImport(lib, CallingConvention = CallingConvention.Cdecl)]
+	private static extern long NativeFile_GetSize(int hFile);
 
-	[DllImport(libc, SetLastError=true)]
-	[SuppressUnmanagedCodeSecurity]
-	private static extern int fsync(int fd);
+	[DllImport(lib, CallingConvention = CallingConvention.Cdecl)]
+	private static extern long NativeFile_GetPosition(int hFile);
 
-	[DllImport(libc, SetLastError=true, EntryPoint="read")]
-	[SuppressUnmanagedCodeSecurity]
-	private static extern long read64(int fd, IntPtr buf, ulong count);
+	[DllImport(lib, CallingConvention = CallingConvention.Cdecl)]
+	private static extern int NativeFile_Flush(int hFile);
 
-	[DllImport(libc, SetLastError=true, EntryPoint="read")]
-	[SuppressUnmanagedCodeSecurity]
-	private static extern int read32(int fd, IntPtr buf, uint count);
+	[DllImport(lib, CallingConvention = CallingConvention.Cdecl)]
+	private static extern long NativeFile_Read(int hFile, IntPtr buffer, long size);
 
-	[DllImport(libc, SetLastError=true)]
-	[SuppressUnmanagedCodeSecurity]
-	private static extern int ftruncate64(int fd, long length);
+	[DllImport(lib, CallingConvention = CallingConvention.Cdecl)]
+	private static extern int NativeFile_Resize(int hFile, long size);
 
-	[DllImport(libc, SetLastError=true, EntryPoint="write")]
-	[SuppressUnmanagedCodeSecurity]
-	private static extern long write64(int fd, IntPtr buf, ulong count);
+	[DllImport(lib, CallingConvention = CallingConvention.Cdecl)]
+	private static extern long NativeFile_Seek(int hFile, long offset, MoveMethod moveMethod);
 
-	[DllImport(libc, SetLastError=true, EntryPoint="write")]
-	[SuppressUnmanagedCodeSecurity]
-	private static extern int write32(int fd, IntPtr buf, uint count);
+	[DllImport(lib, CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
+	private static extern long NativeFile_Write(int hFile, IntPtr buffer, long size);
 
-	[DllImport(libc, SetLastError=true)]
-	[SuppressUnmanagedCodeSecurity]
-	private static extern int close(int fd);
+	[DllImport(lib, CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
+	private static extern DeviceInfo NativeFile_GetDeviceInfo([MarshalAs(UnmanagedType.LPStr)] string fileName, out NativeFileError errorCode);
 
-	[DllImport(libc, SetLastError=true)]
-	[SuppressUnmanagedCodeSecurity]
-	private static extern int posix_fadvise(int fd, long offset, long len, int advice);
+	[DllImport(lib, CallingConvention = CallingConvention.Cdecl)]
+	private static extern int NativeFile_Close(int hFile);
 
-	[DllImport(libc, SetLastError=true)]
-	[SuppressUnmanagedCodeSecurity]
-	private static extern int flock(int fd, int operation);
+	[DllImport(lib, CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
+	private static extern int NativeFile_GetDeviceSectorSize([MarshalAs(UnmanagedType.LPStr)] string fileName, out NativeFileError errorCode);
+
+	public PosixFile(string fileName, FileMode mode, FileAccess access, FileShare share, FileFlags flags)
+	{
+		hFile = NativeFile_Create(fileName, mode, access, share, flags, out NativeFileError errorCode);
+
+		if (hFile == error)
+		{
+			switch (errorCode)
+			{
+				case NativeFileError.CheckErrorCode:
+					throw CreateException();
+
+				case NativeFileError.SharingViolation:
+					throw new SharingViolationException();
+
+				case NativeFileError.UnknownEnumValue:
+					throw new ArgumentException();
+
+				default:
+					throw new NativeException("Unknown error", -1);
+			}
+		}
+	}
+
+	public override long Size
+	{
+		get
+		{
+			long result = NativeFile_GetSize(hFile);
+			if (result == error)
+				throw CreateException();
+			return result;
+		}
+	}
+
+	public override long Position
+	{
+		get
+		{
+			long result = NativeFile_GetPosition(hFile);
+			if (result == error)
+				throw CreateException();
+			return result;
+		}
+	}
+
+	public override void Read(IntPtr buffer, long size)
+	{
+		Read(buffer, size, out _);
+	}
+
+	public override void Read(IntPtr buffer, long size, out long readSize)
+	{
+		long result = NativeFile_Read(hFile, buffer, size);
+		if (result == error)
+			throw CreateException();
+		readSize = result;
+	}
+
+	public override void Write(nint buffer, long size)
+	{
+		long result = NativeFile_Write(hFile, buffer, size);
+		if (result == error)
+			throw CreateException();
+	}
+
+	public override void Seek(long offset, MoveMethod moveMethod = MoveMethod.Begin)
+	{
+		long result = NativeFile_Seek(hFile, offset, moveMethod);
+		if (result == error)
+			throw CreateException();
+	}
+
+	public override void Flush()
+	{
+		int result = NativeFile_Flush(hFile);
+		if (result == error)
+			throw CreateException();
+	}
+
+	public override void Resize(long size)
+	{
+		int result = NativeFile_Resize(hFile, size);
+		if (result == error)
+			throw CreateException();
+	}
+
+	protected override void OnCleanup(bool isDisposing)
+	{
+		NativeFile_Close(hFile);
+	}
 
 	[DllImport(libc, SetLastError=true, EntryPoint="strerror")]
 	[SuppressUnmanagedCodeSecurity]
@@ -594,95 +651,6 @@ internal sealed class LinuxFile : NativeFile
 		return Marshal.PtrToStringUTF8(_strerror(errnum));
 	}
 
-	private delegate long RWDelegate(int fd, IntPtr buf, ulong count);
-
-	static readonly RWDelegate read;
-	static readonly RWDelegate write;
-
-	static LinuxFile()
-	{
-		_STAT_VER_KERNEL = 0;
-
-		if (IntPtr.Size == 8)
-		{
-			read = read64;
-			write = write64;
-		}
-		else if (IntPtr.Size == 4)
-		{
-			read = Read64To32Wrapper;
-			write = Write64To32Wrapper;
-		}
-
-		if (RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ||
-			RuntimeInformation.ProcessArchitecture == Architecture.Arm)
-		{
-			O_DIRECT = 65536;
-		}
-	}
-
-	public LinuxFile(string fileName, FileMode mode, FileAccess access, FileShare share, FileFlags flags)
-	{
-		int osFlags = FlagsFromMode(mode) | FlagsFromAccess(access) | FlagsFromFlags(flags);
-		hFile = open(fileName, osFlags, S_IRUSR | S_IWUSR);
-
-		if (hFile == error)
-			throw CreateException();
-
-		if (flags.HasFlag(FileFlags.Sequential))
-		{
-			posix_fadvise(hFile, 0, 0, POSIX_FADV_SEQUENTIAL);
-		}
-
-		SetShare(hFile, share);
-	}
-
-	private void SetShare(int hFile, FileShare share)
-	{
-		if (share == FileShare.ReadWrite)
-			return;
-
-		int lck = 0;
-
-		switch(share)
-		{
-			case FileShare.None:
-				lck = LOCK_EX | LOCK_NB;
-				break;
-			case FileShare.Read:
-			case FileShare.ReadWrite:
-			case FileShare.Write:
-				lck = LOCK_SH | LOCK_NB;
-				break;
-			default:
-				throw new ArgumentException();
-		}
-
-		int result = flock(hFile, lck);
-		if (result == error)
-			throw new SharingViolationException();
-	}
-
-	private int FlagsFromFlags(FileFlags flags)
-	{
-		int result = 0;
-
-		if (flags.HasFlag(FileFlags.Unbuffered))
-			result |= O_DIRECT;
-
-		return result;
-	}
-
-	private static long Read64To32Wrapper(int fd, IntPtr buf, ulong count)
-	{
-		return read32(fd, buf, (uint)count);
-	}
-
-	private static long Write64To32Wrapper(int fd, IntPtr buf, ulong count)
-	{
-		return write32(fd, buf, (uint)count);
-	}
-
 	private static Exception CreateException()
 	{
 		int err = Marshal.GetLastWin32Error();
@@ -691,135 +659,39 @@ internal sealed class LinuxFile : NativeFile
 		return new NativeException($"IOError({strerror(err)})", err);
 	}
 
-	private int FlagsFromMode(FileMode mode)
-	{
-		switch(mode)
-		{
-			case FileMode.Append:
-				return O_APPEND;
-
-			case FileMode.Create:
-				return O_CREAT | O_TRUNC;
-
-			case FileMode.CreateNew:
-				return O_CREAT | O_EXCL;
-
-			case FileMode.Open:
-				return 0;
-
-			case FileMode.OpenOrCreate:
-				return O_CREAT;
-
-			case FileMode.Truncate:
-				return O_TRUNC;
-
-			default:
-				throw new ArgumentException();
-		}
-
-	}
-
-	private int FlagsFromAccess(FileAccess access)
-	{
-		switch(access)
-		{
-			case FileAccess.Read:
-				return O_RDONLY;
-			case FileAccess.Write:
-				return O_WRONLY;
-			case FileAccess.ReadWrite:
-				return O_RDWR;
-			default:
-				throw new ArgumentException();
-		}
-	}
-
-	public override long Size
-	{
-		get
-		{
-			stat_x86_64 statbuf = new stat_x86_64();
-			int result = __fxstat(_STAT_VER_KERNEL, hFile, ref statbuf);
-
-			if (result != 0)
-				throw CreateException();
-
-			return statbuf.st_size;
-		}
-	}
-
-	public override long Position
-	{
-		get
-		{
-			long result = lseek64(hFile, 0, SEEK_CUR);
-			if (result == error)
-				throw CreateException();
-
-			return result;
-		}
-	}
-
-	public override void Flush()
-	{
-		int result = fsync(hFile);
-		if (result == error)
-			throw CreateException();
-	}
-
-	public override void Read(IntPtr buffer, long size)
-	{
-		Read(buffer, size, out _);
-	}
-
-	public override void Read(IntPtr buffer, long size, out long readSize)
-	{
-		long result = read(hFile, buffer, (ulong)size);
-
-		if (result == error)
-			throw CreateException();
-
-		readSize = result;
-	}
-
-	public override void Resize(long size)
-	{
-		int result = ftruncate64(hFile, size);
-		if (result == error)
-			throw CreateException();
-	}
-
-	public override void Seek(long offset, MoveMethod moveMethod = MoveMethod.Begin)
-	{
-		lseek64(hFile, offset, MoveMethodToWhence(moveMethod));
-	}
-
-	private int MoveMethodToWhence(MoveMethod moveMethod)
-	{
-		switch(moveMethod)
-		{
-			case MoveMethod.Begin:
-				return SEEK_SET;
-			case MoveMethod.Current:
-				return SEEK_CUR;
-			case MoveMethod.End:
-				return SEEK_END;
-			default:
-				throw new ArgumentException();
-		}
-	}
-
 	public static uint GetPhysicalSectorSizeInternal(string fileName)
 	{
-		stat_x86_64 stat = new stat_x86_64();
-		int result = __xstat(_STAT_VER_KERNEL, fileName, ref stat);
-		if (result == error)
+		if (OperatingSystem.IsLinux())
+			return GetPhysicalSectorSizeLinux(fileName);
+		else if (OperatingSystem.IsMacOS())
+		{
+			int blockSize = NativeFile_GetDeviceSectorSize(fileName, out NativeFileError errorCode);
+
+			if (errorCode == NativeFileError.NotImplemented)
+				throw new NotSupportedException();
+			else if (errorCode == NativeFileError.CheckErrorCode)
+				throw CreateException();
+			else if (errorCode != NativeFileError.None)
+				throw new NativeException("Unknown error", -1);
+
+			return (uint)blockSize;
+		}else
+			throw Utils.OSNotSupportedException();
+	}
+
+	private static uint GetPhysicalSectorSizeLinux(string fileName)
+	{
+		NativeFileError errorCode;
+		DeviceInfo di = NativeFile_GetDeviceInfo(fileName, out errorCode);
+
+		if (errorCode == NativeFileError.NotImplemented)
+			throw new NotSupportedException();
+		else if (errorCode == NativeFileError.CheckErrorCode)
 			throw CreateException();
+		else if (errorCode != NativeFileError.None)
+			throw new NativeException("Unknown error", -1);
 
-		uint major, minor;
-		ExtractMajorMinor(stat.st_dev, out major, out minor);
-
-		return FindSectorSize(major, minor);
+		return FindSectorSize(di.major, di.minor);
 	}
 
 	private static uint FindSectorSize(uint major, uint minor)
@@ -830,7 +702,7 @@ internal sealed class LinuxFile : NativeFile
 
 			IEnumerable<string> paths = Directory.GetDirectories(dir, device + "*").Prepend(dir);
 
-			foreach(string path in paths)
+			foreach (string path in paths)
 			{
 				if (IsDevice(path, major, minor))
 				{
@@ -857,23 +729,4 @@ internal sealed class LinuxFile : NativeFile
 		return int.Parse(split[0]) == major && int.Parse(split[1]) == minor;
 	}
 
-	private static void ExtractMajorMinor(ulong st_dev, out uint major, out uint minor)
-	{
-		major = (uint)((st_dev & 0xFFF00) >> 8);
-		minor = (uint)(((st_dev & 0xFFF00000) >> 12) | (st_dev & 0xFF));
-	}
-
-	public override void Write(IntPtr buffer, long size)
-	{
-		long result = write(hFile, buffer, (ulong)size);
-
-		if (result == error)
-			throw CreateException();
-	}
-
-	protected override void OnCleanup(bool isDisposing)
-	{
-		int result = close(hFile);
-	}
 }
-

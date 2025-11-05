@@ -15,12 +15,23 @@
 		<RootNamespace>VeloxDB.ClientApp</RootNamespace>
 		<UseCommonOutputDirectory>true</UseCommonOutputDirectory>
 		<DefineConstants>$(DefineConstants);TRACE</DefineConstants>
+    <UseAppHost>false</UseAppHost>
 	</PropertyGroup>
+
 	<PropertyGroup Condition="'$(Configuration)'=='Debug'">
 	  <DefineConstants>$(DefineConstants);TEST_BUILD;</DefineConstants>
 	</PropertyGroup>
+
 	<ItemGroup>
 	  <ProjectReference Include="..\Server\AdminAPI\AdminAPI.csproj" />
 	  <ProjectReference Include="..\VeloxDB.Common\VeloxDB.Common.csproj" />
 	</ItemGroup>
+
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' == 'win-x64' Or '$(RuntimeIdentifier)' == 'win-arm64'">
+    <UseAppHost>true</UseAppHost>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../Tools/WrapperScript/wrapper.sh" Link="vlx" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

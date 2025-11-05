@@ -19,6 +19,12 @@
 		<PackageOutputPath>../../bin/nuget</PackageOutputPath>
 		<PackAsTool>true</PackAsTool>
 		<ToolCommandName>vlxdbsrv</ToolCommandName>
+		<UseAppHost>false</UseAppHost>
+	</PropertyGroup>
+
+	<PropertyGroup
+		Condition="'$(RuntimeIdentifier)' == 'win-x64' Or '$(RuntimeIdentifier)' == 'win-arm64'">
+		<UseAppHost>true</UseAppHost>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -26,17 +32,25 @@
 		<ProjectReference Include="..\..\VeloxDB.Common\VeloxDB.Common.csproj" />
 		<ProjectReference Include="..\AdminAPI\AdminAPI.csproj" />
 	</ItemGroup>
-<!-- There are two modes for publishing Host.csproj: one for creating a portable zip/installation and one for bundling the server in a VeloxDB package. 
-	These modes have slightly different configurations and bundled files, and the NugetPublish parameter in msbuild is used to distinguish between them."-->
+	<!-- There are two modes for publishing Host.csproj: one for creating a portable
+	zip/installation and one for bundling the server in a VeloxDB package. 
+	These modes have slightly different configurations and bundled files, and the NugetPublish
+	parameter in msbuild is used to distinguish between them."-->
 	<ItemGroup Condition="'$(NugetPublish)' != ''">
-		<None Update="Nuget/vlxdbcfg.json" Link="vlxdbcfg.json" CopyToOutputDirectory="PreserveNewest" />
-		<None Update="Nuget/config.cluster.json" Link="config.cluster.json" CopyToOutputDirectory="PreserveNewest" />
+		<None Update="Nuget/vlxdbcfg.json" Link="vlxdbcfg.json"
+			CopyToOutputDirectory="PreserveNewest" />
+		<None Update="Nuget/config.cluster.json" Link="config.cluster.json"
+			CopyToOutputDirectory="PreserveNewest" />
 	</ItemGroup>
 
 	<ItemGroup Condition="'$(NugetPublish)' == ''">
-		<None Update="Publish/vlxdbcfg.json" Link="vlxdbcfg.json" CopyToOutputDirectory="PreserveNewest" />
-		<None Update="Publish/config.cluster.json" Link="config.cluster.json" CopyToOutputDirectory="PreserveNewest" />
+		<None Update="Publish/vlxdbcfg.json" Link="vlxdbcfg.json"
+			CopyToOutputDirectory="PreserveNewest" />
+		<None Update="Publish/config.cluster.json" Link="config.cluster.json"
+			CopyToOutputDirectory="PreserveNewest" />
 		<None Update="Publish/README.txt" Link="README.txt" CopyToOutputDirectory="PreserveNewest" />
+		<None Include="../../Tools/WrapperScript/wrapper.sh" Link="vlxdbsrv"
+			CopyToOutputDirectory="PreserveNewest" />
 	</ItemGroup>
 
 	<ItemGroup>
@@ -45,9 +59,10 @@
 	</ItemGroup>
 
 	<ItemGroup>
-    <None Include="../../LICENSE.txt" Pack="true" PackagePath="" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" />
-    <None Include="../../icon.png" Pack="true" PackagePath="" />
-  </ItemGroup>
+		<None Include="../../LICENSE.txt" Pack="true" PackagePath="" CopyToOutputDirectory="Always"
+			CopyToPublishDirectory="Always" />
+		<None Include="../../icon.png" Pack="true" PackagePath="" />
+	</ItemGroup>
 
 	<Target Name="CreateDirectories" AfterTargets="Publish" Condition="'$(NugetPublish)' == ''">
 		<MakeDir Directories="$(PublishDir)\data" Condition="!Exists('$(PublishDir)\data')" />

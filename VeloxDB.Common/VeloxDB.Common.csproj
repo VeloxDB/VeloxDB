@@ -1,5 +1,5 @@
 <Project>
-    <Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk" />
+	<Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk" />
 	<Import Project="../MultiArchitecture.Pack.props"/>
 	<PropertyGroup>
 		<TargetFramework>net9.0</TargetFramework>
@@ -37,7 +37,7 @@
 
 	<PropertyGroup Condition="'$(Platform)'=='ARM64'">
 		<DefineConstants>$(DefineConstants);ARM_64</DefineConstants>
-	</PropertyGroup>	
+	</PropertyGroup>
 
 	<PropertyGroup Condition="'$(Configuration)'=='Debug'">
 		<DefineConstants>$(DefineConstants);TEST_BUILD;TTTRACE</DefineConstants>
@@ -47,6 +47,33 @@
 		<None Include="../LICENSE.txt" Pack="true" PackagePath="" />
 		<None Include="../README.md" Pack="true" PackagePath="" />
 		<None Include="../icon.png" Pack="true" PackagePath="" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<None Include="../VeloxDB.Native/bin/linux-x64/libvlxdb_native.so" Condition="'$(Platform)'=='x64' or '_IsPacking' == 'true'">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+	  		<CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+			<TargetPath>%(Filename)%(Extension)</TargetPath>
+			<PackagePath>runtimes/linux-x64/native/libvlxdb_native.so</PackagePath>
+		</None>
+		<None Include="../VeloxDB.Native/bin/linux-arm64/libvlxdb_native.so" Condition="'$(Platform)'=='arm64' or '_IsPacking' == 'true'">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+			<TargetPath>%(Filename)%(Extension)</TargetPath>
+			<PackagePath>runtimes/linux-arm64/native/libvlxdb_native.so</PackagePath>
+		</None>
+		<None Include="../VeloxDB.Native/bin/osx-x64/libvlxdb_native.dylib" Condition="'$(Platform)'=='x64' or '_IsPacking' == 'true'">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+			<TargetPath>%(Filename)%(Extension)</TargetPath>
+			<PackagePath>runtimes/osx-x64/native/libvlxdb_native.dylib</PackagePath>
+		</None>
+		<None Include="../VeloxDB.Native/bin/osx-arm64/libvlxdb_native.dylib" Condition="'$(Platform)'=='arm64' or '_IsPacking' == 'true'">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+			<TargetPath>%(Filename)%(Extension)</TargetPath>
+			<PackagePath>runtimes/osx-arm64/native/libvlxdb_native.dylib</PackagePath>
+		</None>	
 	</ItemGroup>
 
 	<Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
