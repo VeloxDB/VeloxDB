@@ -321,7 +321,7 @@ internal sealed partial class SortedIndex
 				while (true)
 				{
 					item->nextGarbage = (ulong)ph->state;
-					if (ph->CompareExchange((long)item, (long)item->nextGarbage) == (long)item->nextGarbage)
+					if (ph->CompareExchange((long)itemHandle, (long)item->nextGarbage) == (long)item->nextGarbage)
 						return;
 				}
 			}
